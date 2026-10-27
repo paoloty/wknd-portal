@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt, scryptSync } from 'crypto';
 import { statSync, existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import express from 'express';
+import compression from 'compression';
 import { resendWebhookEnabled, verifyResendSignature, handleResendEvent } from './lib/resend-webhook.js';
 import session from 'express-session';
 import SqliteStore from 'better-sqlite3-session-store';
@@ -87,7 +88,7 @@ import {
   upsertAward, deleteAward, clearAwardType, getActivePlayers, getSeasonPlayerStats,
   getPlayerPhoto, getAllPlayerPhotoUrls, getPlayerPhotoWrites, getCurrentSeason, getSeasonLatestWeek, getTickerGames, getSeriesRecordForGame,
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
-  updateGameRecap, updateGameYoutube, updateGameCover, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
+  updateGameRecap, updateGameYoutube, updateGameCover, getGameCoverWrites, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
   importGameResults, markGameFinal, setGameOvertime, createGame, setGameReviewLocked, setGameFinalScore,
   getGamePlayerStat, updateGamePlayerStat, getStatCorrectionsForGame, EDITABLE_STAT_FIELDS,
   updatePlayerPhoto, updatePlayer,
@@ -323,7 +324,7 @@ const JOIN_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirna
 // to serving the original file as-is instead of a broken empty response.
 const MINIFIED_CSS = (() => {
   const cache = {};
-  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css', 'courts.css', 'join.css']) {
+  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css', 'courts.css', 'join.css', 'app.css']) {
     try {
       const raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
       const out = new CleanCSS({}).minify(raw);
@@ -3077,6 +3078,12 @@ function buildHighlights(completedGames, playerMap, teamMap, count = 4) {
 
 const app = express();
 
+// HTML, JSON, CSS and JS leave compressed (brotli or gzip, whichever the caller takes).
+// Cloudflare compresses for the phone anyway, but the VPS → Cloudflare leg carried raw
+// bytes (the feed's first page: 71 KB instead of 10). Pictures are already compressed and
+// are skipped by type (Fable speed audit, 2026-10-28).
+app.use(compression({ threshold: 1024 }));
+
 // One URL per page for search engines: www. goes to the bare domain and a trailing slash
 // is dropped (/games/ → /games), both permanently. GET/HEAD only, so webhooks and form
 // posts are never redirected.
@@ -3144,7 +3151,7 @@ app.post('/api/cta/:key', (req, res) => {
 // express.static unchanged. Safe to cache for a full year: the URL is always requested
 // with ?v=CSS_VER (mtime-derived), so any real content change gets a new URL rather than
 // invalidating this one.
-app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css', '/courts.css', '/join.css'], (req, res) => {
+app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css', '/courts.css', '/join.css', '/app.css'], (req, res) => {
   const file = req.path.slice(1);
   const minified = MINIFIED_CSS[file];
   if (!minified) return res.sendFile(path.join(__dirname, 'public', file));
@@ -5640,9 +5647,9 @@ app.get('/og-mvp.png', async (req, res) => {
   } catch (err) { console.error('og-mvp error:', err); res.status(500).end(); }
 });
 
-// Game covers are stored 1200×900 (~270 KB); cards and list thumbnails ask for ?w=640,
+// Game covers are stored 1200×900 (~270 KB); cards and list thumbnails ask for ?w=640 (720 on 2× phones),
 // the matchup slideshows ?w=960, heroes take the original.
-const COVER_WIDTHS = new Set([640, 960]);
+const COVER_WIDTHS = new Set([640, 720, 960]);
 app.get('/api/photo/:gameId', async (req, res) => {
   const dataUrl = getGameCover(req.params.gameId)?.social_cover_data_url;
   if (!dataUrl?.startsWith('data:')) return res.status(404).end();
@@ -6081,7 +6088,7 @@ import { appScorerGuidePage, appScorerChapterPage } from './views/app/help.js';
 import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
-import { addBarkadahanMessage, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince } from './lib/portal-db.js';
+import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince } from './lib/portal-db.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
@@ -6117,7 +6124,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'lib/live-score.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6595,6 +6602,7 @@ app.get('/app', requireApp, (req, res) => {
     header: homeHeader({ phase: appPhase(), unread: me.unread, bk }) + barkadahanCard(bk),
     setupHtml: setupCard(setup), installHtml: installCard,
     todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
+    live: appLiveNowGames().length > 0 || (canWatchReview(req, me.playerId) && appReviewNowGames().length > 0),
   }) });
 });
 
@@ -6722,10 +6730,23 @@ function appGameRecap(g, stats, me) {
     dnp: getGameDnpPlayers(g.id).map(p => ({ name: displayPlayerName(p.name || ''), team: p.team_name || '' })).filter(p => p.name),
   };
 }
-// Pictures come in two widths (the server resizes and caches them, WebP): the phone picks
-// by its screen, 640 on most, 960 on 3× iPhones.
-const sizedSrc = base => { const j = base.includes('?') ? '&' : '?'; return { img: `${base}${j}w=640`, srcset: `${base}${j}w=640 640w, ${base}${j}w=960 960w` }; };
-const gameMedia = g => ({ ...(g.has_cover ? sizedSrc(`/api/photo/${encodeURIComponent(g.id)}`) : {}), yt: ytId(g.youtube_url) });
+// Pictures come in three widths (the server resizes and caches them, WebP): the phone picks
+// by its screen, 720 on most 2× phones (a 358px card needs 716), 960 on 3× iPhones.
+const sizedSrc = base => { const j = base.includes('?') ? '&' : '?'; return { img: `${base}${j}w=640`, srcset: `${base}${j}w=640 640w, ${base}${j}w=720 720w, ${base}${j}w=960 960w` }; };
+// A cover's URL carries its own hash (?v=), so phones keep it for good (sendPlayerPhoto marks
+// versioned URLs immutable) instead of checking it again every day. Hashes are kept per game
+// until a cover is written here (getGameCoverWrites) or for 10 minutes (a write from elsewhere).
+let _coverVers = { writes: -1, map: new Map() };
+function gameCoverVersion(id) {
+  const writes = getGameCoverWrites();
+  if (writes !== _coverVers.writes) _coverVers = { writes, map: new Map() };
+  const hit = _coverVers.map.get(id);
+  if (hit && Date.now() - hit.at < 600_000) return hit.v;
+  const v = photoVersion(getGameCover(id)?.social_cover_data_url || '');
+  _coverVers.map.set(id, { v, at: Date.now() });
+  return v;
+}
+const gameMedia = g => ({ ...(g.has_cover ? sizedSrc(`/api/photo/${encodeURIComponent(g.id)}?v=${gameCoverVersion(String(g.id))}`) : {}), yt: ytId(g.youtube_url) });
 const gameKicker = g => (g.stats_pending ? 'Final · Stats pending review' : `Final · ${g.playoff_round || gameTypeLabel(g) || 'Regular season'}`);
 
 function appFeedItem(it, me, extra) {
@@ -6769,14 +6790,14 @@ app.get('/app/feed/items', requireAppData, (req, res) => {
   // and the one action), so the card can join right there.
   if (page.some(it => it.kind === 'papawis')) extra.runs = appPapawisRuns(me);
   const items = page.map(it => appFeedItem(it, me, extra));
-  const html = appFeedRows(items, String(req.query.day || ''));
+  const html = appFeedRows(items, String(req.query.day || ''), { eager: m ? 0 : 2 });
   const last = page[page.length - 1];
   const more = from >= 0 && from + APP_FEED_PAGE < all.length;
   res.json({ html, next: more ? `/app/feed/items?before=${last.at}:${encodeURIComponent(last.id)}&day=${encodeURIComponent(items[items.length - 1].day || '')}` : null });
 });
 
-// Announcement photos at the feed's widths (?w=640|960) or the admin list's thumbnail (160).
-const ANN_WIDTHS = new Set([160, 640, 960]);
+// Announcement photos at the feed's widths (?w=640|720|960) or the admin list's thumbnail (160).
+const ANN_WIDTHS = new Set([160, 640, 720, 960]);
 const sendAnnImage = (req, res) => {
   const image = getAppAnnouncementImage(req.params.id)?.image || '';
   if (!/^data:image\/(?:jpeg|png|webp);base64,/.test(image)) return res.status(404).end();
@@ -7294,6 +7315,7 @@ app.get('/app/help/scoring/:slug', requireApp, requireScoringMenu, (req, res) =>
 const barkadahanOn = () => getSetting('barkadahan_enabled', '0') === '1';
 const BK_REACTIONS = ['👍', '❤️', '😂', '🔥', '🏀', '😮'];
 const BK_MAX = 500;
+const BK_PAGE = 50; // the room's first screen and each older page: the same size, so a refresh never shrinks the list
 const appSockets = new Map(); // playerId -> Set<WebSocket>
 const bkPerson = pid => {
   const p = getPlayerById(pid);
@@ -7339,15 +7361,17 @@ function requireBarkadahan(req, res, next) {
 }
 const bkLastPost = new Map(); // playerId -> [times], a gentle flood guard
 app.get('/app/barkadahan', requireApp, requireBarkadahan, (req, res) => {
+  // No read mark here: a GET is also a prefetch (a touch on the chat icon) and a view as a
+  // player; the room posts /app/barkadahan/read once it's on screen.
   const me = appMe(req);
-  markBarkadahanRead(me.playerId);
-  const bundle = { me: { pid: me.playerId, mod: bkIsMod(me.playerId), cant: bkCantPost(me.playerId) }, messages: bkMessages({ limit: 60 }), online: bkOnlineIds().length, reactions: BK_REACTIONS,
+  const cant = req.session.impersonating ? 'Viewing as a player is read-only.' : bkCantPost(me.playerId);
+  const bundle = { me: { pid: me.playerId, mod: bkIsMod(me.playerId), cant }, messages: bkMessages({ limit: BK_PAGE }), online: bkOnlineIds().length, reactions: BK_REACTIONS,
     people: getAllPlayers().filter(p => p.status !== 'inactive').map(p => ({ pid: p.id, name: displayPlayerName(p.name || '') })) };
   sendApp(res, { title: 'Barkadahan · WKND', bare: true, body: appBarkadahanPage({ bundle }) });
 });
 app.get('/app/barkadahan/messages', requireAppData, requireBarkadahan, (req, res) => {
   const before = Number(req.query.before) || null;
-  res.json({ messages: bkMessages({ before, limit: 50 }), online: bkOnlineIds().length });
+  res.json({ messages: bkMessages({ before, beforeId: String(req.query.id || ''), limit: BK_PAGE }), online: bkOnlineIds().length });
 });
 app.get('/app/barkadahan/online', requireApp, requireBarkadahan, (req, res) => {
   const me = appMe(req);
@@ -7363,8 +7387,13 @@ app.post('/app/barkadahan/messages', requireAppData, requireBarkadahan, express.
   const pid = req.session.playerPlayerId;
   if (req.session.impersonating) return res.status(403).json({ error: 'Viewing as a player is read-only.' });
   const cant = bkCantPost(pid); if (cant) return res.status(403).json({ error: cant });
-  const body = String(req.body?.body || '').replace(/\s+$/g, '').replace(/^\s+/, '').slice(0, BK_MAX);
+  // Cut by characters, not UTF-16 units, so a cut never splits an emoji.
+  const body = Array.from(String(req.body?.body || '').replace(/\s+$/g, '').replace(/^\s+/, '')).slice(0, BK_MAX).join('');
   if (!body) return res.status(400).json({ error: 'Type a message first.' });
+  // The phone's id for this send: a retry after a lost answer gets the stored message back.
+  const cid = /^[\w-]{4,40}$/.test(String(req.body?.cid || '')) ? String(req.body.cid) : null;
+  const dup = getBarkadahanByClientId(pid, cid);
+  if (dup) return res.json({ ok: true, m: { ...bkShape(dup, getBarkadahanReactions([dup.id])[dup.id] || {}), cid } });
   const now = Date.now(), recent = (bkLastPost.get(pid) || []).filter(t => now - t < 60000);
   if (recent.length >= 20 || (recent.length && now - recent[recent.length - 1] < 600)) return res.status(429).json({ error: 'Slow down a little.' });
   bkLastPost.set(pid, [...recent, now]);
@@ -7373,9 +7402,9 @@ app.post('/app/barkadahan/messages', requireAppData, requireBarkadahan, express.
   const mentions = [...new Set((Array.isArray(req.body?.mentions) ? req.body.mentions : []).map(String))]
     .filter(id => id !== pid && getPlayerById(id) && body.includes(`@${displayPlayerName(getPlayerById(id).name || '')}`)).slice(0, 10);
   const id = `bk_${now.toString(36)}_${randomBytes(4).toString('hex')}`;
-  const m = addBarkadahanMessage({ id, playerId: pid, body, replyTo: reply && !reply.deleted_at ? reply.id : null, mentions });
+  const m = addBarkadahanMessage({ id, playerId: pid, body, replyTo: reply && !reply.deleted_at ? reply.id : null, mentions, clientId: cid });
   markBarkadahanRead(pid, m.created_at);
-  const shaped = bkShape(m);
+  const shaped = { ...bkShape(m), cid }; // cid: the sender's phone swaps its "Sending…" copy for this
   bkSend({ type: 'msg', m: shaped });
   const who = bkPerson(pid), snippet = body.length > 90 ? `${body.slice(0, 90)}…` : body;
   for (const to of mentions) createNotification({ playerId: to, type: 'barkadahan_mention', title: `${who.name} mentioned you in the Barkadahan`, body: snippet, link: '/app/barkadahan', actorId: pid });
@@ -7406,6 +7435,7 @@ app.post('/app/barkadahan/messages/:id/report', requireAppData, requireBarkadaha
   const pid = req.session.playerPlayerId, m = getBarkadahanMessage(req.params.id);
   if (!m || m.deleted_at) return res.status(404).json({ error: 'That message is gone.' });
   if (m.player_id === pid) return res.status(400).json({ error: 'That’s your own message.' });
+  if (req.session.impersonating) return res.status(403).json({ error: 'Viewing as a player is read-only.' });
   reportBarkadahanMessage({ id: `bkr_${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`, messageId: m.id, playerId: pid, reason: String(req.body?.reason || '').slice(0, 200) });
   res.json({ ok: true, message: 'Reported. An admin will look at it.' });
 });
@@ -7418,7 +7448,7 @@ app.post('/app/barkadahan/mute/:playerId', requireAppData, requireBarkadahan, ex
   setBarkadahanMute(target.id, days ? Date.now() + days * 864e5 : null);
   res.json({ ok: true, message: days ? `${displayPlayerName(target.name || '')} is muted for ${days === 1 ? 'a day' : 'a week'}.` : 'Mute lifted.' });
 });
-app.post('/app/barkadahan/read', requireAppData, requireBarkadahan, (req, res) => { markBarkadahanRead(req.session.playerPlayerId); res.json({ ok: true }); });
+app.post('/app/barkadahan/read', requireAppData, requireBarkadahan, (req, res) => { if (!req.session.impersonating) markBarkadahanRead(req.session.playerPlayerId); res.json({ ok: true, unread: 0 }); });
 // Settings → Privacy → Show me as online.
 app.post('/app/online-visibility', requireAppData, express.json(), (req, res) => {
   setPlayerOnlineHidden(req.session.playerPlayerId, !req.body?.on);
@@ -8475,7 +8505,8 @@ function appPreview(game, sorted, pctx, playerMap, colorOf) {
 
 // Home's live card (views/app/feed.js appLiveNow): every game being scored right now that's
 // visible to everyone (never a review), newest play first. Loaded after the screen and again
-// every 15 s while Home is open (public/app.js data-block-every), as JSON { html }.
+// every 15 s while Home is open and something is live, once a minute otherwise (public/app.js
+// data-block-every / data-block-idle; Home asks at once only when a game is live), as JSON { html }.
 function appLiveNowGames() {
   return portalDb.prepare("SELECT game_id FROM score_games WHERE status = 'live'").all()
     .map(r => getGameById(r.game_id)).filter(g => g && !g.under_review && !isPlayedGame(g))
@@ -11316,6 +11347,8 @@ app.post('/admin/site/settings', requireAuth, express.json(), (req, res) => {
       setSetting(key, v);
     }
   }
+  // Switched off: the app connections that are open close now (their apps stop asking).
+  if ('barkadahan_enabled' in (req.body || {}) && !barkadahanOn()) for (const set of appSockets.values()) for (const ws of set) ws.close(4001, 'closed');
   res.json({ ok: true });
 });
 
@@ -26399,7 +26432,28 @@ setInterval(prunePageViewsJob, 24 * 60 * 60 * 1000);
 // additive — if the socket never connects, every route above still works exactly the
 // same via a manual refresh, same as before this existed.
 const gameCommentRooms = new Map(); // gameId -> Set<WebSocket>
-const wss = new WebSocketServer({ noServer: true });
+// Clients only ever send small JSON ("typing", "ping"), so anything bigger is refused.
+const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
+// Every socket gets an error handler (a bad frame emits 'error', and an unhandled one took the
+// whole server down: Fable audit, 2026-10-28) and the heartbeat below.
+{
+  const upgrade = wss.handleUpgrade.bind(wss);
+  wss.handleUpgrade = (req, socket, head, cb) => upgrade(req, socket, head, ws => {
+    ws.on('error', () => ws.terminate());
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+    cb(ws);
+  });
+}
+// Heartbeat: a phone that lost signal or was put away without saying goodbye stops answering
+// pings; its socket is closed on the next round, so it stops counting as online.
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  }
+}, 30_000).unref();
 
 // How many people have the game's page open (its comments socket): the live chat's
 // "watching" count, sent to them all when it changes (at most once a second).
@@ -26450,6 +26504,7 @@ function broadcastLivenessCaptured(token) {
 
 const server = http.createServer(app);
 server.on('upgrade', (req, socket, head) => {
+  socket.on('error', () => socket.destroy()); // a reset before the upgrade finishes
   const { pathname } = new URL(req.url, 'http://localhost');
 
   const commentsMatch = pathname.match(/^\/ws\/games\/([^/]+)\/comments$/);
@@ -26517,7 +26572,8 @@ server.on('upgrade', (req, socket, head) => {
         let lastTyping = 0;
         ws.on('message', raw => {
           let d; try { d = JSON.parse(String(raw).slice(0, 200)); } catch { return; }
-          if (d?.type === 'typing' && Date.now() - lastTyping > 2500 && !bkCantPost(pid)) {
+          // Not for a player hidden from the online list: "is typing" would give them away.
+          if (d?.type === 'typing' && Date.now() - lastTyping > 2500 && !bkCantPost(pid) && !getPlayerById(pid)?.online_hidden) {
             lastTyping = Date.now();
             bkSend({ type: 'typing', pid, name: bkPerson(pid).name }, [...appSockets.keys()].filter(x => x !== pid));
           }

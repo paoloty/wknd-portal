@@ -12,7 +12,7 @@ Each uncached request from the Philippines costs ~1.3–1.7 s (PH → Cloudflare
 2. **No side effects on a GET.** Screens are prefetched on touch, refreshed in the background and re-fetched by the service worker. Logging, "seen" marks and counters go in a POST, a beacon or the lazy data request.
 3. **Server render ≤ 50 ms.** No whole-table work per request (picks context, odds, all registrations); memoise it and bust on write.
 4. **HTML ≤ ~150 KB raw.** No large inline scripts or JSON blobs.
-5. **No layout shift.** Every picture has `aspect-ratio` (or width/height), is sized (`sizedSrc`: `srcset` 640w/960w WebP, avatars `?w=`), and is versioned with `?v=` when its URL can stay the same for a new picture.
+5. **No layout shift.** Every picture has `aspect-ratio` (or width/height), is sized (`sizedSrc`: `srcset` 640w/720w/960w WebP, avatars `?w=`), and is versioned with `?v=` when its URL can stay the same for a new picture.
 6. **Pictures come from paths the service worker knows** (`isImage` in `public/app-sw.js`). Add a new image route there.
 7. **Every screen picks how it's stored on the phone** (`isScreen` in `public/app-sw.js`):
    - **copy is fine:** Home, My Team, games, news, notifications. Shown at once, refreshed quietly: on a launch, and on an in-app tap when the copy is under a day old (`phoneCopy` in `public/app.js`). A push fetches its screen ahead on Android (`warm` in `public/app-sw.js`).

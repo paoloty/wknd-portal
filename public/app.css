@@ -2301,7 +2301,8 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .app:has(.bk) { padding-bottom: 0; }
 .bk { display: flex; flex-direction: column; height: calc(100dvh - var(--safe-t)); padding-bottom: var(--safe-b); box-sizing: border-box; }
 .bk__nav { flex: none; }
-.bk__online { justify-self: end; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px 0 8px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.bk__online { position: relative; justify-self: end; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px 0 8px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.bk__online::after { content: ''; position: absolute; inset: -6px -2px; } /* 44px to tap */
 .bk__online i { width: 7px; height: 7px; border-radius: 50%; background: var(--win); }
 .bk__list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 10px; }
 .bk-start { margin: 8px 0; text-align: center; font-size: 12px; color: var(--muted); }
@@ -2320,22 +2321,27 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .bk-m.is-me .bk-m__b { align-items: flex-end; }
 .bk-m.is-me .bk-bub { align-self: flex-end; border-radius: 18px 18px 6px 18px; background: color-mix(in srgb, var(--amber) 18%, var(--surface-2)); }
 .bk-m.is-me .bk-bub.is-emo { background: none; }
-.bk-q { display: block; margin: 0 0 6px; padding: 4px 8px; border-left: 2px solid var(--amber); border-radius: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); font-size: 12px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-q { display: block; margin: 0 0 6px; padding: 4px 8px; border-left: 2px solid var(--amber); border-radius: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); font-size: 12px; line-height: 1.35; color: var(--text); opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bk-q b { display: block; color: var(--text); font-weight: 600; }
 .bk-at { color: var(--amber-text); font-weight: 600; }
-.bk-rx { display: flex; flex-wrap: wrap; gap: 4px; }
-.bk-rx__b { display: inline-flex; align-items: center; gap: 3px; min-height: 28px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--hair); background: var(--card-bg); font-size: 13px; line-height: 1; }
+/* In your own (amber-tinted) bubble the amber text was 4.1:1 in light: the text colour there. */
+.bk-m.is-me .bk-at { color: var(--text); text-decoration: underline; text-decoration-color: var(--amber); text-underline-offset: 2px; }
+/* A hold that counts: the bubble dims, let go for the menu. */
+.bk-bub.is-held { opacity: .6; transform: scale(.98); transition: opacity .12s ease, transform .12s ease; }
+.bk-rx { display: flex; flex-wrap: wrap; gap: 6px; }
+.bk-rx__b { position: relative; display: inline-flex; align-items: center; gap: 3px; min-height: 28px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--hair); background: var(--card-bg); font-size: 13px; line-height: 1; }
 .bk-rx__b b { font: 700 12px/1 var(--font-num); }
 .bk-rx__b.is-mine { border-color: var(--amber); }
-.bk-st { font-size: 11px; color: var(--muted); }
-.bk-st button { color: var(--amber-text); font-weight: 600; font-size: 11px; min-height: 28px; padding: 0 4px; }
+.bk-rx__b::after, .bk-st button::after, .bk__mention button::after { content: ''; position: absolute; inset: -8px -3px; } /* 44px to tap */
+.bk-st { font-size: 12px; color: var(--muted); }
+.bk-st button { position: relative; color: var(--amber-text); font-weight: 600; font-size: 12px; min-height: 28px; padding: 0 4px; }
 .bk__typing { flex: none; margin: 0; min-height: 16px; padding: 0 16px 2px; font-size: 12px; color: var(--muted); }
 .bk__reply { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 12px 6px; padding: 6px 4px 6px 10px; border-left: 2px solid var(--amber); border-radius: 8px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
 .bk__reply span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bk__reply b { color: var(--text); font-weight: 600; margin-right: 6px; }
 .bk__reply button { flex: none; width: 44px; height: 36px; font-size: 18px; color: var(--muted); }
 .bk__mention { flex: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 12px 6px; }
-.bk__mention button { min-height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface-2); color: var(--amber-text); font-size: 13px; font-weight: 600; }
+.bk__mention button { position: relative; min-height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface-2); color: var(--amber-text); font-size: 13px; font-weight: 600; }
 .bk__bar { flex: none; display: flex; align-items: flex-end; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--hair); }
 .bk__emo { flex: none; width: 44px; height: 44px; border-radius: 50%; font-size: 22px; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .bk__in { flex: 1; min-width: 0; min-height: 44px; max-height: 120px; box-sizing: border-box; resize: none; padding: 11px 14px; border: 0; border-radius: 22px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 16px; line-height: 1.35; }
@@ -2355,7 +2361,7 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .bk-hold__acts button:first-child { border-top: 0; }
 .bk-hold__acts button.red { color: var(--danger); }
 /* The emoji sheet, above the message box. */
-.bk-emo { flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; padding: 10px 12px 6px; border-top: 1px solid var(--hair); background: var(--card-bg); }
+.bk-emo { flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 40vh; max-height: 40dvh; overflow-y: auto; padding: 10px 12px 6px; border-top: 1px solid var(--hair); background: var(--card-bg); }
 .bk-emo__l { font: 700 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 2px 4px; }
 .bk-emo__grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; }
 .bk-emo__grid button { height: 44px; border-radius: 10px; font-size: 24px; line-height: 1; display: flex; align-items: center; justify-content: center; }

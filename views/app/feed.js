@@ -23,9 +23,9 @@ const ytThumb = id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 function media({ img = '', srcset = '', yt = '', label = '' } = {}, { inCard = false } = {}) {
   if (!img && !yt) return '';
   // Not loading="lazy": iPhone Safari never loads a lazy image added while its list is still
-  // hidden (the feed's pages). A picture that fails is retried once, then logged and removed
+  // hidden (the feed's pages); feed cards below the top two wait instead (appFeedRows). A picture that fails is retried once, then logged and removed
   // (public/app.js "Pictures that fail").
-  // srcset: the photo in two widths; a card is the screen less 32px, up to 528px (.app max 560).
+  // srcset: the photo in three widths; a card is the screen less 32px, up to 528px (.app max 560).
   const sized = img && srcset ? ` srcset="${esc(srcset)}" sizes="(min-width: 560px) 528px, calc(100vw - 32px)"` : '';
   const pic = `<img src="${esc(img || ytThumb(yt))}"${sized} alt="" decoding="async">`;
   const tag = label ? `<em>${esc(label)}</em>` : '';
@@ -117,13 +117,20 @@ function papawisCard(it) {
 
 const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard };
 
+// A card's pictures (the big ones, decoding="async"; not the faces) wait as data-src until the
+// card nears the screen (public/app.js wakeImgs): Home used to pull all 20 covers, ~1.7 MB,
+// for the one and a half cards in view (Fable speed audit, 2026-10-28).
+const deferImgs = html => html.replace(/<img\b[^>]*\bdecoding="async"[^>]*>/g, tag => tag.replace(' src="', ' data-src="').replace(' srcset="', ' data-srcset="'));
+
 // items: [{ kind, day, ... }]; prevDay: the day header already shown above this page.
-export function appFeedRows(items, prevDay = '') {
+// eager: how many cards load their pictures at once (the first page's top two).
+export function appFeedRows(items, prevDay = '', { eager = 0 } = {}) {
   let day = prevDay;
-  return items.map(it => {
+  return items.map((it, i) => {
     const head = it.day && it.day !== day ? `<div class="feed-day"><span>${esc(it.day)}</span></div>` : '';
     if (it.day) day = it.day;
-    return head + (CARD[it.kind] ? CARD[it.kind](it) : '');
+    const card = CARD[it.kind] ? CARD[it.kind](it) : '';
+    return head + (i < eager ? card : deferImgs(card));
   }).join('');
 }
 
@@ -131,7 +138,9 @@ export function appFeedRows(items, prevDay = '') {
 // announcement, and the feed. Up next lives on My Team and the full To do on Me.
 // todos: views/app/home.js todoCard items · pinned: an announcement item or null
 // rail: the next game day's games (loaded after the screen from /app/rail, public/app.js initBlocks).
-export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todos = [], pinned = null, rail = false }) {
+// live: a game is being scored (or reviewed, for admins) now, so the live card loads at once and
+// every 15 s; otherwise Home only checks once a minute.
+export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todos = [], pinned = null, rail = false, live = true }) {
   const strip = todoCard(todos);
   return `${header}
   ${setupHtml}
@@ -143,7 +152,7 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todo
   </div>
   ${strip}
   ${pinned ? `<div class="feed feed--pinned">${annCard(pinned)}</div>` : ''}
-  <div class="live-now" data-block-src="/app/live-now" data-block-every="15000" hidden></div>
+  <div class="live-now" data-block-src="/app/live-now" data-block-every="15000" data-block-idle="60000"${live ? '' : ' data-block-later'} hidden></div>
   ${rail ? '<div class="rail-block" data-block-src="/app/rail"><div class="rail-h"><b class="skel skel--line skel--short" style="width:120px"></b></div><div class="rail"><div class="rc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span></div><div class="rc skel-card"></div></div></div>' : ''}
   ${lazyList({ src: '/app/feed/items', cards: true, empty: 'Nothing here yet. Results, news and announcements show up here.' })}`;
 }
