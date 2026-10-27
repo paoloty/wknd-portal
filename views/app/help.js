@@ -48,7 +48,7 @@ export const SCORER_GUIDE = [
       ['h', 'Answering'],
       ['steps', [
         '<b>Tap a lit player.</b> That’s the answer. The players who can’t answer are dimmed.',
-        '<b>Nobody fits?</b> Tap the button in the line: <i>No rebound</i>, <i>No assist</i> or <i>Skip</i>.',
+        '<b>Nobody fits?</b> Tap the button in the line: <i>No rebound</i>, <i>No assist</i> or <i>Skip</i>. Or swipe the line down.',
         '<b>Too busy?</b> Just record the next play. The question goes away by itself.',
       ]],
       ['tip', 'Good to know', 'The amber line shrinks as time runs out: 8 seconds for Rebound?, 12 for the others. Answering is optional; the score never depends on it.'],
@@ -61,8 +61,23 @@ export const SCORER_GUIDE = [
         ['Who went off?', 'After a bench player’s play.'],
         ['Who comes on?', 'When a player fouls out. This one waits for you.'],
       ]],
+      ['h', 'After a block: up to two questions'],
+      ['p', 'A block is the one play that can ask twice. If the missed shot is already recorded, you only get <b>Rebound?</b>. If it isn’t, you get <b>Whose shot?</b> first, then <b>Rebound?</b>.'],
+      ['steps', [
+        '<b>Whose shot?</b> Pick 2PT or 3PT, then tap the shooter. That records their missed shot.',
+        '<b>Rebound?</b> comes straight after. Tap who got the ball.',
+        'Skip <b>Whose shot?</b> and the scorer doesn’t ask about the rebound either.',
+      ]],
+      ['h', 'Turning the questions off'],
+      ['p', 'Know the game well and want fewer taps? You can switch the questions off on your phone.'],
+      ['steps', [
+        'Tap <b>•••</b> beside the clock to open the game menu.',
+        'Tap <b>Follow-up questions: on</b>. It changes to <i>off</i>.',
+        'Tap it again any time to turn the questions back on.',
+      ]],
+      ['tip', 'Good to know', 'With the questions off, you won’t be asked Rebound?, Assisted?, Who lost it?, Whose shot? or Who went off?. Record those plays with the stat buttons instead. Who comes on? after a foul-out, the and-one’s Who fouled? and the free throws always ask. The switch is only for your phone.'],
       ['h', 'If it goes wrong'],
-      ['p', 'Tapped the wrong player? Tap <b>Undo</b> on the last play and answer again. Don’t want the questions at all? Open the game menu (•••) and turn <b>Follow-up questions</b> off. Foul-outs and free throws still ask.'],
+      ['p', 'Tapped the wrong player? Tap <b>Undo</b> on the last play and answer again.'],
     ],
   },
   {
@@ -77,6 +92,7 @@ export const SCORER_GUIDE = [
       ]],
       ['steps', [
         '<b>Swipe the last play left</b> to undo it.',
+        '<b>Swipe a question down</b> (the amber line, or a menu) to close it.',
         '<b>Tap a team’s name</b> for team plays: timeouts, shot-clock and 3-, 5- and 8-second violations, a coach or bench technical, and DNP.',
       ]],
     ],

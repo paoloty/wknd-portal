@@ -97,3 +97,5 @@ These apply to every backend change, made from either side.
     - signed out mid-session.
 
     The handoff doc has the Playwright mobile setup. (target: also at the largest text size.)
+
+**The scorer's guide.** A change to how the scorer works (`public/scorer.js`) ships with its How to score update (`views/app/help.js`, screenshots in `public/help/scorer/`) in the same commit. `node --test` checks the obvious drift (`test/scorer-guide.test.js`); the rest is reading the chapter again.

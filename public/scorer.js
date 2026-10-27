@@ -1665,7 +1665,7 @@ export async function mount(el) {
     else ui.sheet = false;
   };
   root.addEventListener('touchstart', e => {
-    const card = e.target.closest('.sc-sheet--swipe .sc-sheet__in, .sc-sheet--dnp .sc-sheet__in, .sc-sheet--subs .sc-sheet__in, .sc-q--opt, .sc-q--menu');
+    const card = e.target.closest('.sc-sheet--swipe .sc-sheet__in, .sc-sheet--dnp .sc-sheet__in, .sc-sheet--subs .sc-sheet__in, .sc-q--opt, .sc-q--line, .sc-q--menu');
     if (!card || e.touches.length !== 1) return;
     const body = card.querySelector('.sc-sheet__b');
     const fromList = body && body.contains(e.target);

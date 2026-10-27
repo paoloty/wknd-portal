@@ -41,6 +41,7 @@ Phase 1 (2026-10-25): one device scores a league game (both teams, lineups off),
 - Entry points: Me's To do ("1 game to score"), the upcoming game screen's Start scoring (`appGamePreviewPage` `scoreHref`), the admin game page's Scoring tab.
 
 ## Gotchas
+- **The guide moves with the scorer (Paolo, 2026-10-27).** Any change to how the scorer works (a button, a question, a gesture, a switch, a rule) updates How to score (`views/app/help.js`) in the same change, and the screenshots (`public/help/scorer/*.jpg`) when the look changed. `test/scorer-guide.test.js` fails when a question, a game-menu switch, the block's two-question case or a screenshot falls out of step; it can't read meaning, so also reread the chapters you touched.
 - Nothing shows anywhere until an admin turns scoring on for a game; publishing goes through `importGameResults`, which makes the game public at once (same as an import).
 - Minutes are not tracked (`min: ''` in the payload). DNP is only what the admin marks in the review.
 - `/app/score/:id` and the two scripts are in the service worker (`isScreen`, `isShellAsset`) so the screen opens offline; the page's embedded plays are merged with the phone's copy on open, then `GET /api/score/:id/events` brings in anything newer.
