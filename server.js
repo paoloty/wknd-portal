@@ -6428,6 +6428,15 @@ const WEBAUTHN_JS = (() => { try { return readFileSync(path.join(__dirname, 'nod
 app.get('/app/vendor/webauthn.js', (req, res) => {
   res.type('application/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(WEBAUTHN_JS);
 });
+// The phone ↔ tablet link test (public/linktest/): drawing QR codes and reading them on an
+// iPhone (Android has a built-in reader). Served from node_modules like the passkey script.
+const LINKTEST_VENDOR = Object.fromEntries([['qrcode.js', 'qrcode-generator/qrcode.js'], ['jsqr.js', 'jsqr/dist/jsQR.js']]
+  .map(([name, file]) => { try { return [name, readFileSync(path.join(__dirname, 'node_modules', file), 'utf8')]; } catch { return [name, '']; } }));
+app.get('/linktest/vendor/:file', (req, res) => {
+  const src = LINKTEST_VENDOR[req.params.file];
+  if (!src) return res.status(404).end();
+  res.type('application/javascript').set('Cache-Control', 'public, max-age=86400').send(src);
+});
 function passkeyRp(req) {
   const hostPort = String(req.headers['x-forwarded-host'] || req.headers.host || '').toLowerCase();
   const host = hostPort.split(':')[0];

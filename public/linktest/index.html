@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0a0e16">
+<title>Phone ↔ tablet link test · WKND</title>
+<!-- A test for the table display (2026-10-28): can the scorer's phone and the table tablet
+     talk with no internet, over the phone's hotspot? A direct WebRTC link, paired by two QR
+     scans. public/linktest/linktest.js; works offline after one visit (sw.js). -->
+<style>
+  :root { --bg: #0a0e16; --surface: #10141d; --surface-2: #161c29; --hair: rgba(255,255,255,0.08); --text: #e7eaf0; --muted: #8a93a4; --amber: #f59332; --ok: #34d399; --err: #f87171; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 -apple-system, BlinkMacSystemFont, Roboto, 'Segoe UI', system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+  body { min-height: 100dvh; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+  h1 { margin: 6px 0 4px; font-size: 24px; }
+  p { margin: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--surface); border: 1px solid rgba(255,255,255,0.06); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .btn { min-height: 48px; padding: 0 16px; border-radius: 12px; background: var(--amber); color: #111; font-weight: 600; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn--ghost { background: var(--surface-2); color: var(--text); }
+  .btn:disabled { opacity: .5; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > .btn { flex: 1; }
+  ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  .status { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot--ok { background: var(--ok); } .dot--wait { background: var(--amber); } .dot--err { background: var(--err); }
+  .qr { align-self: center; background: #fff; padding: 14px; border-radius: 14px; width: min(100%, 420px); }
+  .qr svg { display: block; width: 100%; height: auto; }
+  video { width: 100%; max-height: 46dvh; object-fit: cover; border-radius: 14px; background: #000; }
+  .log { margin: 0; max-height: 220px; overflow: auto; padding: 10px 12px; border-radius: 12px; background: #05070b; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; color: #b8c0cc; }
+  .sb { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; text-align: center; padding: 8px 0; }
+  .sb__team { font: 700 clamp(18px, 4vw, 40px)/1 system-ui, sans-serif; letter-spacing: .08em; }
+  .sb__score { font: 800 clamp(64px, 18vw, 230px)/0.95 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  .sb__q { display: inline-block; padding: 6px 16px; border-radius: 999px; background: var(--surface-2); font: 700 clamp(18px, 3vw, 32px)/1 system-ui, sans-serif; }
+  .sb__clock { font: 800 clamp(48px, 11vw, 150px)/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  .banner { padding: 12px 14px; border-radius: 12px; background: rgba(245,147,50,0.14); color: var(--amber); font-weight: 600; }
+  .pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .pad .team { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; background: var(--surface-2); }
+  .pad .team b { font-size: 15px; letter-spacing: .06em; }
+  .pad .team .row > .btn { min-height: 52px; font-size: 18px; }
+  .big { font: 800 44px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Phone ↔ tablet link test</h1>
+    <p class="muted">Checks that the scorer's phone and the table tablet keep talking with no internet, over the phone's hotspot.</p>
+  </header>
+
+  <!-- Pick a side -->
+  <section class="card" data-screen="pick">
+    <b>Before you start (both devices)</b>
+    <ol class="muted">
+      <li>Open this page once on each device <b>with internet</b>, so it works offline later.</li>
+      <li>iPhone: Settings → Personal Hotspot on. Keep mobile data <b>on</b> (no signal is fine).</li>
+      <li>Tablet: Wi-Fi → join the iPhone's hotspot. If it says "no internet", choose Stay connected.</li>
+      <li>To test with no internet: iPhone Settings → Mobile Data → turn it off for Safari only, or go where there's no signal.</li>
+    </ol>
+    <div class="row">
+      <button class="btn" type="button" data-role="phone">This is the scorer's phone</button>
+      <button class="btn btn--ghost" type="button" data-role="tablet">This is the table tablet</button>
+    </div>
+    <p class="small muted" data-offline-note>Offline copy: checking…</p>
+  </section>
+
+  <!-- Pairing -->
+  <section class="card" data-screen="pair" hidden>
+    <div class="status"><span class="dot dot--wait" data-pair-dot></span><span data-pair-status>Starting…</span></div>
+    <div class="qr" data-qr hidden></div>
+    <p class="muted" data-qr-note hidden></p>
+    <video playsinline muted autoplay data-video hidden></video>
+    <p class="muted" data-cam-note hidden></p>
+    <div class="row"><button class="btn btn--ghost" type="button" data-restart>Start over</button></div>
+  </section>
+
+  <!-- Tablet: the scoreboard -->
+  <section class="card" data-screen="board" hidden>
+    <div class="banner" data-lost hidden></div>
+    <div class="sb">
+      <div><div class="sb__team">WHITE</div><div class="sb__score" data-sa>0</div></div>
+      <div><span class="sb__q" data-q>Q1</span><div class="sb__clock" data-clock>10:00</div><div class="muted" data-run>Stopped</div></div>
+      <div><div class="sb__team">BLACK</div><div class="sb__score" data-sb>0</div></div>
+    </div>
+  </section>
+
+  <!-- Phone: the controls -->
+  <section class="card" data-screen="control" hidden>
+    <div class="status"><span class="dot dot--ok" data-link-dot></span><span data-link>Linked</span></div>
+    <div class="row" style="align-items:center; justify-content:space-between">
+      <span class="big" data-pclock>10:00</span>
+      <span class="big" data-pq>Q1</span>
+    </div>
+    <div class="row">
+      <button class="btn" type="button" data-act="clock">Start clock</button>
+      <button class="btn btn--ghost" type="button" data-act="quarter">Next quarter</button>
+    </div>
+    <div class="pad">
+      <div class="team"><b>WHITE <span data-pa>0</span></b>
+        <div class="row"><button class="btn btn--ghost" type="button" data-pts="a,1">+1</button><button class="btn btn--ghost" type="button" data-pts="a,2">+2</button><button class="btn btn--ghost" type="button" data-pts="a,3">+3</button></div>
+        <button class="btn btn--ghost" type="button" data-pts="a,-1">−1</button></div>
+      <div class="team"><b>BLACK <span data-pb>0</span></b>
+        <div class="row"><button class="btn btn--ghost" type="button" data-pts="b,1">+1</button><button class="btn btn--ghost" type="button" data-pts="b,2">+2</button><button class="btn btn--ghost" type="button" data-pts="b,3">+3</button></div>
+        <button class="btn btn--ghost" type="button" data-pts="b,-1">−1</button></div>
+    </div>
+    <p class="small muted">Try: lock the phone for 10 s, switch apps, walk away from the tablet. Watch the tablet and the log.</p>
+  </section>
+
+  <!-- Both: what happened, for the report -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between; align-items:center"><b>Log</b><button class="btn btn--ghost" type="button" data-copy style="min-height:40px; flex:0 0 auto">Copy log</button></div>
+    <pre class="log" data-log></pre>
+  </section>
+</div>
+<script src="/linktest/vendor/qrcode.js"></script>
+<script src="/linktest/vendor/jsqr.js"></script>
+<script src="/linktest/linktest.js"></script>
+</body>
+</html>
