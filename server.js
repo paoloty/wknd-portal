@@ -6086,9 +6086,9 @@ import { appScorerListPage, appScorerPage } from './views/app/score.js';
 import { appPracticePage } from './views/app/practice.js';
 import { appScorerGuidePage, appScorerChapterPage } from './views/app/help.js';
 import { adminScorersBody } from './views/admin/scorers.js';
-import { appBarkadahanPage, appBarkadahanOnlinePage } from './views/app/barkadahan.js';
+import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
-import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince } from './lib/portal-db.js';
+import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince } from './lib/portal-db.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
@@ -6596,7 +6596,7 @@ app.get('/app', requireApp, (req, res) => {
   if (barkadahanOn()) {
     const last = getBarkadahanMessages({ limit: 10 }).reverse().find(m => !m.deleted_at), on = bkOnlineIds();
     bk = { unread: countBarkadahanUnread(me.playerId), online: on.length, faces: on.filter(id => id !== me.playerId).slice(0, 4).map(bkPerson),
-      latest: last ? { name: bkPerson(last.player_id).name.split(' ')[0], body: last.body.length > 80 ? `${last.body.slice(0, 80)}…` : last.body } : null };
+      latest: last ? { name: bkPerson(last.player_id).name.split(' ')[0], body: !last.body && last.card ? (last.card.startsWith('pw:') ? 'shared a Papawis run' : 'shared a Who wins? game') : last.body.length > 80 ? `${last.body.slice(0, 80)}…` : last.body } : null };
   }
   sendTab(res, me, { title: 'WKND', tab: 'home', body: (poll ? appPollTakeover({ poll, total: getLeaguePollVotes(poll.id).length }) : '') + appHomeFeedPage({
     header: homeHeader({ phase: appPhase(), unread: me.unread, bk }) + barkadahanCard(bk),
@@ -7342,8 +7342,8 @@ function bkShape(m, rx = {}) {
   return {
     id: m.id, at: m.created_at, ...who, deleted: !!m.deleted_at,
     body: m.deleted_at ? '' : m.body, mentions: m.deleted_at ? [] : JSON.parse(m.mentions || '[]'),
-    reply: reply ? { id: reply.id, name: bkPerson(reply.player_id).name, body: reply.deleted_at ? 'Deleted message' : reply.body.slice(0, 120) } : null,
-    rx: m.deleted_at ? {} : rx,
+    reply: reply ? { id: reply.id, name: bkPerson(reply.player_id).name, body: reply.deleted_at ? 'Deleted message' : reply.body.slice(0, 120) || (reply.card ? 'Shared a card' : '') } : null,
+    rx: m.deleted_at ? {} : rx, card: m.deleted_at ? null : m.card || null,
   };
 }
 const bkMessages = opts => { const rows = getBarkadahanMessages(opts); const rx = getBarkadahanReactions(rows.map(r => r.id)); return rows.map(m => bkShape(m, rx[m.id] || {})); };
@@ -7365,13 +7365,15 @@ app.get('/app/barkadahan', requireApp, requireBarkadahan, (req, res) => {
   // player; the room posts /app/barkadahan/read once it's on screen.
   const me = appMe(req);
   const cant = req.session.impersonating ? 'Viewing as a player is read-only.' : bkCantPost(me.playerId);
-  const bundle = { me: { pid: me.playerId, mod: bkIsMod(me.playerId), cant }, messages: bkMessages({ limit: BK_PAGE }), online: bkOnlineIds().length, reactions: BK_REACTIONS,
+  const messages = bkMessages({ limit: BK_PAGE });
+  const bundle = { me: { pid: me.playerId, mod: bkIsMod(me.playerId) && !req.session.impersonating, cant }, messages, cards: bkCardsFor(messages, me), seen: bkSeenSummary(), online: bkOnlineIds().length, reactions: BK_REACTIONS,
     people: getAllPlayers().filter(p => p.status !== 'inactive').map(p => ({ pid: p.id, name: displayPlayerName(p.name || '') })) };
   sendApp(res, { title: 'Barkadahan · WKND', bare: true, body: appBarkadahanPage({ bundle }) });
 });
 app.get('/app/barkadahan/messages', requireAppData, requireBarkadahan, (req, res) => {
   const before = Number(req.query.before) || null;
-  res.json({ messages: bkMessages({ before, beforeId: String(req.query.id || ''), limit: BK_PAGE }), online: bkOnlineIds().length });
+  const messages = bkMessages({ before, beforeId: String(req.query.id || ''), limit: BK_PAGE });
+  res.json({ messages, cards: bkCardsFor(messages, appMe(req)), seen: before ? undefined : bkSeenSummary(), online: bkOnlineIds().length });
 });
 app.get('/app/barkadahan/online', requireApp, requireBarkadahan, (req, res) => {
   const me = appMe(req);
@@ -7389,7 +7391,10 @@ app.post('/app/barkadahan/messages', requireAppData, requireBarkadahan, express.
   const cant = bkCantPost(pid); if (cant) return res.status(403).json({ error: cant });
   // Cut by characters, not UTF-16 units, so a cut never splits an emoji.
   const body = Array.from(String(req.body?.body || '').replace(/\s+$/g, '').replace(/^\s+/, '')).slice(0, BK_MAX).join('');
-  if (!body) return res.status(400).json({ error: 'Type a message first.' });
+  // A card (admins): only something open right now.
+  const card = BK_CARD.test(String(req.body?.card || '')) ? String(req.body.card) : null;
+  if (req.body?.card && (!card || !bkIsMod(pid) || !bkShareItems(appMe(req)).some(i => i.key === card))) return res.status(400).json({ error: 'That can’t be shared right now.' });
+  if (!body && !card) return res.status(400).json({ error: 'Type a message first.' });
   // The phone's id for this send: a retry after a lost answer gets the stored message back.
   const cid = /^[\w-]{4,40}$/.test(String(req.body?.cid || '')) ? String(req.body.cid) : null;
   const dup = getBarkadahanByClientId(pid, cid);
@@ -7402,14 +7407,15 @@ app.post('/app/barkadahan/messages', requireAppData, requireBarkadahan, express.
   const mentions = [...new Set((Array.isArray(req.body?.mentions) ? req.body.mentions : []).map(String))]
     .filter(id => id !== pid && getPlayerById(id) && body.includes(`@${displayPlayerName(getPlayerById(id).name || '')}`)).slice(0, 10);
   const id = `bk_${now.toString(36)}_${randomBytes(4).toString('hex')}`;
-  const m = addBarkadahanMessage({ id, playerId: pid, body, replyTo: reply && !reply.deleted_at ? reply.id : null, mentions, clientId: cid });
+  const m = addBarkadahanMessage({ id, playerId: pid, body, replyTo: reply && !reply.deleted_at ? reply.id : null, mentions, clientId: cid, card });
   markBarkadahanRead(pid, m.created_at);
   const shaped = { ...bkShape(m), cid }; // cid: the sender's phone swaps its "Sending…" copy for this
   bkSend({ type: 'msg', m: shaped });
+  bkSeenChanged();
   const who = bkPerson(pid), snippet = body.length > 90 ? `${body.slice(0, 90)}…` : body;
   for (const to of mentions) createNotification({ playerId: to, type: 'barkadahan_mention', title: `${who.name} mentioned you in the Barkadahan`, body: snippet, link: '/app/barkadahan', actorId: pid });
   if (reply && reply.player_id !== pid && !mentions.includes(reply.player_id)) createNotification({ playerId: reply.player_id, type: 'barkadahan_reply', title: `${who.name} replied to you in the Barkadahan`, body: snippet, link: '/app/barkadahan', actorId: pid });
-  res.json({ ok: true, m: shaped });
+  res.json({ ok: true, m: shaped, cards: card ? bkCards([card], appMe(req)) : {} });
 });
 app.post('/app/barkadahan/messages/:id/react', requireAppData, requireBarkadahan, express.json(), (req, res) => {
   const pid = req.session.playerPlayerId, emoji = String(req.body?.emoji || '');
@@ -7448,7 +7454,122 @@ app.post('/app/barkadahan/mute/:playerId', requireAppData, requireBarkadahan, ex
   setBarkadahanMute(target.id, days ? Date.now() + days * 864e5 : null);
   res.json({ ok: true, message: days ? `${displayPlayerName(target.name || '')} is muted for ${days === 1 ? 'a day' : 'a week'}.` : 'Mute lifted.' });
 });
-app.post('/app/barkadahan/read', requireAppData, requireBarkadahan, (req, res) => { if (!req.session.impersonating) markBarkadahanRead(req.session.playerPlayerId); res.json({ ok: true, unread: 0 }); });
+app.post('/app/barkadahan/read', requireAppData, requireBarkadahan, (req, res) => {
+  if (!req.session.impersonating) { markBarkadahanRead(req.session.playerPlayerId); bkSeenChanged(); }
+  res.json({ ok: true, unread: 0 });
+});
+// Who's seen the newest message: everyone who read the room after it came in (not its sender,
+// not players hidden from the online list). Sent out live, at most every 1.5 s.
+function bkSeenSummary() {
+  const m = getBarkadahanMessages({ limit: 5 }).reverse().find(x => !x.deleted_at);
+  if (!m) return null;
+  const rows = getBarkadahanSeenSince(m.created_at).filter(r => r.player_id !== m.player_id);
+  // ids: so each phone can leave itself out of the count.
+  return { id: m.id, ids: rows.map(r => r.player_id), faces: rows.slice(0, 6).map(r => bkPerson(r.player_id)) };
+}
+let bkSeenT = null;
+const bkSeenChanged = () => { if (bkSeenT) return; bkSeenT = setTimeout(() => { bkSeenT = null; bkSend({ type: 'seen', seen: bkSeenSummary() }); }, 1500); };
+// Who reacted and who's seen it, for one message (hold -> Reactions / Seen by).
+app.get('/app/barkadahan/messages/:id/who', requireAppData, requireBarkadahan, (req, res) => {
+  const m = getBarkadahanMessage(req.params.id);
+  if (!m || m.deleted_at) return res.status(404).json({ error: 'That message is gone.' });
+  res.json({
+    rx: getBarkadahanReactionRows(m.id).map(r => ({ ...bkPerson(r.player_id), emoji: r.emoji })),
+    seen: getBarkadahanSeenSince(m.created_at).filter(r => r.player_id !== m.player_id).map(r => ({ ...bkPerson(r.player_id), at: r.read_at })),
+  });
+});
+
+// ── Cards (2026-10-28, mockup claude.ai/artifact/4XcqkzEiEoLdspw4M1NdmP): an admin shares a
+// Papawis run or a Who wins? game into the room; players join or pick right on it. A message
+// stores only the key ('pw:<run id>' / 'pick:<game id>'); the card is drawn fresh for whoever is
+// looking (bkCards), and its buttons post to the site's own /papawis/:id/join | cancel and
+// /games/:id/pick, so every rule stays in one place. When a run's list or a game's picks change,
+// the rooms are told (bkCardChanged) and fetch that card again.
+const BK_CARD = /^(pw|pick):[\w.-]{1,80}$/;
+function bkPickCtx() {
+  const all = getAllGames(), pgs = all.map(g => toPickGame(g, gameYmd));
+  return { all: pgs, played: pgs.filter(g => g.played), byId: Object.fromEntries(pgs.map(g => [g.id, g])), games: Object.fromEntries(all.map(g => [g.id, g])),
+    settings: getAllGamePickSettings(), colorOf: appColorOf(getAllTeams()), clock: { todayYmd: manilaTodayStr(), nowHm: manilaHmNow(), closeTime: picksCloseTime() } };
+}
+function bkPwCard(id, runs) {
+  const r = runs.find(x => String(x.id) === id);
+  if (r) {
+    const time = r.startClock || r.time;
+    return { kind: 'pw', id: r.id, day: [r.today ? 'Today' : r.day, time].filter(Boolean).join(' · '), title: r.place,
+      when: [r.today ? 'today' : r.day, time].filter(Boolean).join(' · '), filled: r.filled, max: r.max, open: r.open, state: r.state, myTeam: r.myTeam, href: `/app/papawis#run-${encodeURIComponent(r.id)}` };
+  }
+  const g = getPapawisGame(id);
+  if (!g) return { gone: true };
+  const done = g.status === 'completed', off = g.status === 'cancelled';
+  return { kind: 'pw', id, day: [pwDay(g.date), g.start_time ? formatTimeRange(g.start_time, null) : ''].filter(Boolean).join(' · '), title: g.location || 'Papawis run',
+    closed: off ? 'Called off' : done ? `Played · ${getPapawisConfirmedCount(g.id)} players` : 'Sign-ups closed', href: done || off ? `/app/papawis/${encodeURIComponent(id)}` : '/app/papawis' };
+}
+function bkPickCard(id, me, ctx) {
+  if (!picksEnabled()) return { gone: true, goneText: 'Who wins? is off right now' };
+  const game = ctx.games[id], pg = ctx.byId[id];
+  if (!game || !pg || game.under_review) return { gone: true };
+  const setting = ctx.settings[id];
+  const played = !!pg.played, closed = played || picksClosedFor(pg, setting, ctx.clock);
+  const odds = !played && pickOddsEnabled() && !setting?.hide_odds ? computeOdds(pg, ctx.played) : null;
+  const myPick = getPlayerGamePicks([id], me.playerId)[id] || null;
+  const g = { id, a: { name: game.team_a_name, color: ctx.colorOf(game.team_a_name) }, b: { name: game.team_b_name, color: ctx.colorOf(game.team_b_name) },
+    counts: getGamePickCounts([id])[id] || { a: 0, b: 0 }, myPick, closed, odds: odds ? { pctA: odds.pctA, pctB: odds.pctB } : null };
+  const closeAt = pickCloseAt(pg, setting);
+  const tip = gameTipLabel(game);
+  let result = null, score = '';
+  if (played) {
+    const sa = Number(game.team_a_score), sb = Number(game.team_b_score), win = sa > sb ? 'a' : sb > sa ? 'b' : null;
+    score = `${game.team_a_name} ${sa} – ${sb} ${game.team_b_name}`;
+    result = { got: myPick && win ? myPick === win : null, text: !myPick ? 'You didn’t pick this one' : !win ? 'A tie' : myPick === win ? 'You got it ✓' : 'Missed this one' };
+  }
+  return { kind: 'pick', id, game: g, label: [manilaDayLabel(pg.ymd), !played && tip].filter(Boolean).join(' · '),
+    closed: played ? 'Final' : closed ? 'Picks closed' : '', closeAt: !closed && closeAt ? Date.parse(closeAt) : 0, score, result,
+    marginGuess: !played && pg.type === 'finals' && finalsGame1Id(ctx.all, pg.season) === id,
+    href: played ? `/app/games/${encodeURIComponent(id)}` : `/app/picks#g-${encodeURIComponent(id)}` };
+}
+// { key: html } for this player.
+function bkCards(keys, me) {
+  let runs = null, ctx = null;
+  const out = {};
+  for (const key of [...new Set(keys)].filter(k => BK_CARD.test(k)).slice(0, 60)) {
+    const kind = key.slice(0, key.indexOf(':')), id = key.slice(key.indexOf(':') + 1);
+    try {
+      out[key] = bkCardHtml(kind === 'pw' ? bkPwCard(id, runs ??= appPapawisRuns(me)) : bkPickCard(id, me, ctx ??= bkPickCtx()));
+    } catch (e) { console.error('[bk card]', key, e.message); out[key] = bkCardHtml({ gone: true }); }
+  }
+  return out;
+}
+const bkCardsFor = (messages, me) => bkCards(messages.map(m => m.card).filter(Boolean), me);
+// What an admin can share right now: upcoming Papawis runs and games still taking picks.
+function bkShareItems(me) {
+  const items = appPapawisRuns(me).map(r => ({ key: `pw:${r.id}`, kind: 'pw', title: [r.place, r.startClock || r.time].filter(Boolean).join(' · '),
+    sub: [r.today ? 'Today' : r.day, r.scheduled ? 'sign-ups not open yet' : `${r.filled}/${r.max}`, !r.scheduled && (r.open ? `${r.open} left` : 'Full')].filter(Boolean).join(' · ') }));
+  if (picksEnabled()) {
+    const ctx = bkPickCtx(), upcoming = getUpcomingGames(Object.values(ctx.games)), counts = getGamePickCounts(upcoming.map(g => g.id));
+    for (const g of upcoming) {
+      const pg = ctx.byId[g.id];
+      if (!pg || picksClosedFor(pg, ctx.settings[g.id], ctx.clock)) continue;
+      const at = pickCloseAt(pg, ctx.settings[g.id]), n = (counts[g.id]?.a || 0) + (counts[g.id]?.b || 0);
+      items.push({ key: `pick:${g.id}`, kind: 'pick', title: `${g.team_a_name} vs ${g.team_b_name}`, sub: [manilaDayLabel(pg.ymd), at && `closes ${closeLabel(Date.parse(at))}`, `${n} pick${n === 1 ? '' : 's'}`].filter(Boolean).join(' · ') });
+    }
+  }
+  return items;
+}
+app.get('/app/barkadahan/cards', requireAppData, requireBarkadahan, (req, res) => {
+  res.json({ cards: bkCards(String(req.query.keys || '').split(',').filter(Boolean), appMe(req)) });
+});
+app.get('/app/barkadahan/share', requireAppData, requireBarkadahan, (req, res) => {
+  if (!bkIsMod(req.session.playerPlayerId) || req.session.impersonating) return res.status(403).json({ error: 'Only admins can share cards.' });
+  res.json({ html: bkShareHtml(bkShareItems(appMe(req))) });
+});
+// A run's list or a game's picks changed: rooms showing its card fetch it again.
+const bkCardT = new Map();
+function bkCardChanged(key) {
+  try {
+    if (!barkadahanOn() || bkCardT.has(key) || !barkadahanCardShown(key)) return;
+    bkCardT.set(key, setTimeout(() => { bkCardT.delete(key); bkSend({ type: 'card', key }); }, 800));
+  } catch (e) { console.error('[bk card changed]', e.message); }
+}
 // Settings → Privacy → Show me as online.
 app.post('/app/online-visibility', requireAppData, express.json(), (req, res) => {
   setPlayerOnlineHidden(req.session.playerPlayerId, !req.body?.on);
@@ -16194,6 +16315,7 @@ app.post('/games/:id/pick', express.json(), (req, res) => {
   if (upcomingPickState(game, buildPicksContext([game])).closed) return res.status(400).json({ error: 'Picks are closed for this game.' });
   const side = req.body?.side === 'a' || req.body?.side === 'b' ? req.body.side : null;
   setGamePick(game.id, playerId, side);
+  bkCardChanged(`pick:${game.id}`);
   // Faces come back after a cancel too: the list and the row, drawn by the page's own helper.
   const faces = pickFacesFlat(game, playerId);
   res.json({ ok: true, side, counts: getGamePickCounts([game.id])[game.id], faces, facesHtml: pickFacesRow({ faces, closed: false }, true) });
@@ -23487,6 +23609,7 @@ app.post('/papawis/:id/join', (req, res) => {
   if (result.error === 'not_open')       return res.status(400).json({ error: 'Sign-ups for this game are not open yet.' });
   if (result.error === 'passed')         return res.status(400).json({ error: 'This game has already happened — sign-ups are closed.' });
   if (result.error === 'already_listed') return res.status(400).json({ error: "You're already listed for this game." });
+  bkCardChanged(`pw:${req.params.id}`);
   res.json({ ok: true, status: result.status });
 });
 
@@ -23550,6 +23673,7 @@ app.post('/papawis/:id/cancel', (req, res) => {
   releaseVoucherForSignup(signup.id); // a free run put on this spot goes back to them
   notifyPapawisPromotion(game, result.promoted);
   queuePapawisSlotAlert(game.id, { wasFull });
+  bkCardChanged(`pw:${game.id}`);
   res.json({ ok: true });
 });
 

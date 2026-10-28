@@ -2387,5 +2387,79 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 .bk.is-pinned.is-kb { padding-bottom: 0; }
 
+/* Cards an admin shares (views/app/barkadahan.js bkCardHtml, 2026-10-28): a compact .card
+   inside the message, with the pick bars of Who wins? (.pick__opt) and one amber action. */
+.bk-m:has(.bk-cardw) { width: 86%; }
+.bk-m:has(.bk-cardw) .bk-m__b { flex: 1; }
+.bk-cardw { width: 100%; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.bk-cardw.is-busy { opacity: .7; }
+.bk-cardw.is-held { opacity: .6; transform: scale(.98); transition: opacity .12s ease, transform .12s ease; }
+.bkc { border-radius: 14px; border: 1px solid var(--border); background: var(--card-bg); box-shadow: var(--card-hi), var(--shadow); overflow: hidden; }
+.bkc.is-loading { height: 104px; background: var(--surface-2); }
+.bkc.is-gone { padding: 12px 14px; font-size: 12px; color: var(--muted); }
+.bkc__top { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.bkc__ic { flex: none; width: 44px; height: 44px; border-radius: var(--r-in); background: var(--surface-2); color: var(--muted); display: flex; align-items: center; justify-content: center; }
+.bkc__ic svg { width: 22px; height: 22px; }
+.bkc__t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.bkc__t b { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bkc__t small { font-size: 12px; color: var(--muted); }
+.bkc__k { font: 600 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bkc__ww { color: var(--amber-text); }
+.bkc__seats { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.bkc__seats i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.bkc__seats i.is-open { background: none; box-shadow: inset 0 0 0 1.5px var(--subtle); }
+.bkc__seats em { font-style: normal; font-size: 13px; font-weight: 700; color: var(--amber-text); margin-left: 5px; line-height: 1; }
+.bkc__act { display: flex; align-items: center; gap: 10px; padding: 0 12px 12px; }
+.bkc__btn { flex: 1; min-height: 40px; }
+.bkc__more { flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; margin-left: auto; font-size: 13px; font-weight: 600; color: var(--amber-text); white-space: nowrap; line-height: 1; }
+.bkc__more .chev { width: 7px; height: 11px; }
+.bkc__done { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: var(--r-in); background: color-mix(in srgb, var(--win) 14%, transparent); color: var(--win); font-size: 14px; font-weight: 600; line-height: 1; }
+.bkc__done svg { width: 16px; height: 16px; }
+.bkc__note { font-size: 12px; color: var(--muted); }
+.bkc__link { position: relative; font-size: 12px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; min-height: 40px; padding: 0 2px; }
+.bkc__top--pick { justify-content: space-between; padding-bottom: 8px; }
+.bkc__state { flex: none; font-size: 12px; font-weight: 600; color: var(--muted); }
+.bkc__state.is-open { color: var(--amber-text); }
+.bkc__score { padding: 0 12px 8px; font-size: 18px; font-weight: 700; }
+.bkc__opts { padding: 0 12px; gap: 6px; }
+.bkc__opts .pick__opt { min-height: 44px; font-size: 14px; }
+.bkc__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 12px 2px; min-height: 40px; font-size: 12px; color: var(--muted); }
+.bkc__foot .num { font-size: 13px; color: var(--text); }
+.bkc__win { color: var(--win); font-weight: 600; }
+/* Admins: + beside the emoji button opens the share list; the card waits above the box. */
+.bk__plus { color: var(--amber-text); }
+.bk__plus svg { width: 22px; height: 22px; }
+/* Seen: under the newest message. */
+.bk-seen { align-self: flex-end; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; margin-top: -2px; padding: 0 4px; font-size: 12px; color: var(--muted); line-height: 1; }
+.bk-seen__f { display: flex; }
+.bk-seen__f .avatar-wrap + .avatar-wrap { margin-left: -5px; }
+.bk-seen__f .avatar { width: 18px; height: 18px; font-size: 7px; box-shadow: 0 0 0 1.5px var(--bg); }
+.bk-seen .num { font-size: 12px; font-weight: 700; }
+/* Who reacted / Seen by / Share: a list sheet in the hold menu's place. */
+.bk-sheet { max-height: 72dvh; border-radius: var(--r-card); background: var(--card-solid); border: 1px solid var(--border); padding: 14px 0 6px; gap: 6px; overflow: hidden; }
+.bk-sheet__h { display: flex; align-items: baseline; justify-content: space-between; padding: 0 16px 4px; }
+.bk-sheet__h b { font-size: 15px; font-weight: 600; }
+.bk-sheet__h small { font-size: 12px; color: var(--muted); }
+.bk-sheet__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.bk-sheet__tabs { display: flex; gap: 6px; padding: 0 16px 8px; overflow-x: auto; }
+.bk-sheet__tabs button { flex: none; display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface-2); font-size: 14px; line-height: 1; }
+.bk-sheet__tabs button b { font-size: 13px; }
+.bk-sheet__tabs button.is-on { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber-text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 45%, transparent); }
+.bk-sheet__l { font: 600 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 10px 16px 6px; }
+.bk-sheet__list { display: flex; flex-direction: column; }
+.bk-sheet__empty, .bk-sheet__foot { margin: 0; padding: 10px 16px 12px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.bk-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 16px; border-top: 1px solid var(--hair); text-align: left; color: var(--text); }
+.bk-sheet__list .bk-row:first-child { border-top: 0; }
+.bk-row .avatar { width: 36px; height: 36px; font-size: 12px; }
+.bk-row .bkc__ic { width: 40px; height: 40px; }
+.bk-row__t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.bk-row__t small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-row__v { flex: none; font-size: 12px; color: var(--muted); }
+.bk-row__v.is-emo { font-size: 20px; line-height: 1; }
+.bk-row > .chev { flex: none; width: 7px; height: 12px; color: var(--muted); }
+.bk-hold__acts button:has(.bk-hold__r) { display: flex; align-items: center; }
+.bk-hold__r { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.bk-hold__r .chev { width: 7px; height: 12px; }
+
 /* A stat button swipe recognised (public/scorer.js flick): it lights until the finger lifts. */
 .sc-st.is-flick { box-shadow: inset 0 0 0 2px var(--amber); transform: translateY(-3px); transition: transform .12s ease-out; }

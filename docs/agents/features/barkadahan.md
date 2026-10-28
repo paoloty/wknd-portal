@@ -17,9 +17,19 @@ Built 2026-10-27. One chat room for every signed-in player, with who's online. *
 - Hold: the menu opens when the finger lifts (the bubble dims once the hold counts); opened under the finger, the lift pressed Report/Delete or closed it. Delete asks first. Reactions are one at a time per message.
 - Hidden players never send "is typing". 500 characters are counted as characters, so a cut never splits an emoji.
 
+## Cards, who reacted, seen (2026-10-28)
+Mockup: claude.ai/artifact/4XcqkzEiEoLdspw4M1NdmP.
+- **Cards:** admins (`bkIsMod`) get a + beside the emoji button: a list of what's open right now (`bkShareItems`: upcoming Papawis runs, games still taking picks). The chosen card waits above the box; a line is optional. The message stores only the key in `barkadahan_messages.card` (`pw:<run id>` / `pick:<game id>`), and the server only accepts one that's open at the time.
+- A card is drawn fresh for the player looking (`bkCards` → `views/app/barkadahan.js bkCardHtml`), from the same data as the Papawis tab (`appPapawisRuns`) and Who wins? (pick bars are `pickOption` from `views/app/picks.js`). It comes in the bundle (`cards`), with each message page, and from `/app/barkadahan/cards?keys=`.
+- Buttons post to the site's own `/papawis/:id/join | cancel` and `/games/:id/pick`, so every rule (bans, unpaid runs, deposits, the cancel window, cut-offs) stays there. Cancel, and a claim inside the cancel window, ask first. Finals Game 1 (margin guess) sends you to Picks instead.
+- Live: join/cancel/pick call `bkCardChanged(key)`, which tells the rooms (`{type:'card'}`, only when that card is in the last 30 days); rooms fetch it again. Every 2 minutes the room refreshes its cards anyway (admin changes to a run aren't hooked), and "Closes in …" ticks every 30 s and fetches the card at the cut-off.
+- After the result: the score, the split and whether you got it. A cancelled run says "Called off", a finished one "Played"; a deleted run or a game under review is "No longer available".
+- **Who reacted:** hold a message → Reactions (when there are some), or hold a reaction pill (a tap still toggles yours). `/app/barkadahan/messages/:id/who` → `rx` (newest first) and `seen`.
+- **Seen:** "seen" = opened the room after the message came in (`barkadahan_reads.read_at` ≥ its time), never the sender, never players hidden from the online list. The newest message shows "Seen by" + up to 5 faces (`bundle.seen`, sent live as `{type:'seen'}` at most every 1.5 s after a read or a send); tap it, or hold any message → Seen by, for the list with times.
+
 ## Rules
 - Online = has the app open now; hidden players (`online_hidden`) never show. "Earlier today" = `last_seen_at` since Manila midnight.
 - No push per message. An @mention (`barkadahan_mention`) or a reply to you (`barkadahan_reply`) goes through `createNotification` (bell + push; `pushKindOf` → comments).
 - Banned players read but can't post or react; muted players read and react, not post. Viewing as a player is read-only.
-- Flood guard: one message per 0.6 s, 20 a minute. 500 characters. Plain text and emoji, no links or photos.
+- Flood guard: one message per 0.6 s, 20 a minute. 500 characters. Plain text and emoji, no links or photos; admins can add a card.
 - Super admins read and delete in admin; they never post there (Paolo).
