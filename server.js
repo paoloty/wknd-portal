@@ -3172,6 +3172,16 @@ app.get('/scorer.js', (req, res) => {
   res.type('application/javascript').send(scorerSrc);
 });
 
+// The phone ↔ tablet link test (public/linktest/). The page lives at /linktest, no slash:
+// the site drops trailing slashes, and the static folder would add one back (a loop). Its
+// offline copy (sw.js) covers /linktest, one level up from the script, hence the header.
+app.get('/linktest', (req, res) => {
+  res.set('Cache-Control', 'no-cache').sendFile(path.join(__dirname, 'public/linktest/index.html'));
+});
+app.get('/linktest/sw.js', (req, res) => {
+  res.set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/linktest' }).type('application/javascript').sendFile(path.join(__dirname, 'public/linktest/sw.js'));
+});
+
 // Everything else in public/: a week in the browser cache. Font files never change under
 // the same name (they're Google's content-hashed filenames), so those get a year.
 app.use(express.static(path.join(__dirname, 'public'), {

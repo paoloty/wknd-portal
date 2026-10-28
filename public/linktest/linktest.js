@@ -1,4 +1,4 @@
-// Phone ↔ tablet link test (public/linktest/index.html, 2026-10-28). Proves the table display's
+// Phone ↔ tablet link test (/linktest = public/linktest/index.html, 2026-10-28). Proves the table display's
 // offline plan before it's built: a direct WebRTC data channel between the scorer's phone and
 // the table tablet over the phone's hotspot, with no internet and no server in between.
 //
@@ -26,9 +26,9 @@
   // ── Offline copy ──
   var offNote = $('[data-offline-note]');
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/linktest/sw.js', { scope: '/linktest/' })
+    navigator.serviceWorker.register('/linktest/sw.js', { scope: '/linktest' })
       .then(function () { return navigator.serviceWorker.ready; })
-      .then(function () { return caches.open('wknd-linktest').then(function (c) { return c.match('/linktest/'); }); })
+      .then(function () { return caches.open('wknd-linktest').then(function (c) { return c.match('/linktest'); }); })
       .then(function (hit) { offNote.textContent = hit ? 'Offline copy: saved on this device ✓' : 'Offline copy: saving… open this page once more with internet.'; })
       .catch(function (e) { offNote.textContent = 'Offline copy: not available (' + e.message + ')'; });
   } else offNote.textContent = 'Offline copy: this browser can\'t keep one.';
