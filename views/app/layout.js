@@ -70,11 +70,19 @@ export const soonTag = '<span class="tag-muted">Soon</span>';
 // anything long (notifications now, the feed later) so the screen opens at once.
 // cards: the rows are cards (the feed) rather than cells in one grouped list.
 // plain: the rows bring their own .group boxes (the notifications list, grouped by day).
-export function lazyList({ src, empty = 'Nothing yet.', rows = 6, cards = false, plain = false }) {
+// first: the first page already drawn by the server ({ html, next }): the list starts from it
+// (data-lazy-next) and only fetches what comes after.
+export function lazyList({ src, empty = 'Nothing yet.', rows = 6, cards = false, plain = false, first = null }) {
   const skel = cards
     ? Array.from({ length: 2 }, () => '<div class="fc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span><span class="skel skel--line skel--short"></span></div>').join('')
     : Array.from({ length: rows }, () => '<div class="cell skel-row"><span class="skel skel--dot"></span><span class="cell__t"><span class="skel skel--line"></span><span class="skel skel--line skel--short"></span></span></div>').join('');
   const box = cards ? 'feed' : 'group';
+  if (first) {
+    return `<div class="lazy" data-lazy-src="${esc(src)}" data-lazy-empty="${esc(empty)}" data-lazy-next="${esc(first.next || '')}" data-lazy-inline>
+    <div class="${plain ? '' : `${box} `}lazy__items"${first.html ? '' : ' hidden'}>${first.html}</div>
+    <div class="lazy__end${first.html ? '' : ' empty'}" aria-live="polite">${first.html ? '' : esc(empty)}</div>
+  </div>`;
+  }
   return `<div class="lazy" data-lazy-src="${esc(src)}" data-lazy-empty="${esc(empty)}">
     <div class="${plain ? '' : `${box} `}lazy__items" hidden></div>
     <div class="${box} lazy__skel" aria-hidden="true">${skel}</div>

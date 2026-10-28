@@ -44,7 +44,8 @@
   }
   document.addEventListener('error', function (e) { var t = e.target; if (t && t.tagName === 'IMG' && t.closest && t.closest('.media, .gx__hero, .nx__pic')) imgFailed(t); }, true);
   // Any that failed before this script ran (a game screen opened directly).
-  $$('.media img, .gx__hero img, .nx__pic img').forEach(function (img) { if (img.complete && !img.naturalWidth) imgFailed(img); });
+  // (Not one still waiting to be woken: no src yet reads as "complete" with no width.)
+  $$('.media img, .gx__hero img, .nx__pic img').forEach(function (img) { if (img.getAttribute('src') && img.complete && !img.naturalWidth) imgFailed(img); });
 
   // ════ Blocks ════
   // A part of a screen that loads after it (Home's rail, /app/rail → JSON { html }): the copy
@@ -1587,6 +1588,7 @@
   if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) {
     if (e.data && e.data.type === 'open' && e.data.url) { if (navOn) go(urlOf(e.data.url), true); else location.href = e.data.url; }
     if (e.data && e.data.type === 'push') pushBanner(e.data);
+    if (e.data && e.data.type === 'fresh') launchFresh(e.data);
   });
   // Push banner: a notification that arrives while the app is open on screen (the service
   // worker sends it here instead of the phone's own banner). The sender's face, else the app
@@ -2102,13 +2104,31 @@
   // The first page loads as soon as the screen is up; the next one when the bottom of the
   // list comes within ~600px. Each answer is { html, next }.
   var lazyObservers = [];
+  // The feed's first two games are fetched ahead (most launches end in a tap on the latest
+  // result), so that tap opens at once. Not on data saver.
+  function feedAhead(box, items) {
+    if (!/^\/app\/feed\/items/.test(box.getAttribute('data-lazy-src')) || typeof prefetch !== 'function'
+      || (navigator.connection && navigator.connection.saveData)) return;
+    var ahead = [];
+    // The card's own link, not its "Share my stats" (/share), which used to take a slot.
+    $$('a.gx__link[href^="/app/games/"]', items).forEach(function (a) { var u = urlOf(a.href); if (ahead.length < 2 && ahead.indexOf(u) === -1) ahead.push(u); });
+    setTimeout(function () { ahead.forEach(prefetch); }, 1500);
+  }
   function initLazyLists() {
     lazyObservers.forEach(function (o) { o.disconnect(); }); lazyObservers = [];
     $$('[data-lazy-src]').forEach(function (box) {
-      var items = $('.lazy__items', box), skel = $('.lazy__skel', box), end = $('.lazy__end', box);
+      var items = $('.lazy__items', box), skel = $('.lazy__skel', box) || document.createElement('div'), end = $('.lazy__end', box);
       // A screen put back from memory (see "Kept screens") carries on where it was: its rows
-      // are there, data-lazy-next says what's left.
+      // are there, data-lazy-next says what's left. So does a first page the server drew in the
+      // screen (data-lazy-inline: Home's feed); the first time it's up it counts as the first
+      // page landing.
       var resumed = box.hasAttribute('data-lazy-next');
+      if (box.hasAttribute('data-lazy-inline') && !box._inline) {
+        box._inline = true;
+        wakeImgs(items);
+        document.dispatchEvent(new Event('wknd:list-first'));
+        feedAhead(box, items);
+      }
       var next = resumed ? box.getAttribute('data-lazy-next') : box.getAttribute('data-lazy-src'), busy = false;
       // The first page: the copy on the phone (public/app-sw.js keeps one) shows at once, then
       // the network's answer replaces it, or is skipped when it's the same.
@@ -2134,15 +2154,7 @@
             if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); initPapawis(); wakeImgs(items); } }
             else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); initPapawis(); wakeImgs(items); }
             skel.hidden = true;
-            // The feed's first two games are fetched ahead (most launches end in a tap on the
-            // latest result), so that tap opens at once. Not on data saver.
-            if (wasFirst && /^\/app\/feed\/items/.test(box.getAttribute('data-lazy-src')) && typeof prefetch === 'function'
-              && !(navigator.connection && navigator.connection.saveData)) {
-              var ahead = [];
-              // The card's own link, not its "Share my stats" (/share), which used to take a slot.
-              $$('a.gx__link[href^="/app/games/"]', items).forEach(function (a) { var u = urlOf(a.href); if (ahead.length < 2 && ahead.indexOf(u) === -1) ahead.push(u); });
-              setTimeout(function () { ahead.forEach(prefetch); }, 1500);
-            }
+            if (wasFirst) feedAhead(box, items);
             if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
             end.textContent = '';
             if (next && (!io || nearBottom())) { if (io) load(); else showMore(); }
@@ -2273,14 +2285,81 @@
   // A fresh copy of the screen on show: swap it in only if it changed. Only the tab bar
   // changed (badges): swap just that.
   function swapIfChanged(page, force) {
-    var now = !force && shown && partsOf(new DOMParser().parseFromString(page.html || '', 'text/html'));
+    var doc = new DOMParser().parseFromString(page.html || '', 'text/html');
+    var now = !force && shown && partsOf(doc);
+    if (now && now.ver === shown.ver && now.main !== shown.main && patchHome(doc)) {
+      var nb = $('nav.tabbar');
+      if (now.nav !== shown.nav && nb) nb.innerHTML = now.nav;
+      shown = now; loadedAt = Date.now();
+      return;
+    }
     if (!now || now.main !== shown.main || now.ver !== shown.ver) return render(page, false, true);
     var cur = $('nav.tabbar');
     if (now.nav !== shown.nav && cur) cur.innerHTML = now.nav;
     shown = now;
     loadedAt = Date.now();
   }
+  // Home, fresh from the server: only the parts that changed are put in, so the feed doesn't
+  // flash and its pictures don't load again while the player is reading (the fresh copy
+  // differs almost every launch: Today/Yesterday, fire and comment counts). Each part of the
+  // screen is compared as the server sent it, before and now; in the feed, card by card
+  // (data-fk). Anything else (a new card at the top, a part with its own live bits) and the
+  // whole screen goes in as before. true when patched.
+  function patchHome(doc) {
+    var live = $('main.app'), fresh = doc.querySelector('main.app');
+    if (!live || !fresh || !live.querySelector('[data-lazy-inline]') || !fresh.querySelector('[data-lazy-inline]')) return false;
+    var before = new DOMParser().parseFromString('<main>' + shown.main + '</main>', 'text/html').querySelector('main');
+    var L = live.children, O = before.children, N = fresh.children;
+    if (L.length !== O.length || O.length !== N.length) return false;
+    var swaps = [], lists = [];
+    for (var i = 0; i < N.length; i++) {
+      if (O[i].tagName !== N[i].tagName || L[i].tagName !== N[i].tagName) return false;
+      if (O[i].outerHTML === N[i].outerHTML) continue;
+      if (N[i].hasAttribute('data-lazy-inline')) { lists.push([L[i], O[i], N[i]]); continue; }
+      // Parts that set themselves up (blocks, forms, countdowns, sheets): the whole screen.
+      if (N[i].matches('[data-block-src], form, [data-push-ask], .poll-take') || N[i].querySelector('[data-block-src], form, input, [data-countdown], [data-countdown-to], [data-close-at], [data-pw-cd]')) return false;
+      swaps.push([L[i], N[i]]);
+    }
+    // The feed: the same cards in the same order, each replaced only if it changed.
+    var keys = function (box) { return Array.prototype.map.call($('.lazy__items', box).children, function (c) { return c.getAttribute('data-fk') || 'day:' + c.textContent.trim(); }); };
+    for (var k = 0; k < lists.length; k++) {
+      var lb = lists[k][0], ob = lists[k][1], nb = lists[k][2];
+      var ok = keys(ob), nk = keys(nb), lk = keys(lb).slice(0, ok.length);
+      if (ok.join('|') !== nk.join('|') || lk.join('|') !== ok.join('|')) return false;
+      var lc = $('.lazy__items', lb).children, oc = $('.lazy__items', ob).children, nc = $('.lazy__items', nb).children;
+      for (var j = 0; j < nc.length; j++) if (oc[j].outerHTML !== nc[j].outerHTML) swaps.push([lc[j], nc[j]]);
+    }
+    swaps.forEach(function (s) {
+      var el = document.importNode(s[1], true);
+      s[0].replaceWith(el);
+      wakeImgs(el);
+    });
+    if (swaps.length) { initVideos(); initPapawis(); if (window.wkndBkSync) window.wkndBkSync(); }
+    return true;
+  }
   var prefetch = function (url) { if (!pages[url] && !inflight[url] && navigator.onLine) fetchPage(url).catch(function () {}); };
+  // Links in view, fetched ahead once the screen has settled and nothing else is loading: up to
+  // 4 (Me → Settings was 650 ms on a tap; a touch is too short a head start). Not games (the
+  // feed fetches its top two), share screens, money, admin or the chat; not on data saver or
+  // a 2G-slow signal (Fable speed audit, 2026-10-28).
+  var AHEAD_SKIP = /^\/app\/(games\/|settle|logout|admin|barkadahan|setup|login|passkeys|score)|\/share(\?|$)/;
+  function warmLinks(again) {
+    var c = navigator.connection;
+    if (!navOn || !navigator.onLine || (c && (c.saveData || /2g/.test(c.effectiveType || '')))) return;
+    var run = function () {
+      if (Object.keys(inflight).length) { if (!again) setTimeout(function () { warmLinks(true); }, 2500); return; }
+      var h = window.innerHeight, n = 0;
+      $$('main.app a[href^="/app/"]').forEach(function (a) {
+        if (n >= 4 || !eligible(a)) return;
+        var u = urlOf(a.href);
+        if (AHEAD_SKIP.test(u) || u === currentUrl || pages[u] || inflight[u]) return;
+        var r = a.getBoundingClientRect();
+        if (!r.width || r.bottom < 0 || r.top > h) return;
+        n++; prefetch(u);
+      });
+    };
+    if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 3000 }); else setTimeout(run, 1500);
+  }
 
   var bar = null, barTimer = null;
   function progress(on) {
@@ -2383,6 +2462,7 @@
       // A new screen is a page view for GA (server.js buildAppGaSnippet); a refresh isn't.
       if (fromUrl !== page.url && window.wkndGaView) try { window.wkndGaView(); } catch (e) {}
       initPage();
+      if (fromUrl !== page.url) setTimeout(warmLinks, 1500);
     };
     if (!dir || reducedMotion.matches) return swap();
     var root = document.documentElement;
@@ -2480,7 +2560,14 @@
     // Not ahead of the screen's own list (Home's feed): after its first page, or 4 s at most.
     // On data saver or a 2G-slow signal, only once the player touches the screen.
     var warmed = false;
-    var warmTabs = function () { if (warmed) return; warmed = true; prefetch(urlOf(location.href)); $$('.tabbar a.tab').forEach(function (a) { prefetch(urlOf(a.href)); }); };
+    // (Not the screen it opened on while the service worker is handing its fresh copy over:
+    // that copy fills the same slot.)
+    var warmTabs = function () {
+      if (warmed) return; warmed = true;
+      var here = urlOf(location.href);
+      [here].concat($$('.tabbar a.tab').map(function (a) { return urlOf(a.href); })).forEach(function (u) { if (u !== here || !launchWait) prefetch(u); });
+      setTimeout(warmLinks, 2000);
+    };
     var conn = navigator.connection;
     if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) document.addEventListener('touchstart', warmTabs, { once: true, passive: true });
     else {
@@ -2554,7 +2641,23 @@
     if (lastWho && lastWho !== who) wipeCopies().then(function () { if (Date.now() - builtAt > 15000) location.reload(); });
     try { localStorage.setItem('wknd-who', who); } catch (e) {}
   }
-  if (navOn && builtAt && Date.now() - builtAt > 15000 && navigator.onLine) refreshScreen();
+  // The fresh screen comes from the service worker, which fetched it behind the copy and posts
+  // it here ('fresh'): asking the server again sent and built every launch twice (Fable speed
+  // audit, 2026-10-28). A worker that doesn't post (an older one, none, or its fetch failed)
+  // and the page fetches it itself.
+  var launchWait = null;
+  if (navOn && builtAt && Date.now() - builtAt > 15000 && navigator.onLine) {
+    launchWait = setTimeout(function () { launchWait = null; refreshScreen(); }, navigator.serviceWorker && navigator.serviceWorker.controller ? 8000 : 0);
+  }
+  function launchFresh(d) {
+    if (!launchWait) return;
+    clearTimeout(launchWait); launchWait = null;
+    if (d.url !== currentUrl) return; // moved on meanwhile: that screen is fresh already
+    if (!d.html) { refreshScreen(); return; } // not a plain screen (signed out, redirected): as before
+    var page = { html: d.html, url: d.url, at: Date.now() };
+    pages[d.url] = page;
+    if (!dirty()) swapIfChanged(page);
+  }
   // Log out: wipe the copies first, so the next person on this phone sees none of them.
   document.addEventListener('submit', function (e) {
     var f = e.target;
