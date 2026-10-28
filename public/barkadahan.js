@@ -14,6 +14,7 @@
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Not sent. Try again.'); return j; }); });
   };
   var toast = function (t, tone) { if (window.wkndToast) window.wkndToast(t, tone); };
+  var chevSvg = '<svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 1.5 6.5 6.5l-5 5"/></svg>';
   var dayOf = function (ms) { return new Date(ms).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric' }); };
   var timeOf = function (ms) { return new Date(ms).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }); };
   var todayStr = function () { return dayOf(Date.now()); };
@@ -37,6 +38,9 @@
     var typingEl = el.querySelector('[data-bk-typing]'), replyEl = el.querySelector('[data-bk-reply]'), mentionEl = el.querySelector('[data-bk-mention]');
     var msgs = [], byId = {}, pending = [], replyTo = null, mentions = {}, loadingOld = false, noMore = false, typers = {}, readT = null;
     var nameOf = {}; B.people.forEach(function (p) { nameOf[p.pid] = p.name; });
+    // Cards: { key: html } drawn by the server for this player; seen: who's seen the newest
+    // message; attach: the card an admin is about to share.
+    var cards = B.cards || {}, seen = B.seen || null, attach = null, attachEl = el.querySelector('[data-bk-attach]');
 
     // ── Drawing ──
     var bodyHtml = function (m) {
@@ -54,7 +58,8 @@
       var cont = prev && prev.pid === m.pid && !prev.deleted && m.at - prev.at < GROUP_MS && dayOf(prev.at) === dayOf(m.at) && !m.reply;
       var emo = !m.deleted && onlyEmoji(m.body);
       var bubble = m.deleted ? '<div class="bk-bub is-del">Message deleted</div>'
-        : '<div class="bk-bub' + (emo ? ' is-emo' : '') + '" data-bk-hold>' + (m.reply ? '<span class="bk-q"><b>' + esc(m.reply.name) + '</b>' + esc(m.reply.body) + '</span>' : '') + bodyHtml(m) + '</div>';
+        : (m.body || m.reply ? '<div class="bk-bub' + (emo ? ' is-emo' : '') + '" data-bk-hold>' + (m.reply ? '<span class="bk-q"><b>' + esc(m.reply.name) + '</b>' + esc(m.reply.body) + '</span>' : '') + bodyHtml(m) + '</div>' : '')
+          + (m.card ? '<div class="bk-cardw" data-bk-card="' + esc(m.card) + '" data-bk-hold>' + (cards[m.card] || '<div class="bkc is-loading" aria-busy="true"></div>') + '</div>' : '');
       var state = m.pending ? '<span class="bk-st">' + (m.failed ? 'Not sent · <button type="button" data-bk-retry>Retry</button>' : 'Sending…') + '</span>' : '';
       return '<div class="bk-m' + (mine ? ' is-me' : '') + (cont ? ' is-cont' : '') + '" data-id="' + esc(m.id) + '">'
         + (mine || cont ? '' : avatar(m))
@@ -72,7 +77,9 @@
         if (d !== lastDay) { out.push('<div class="bk-day">' + (d === todayStr() ? 'Today' : esc(d)) + '</div>'); lastDay = d; }
         out.push(msgHtml(m, all[i - 1] && dayOf(all[i - 1].at) === d ? all[i - 1] : null));
       });
+      out.push(seenHtml());
       list.innerHTML = out.join('');
+      tickClocks();
       if (keep === 'top') list.scrollTop = list.scrollHeight - oldH + oldTop;
       else if (keep === 'stay' && !atEnd) list.scrollTop = oldTop;
       else toBottom();
@@ -108,8 +115,73 @@
       if (pending.length || !prev || !last || dayOf(prev.at) !== dayOf(m.at) || !nodeOf(prev.id)) return false;
       var atEnd = nearBottom();
       list.insertAdjacentHTML('beforeend', msgHtml(m, prev));
+      paintSeen(); tickClocks();
       if (atEnd || m.pid === me.pid) toBottom();
       return true;
+    }
+
+    // ── Seen: under the newest message only, "Seen by" + up to 5 faces + the rest ──
+    function seenHtml() {
+      var last = msgs[msgs.length - 1];
+      if (!seen || !last || pending.length || last.id !== seen.id) return '';
+      var ids = (seen.ids || []).filter(function (id) { return id !== me.pid; });
+      if (!ids.length) return '';
+      var faces = (seen.faces || []).filter(function (f) { return f.pid !== me.pid; }).slice(0, 5);
+      return '<button type="button" class="bk-seen" data-bk-seen="' + esc(seen.id) + '" aria-label="Seen by ' + ids.length + '. Show who"><span>Seen by</span><span class="bk-seen__f" aria-hidden="true">' + faces.map(avatar).join('') + '</span>'
+        + (ids.length > faces.length ? '<span class="num">+' + (ids.length - faces.length) + '</span>' : '') + '</button>';
+    }
+    function paintSeen() {
+      var old = list.querySelector('.bk-seen'); if (old) old.remove();
+      var h = seenHtml(); if (!h) return;
+      var atEnd = nearBottom();
+      list.insertAdjacentHTML('beforeend', h);
+      if (atEnd) toBottom();
+    }
+
+    // ── Cards ──
+    var cardKeys = function () { var k = {}; msgs.concat(pending).forEach(function (m) { if (m.card && !m.deleted) k[m.card] = 1; }); return Object.keys(k); };
+    function paintCard(key) {
+      list.querySelectorAll('[data-bk-card]').forEach(function (n) { if (n.getAttribute('data-bk-card') === key && cards[key]) { n.innerHTML = cards[key]; n.classList.remove('is-busy'); } });
+    }
+    function takeCards(c) { if (!c) return; Object.keys(c).forEach(function (k) { cards[k] = c[k]; paintCard(k); }); tickClocks(); }
+    var cardsBusy = {};
+    function fetchCards(keys) {
+      keys = keys.filter(function (k) { return !cardsBusy[k]; });
+      if (!keys.length || !navigator.onLine) return;
+      keys.forEach(function (k) { cardsBusy[k] = 1; });
+      fetch('/app/barkadahan/cards?keys=' + keys.map(encodeURIComponent).join(','), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { keys.forEach(function (k) { delete cardsBusy[k]; }); if (j && el.isConnected) takeCards(j.cards); else keys.forEach(paintCard); },
+          function () { keys.forEach(function (k) { delete cardsBusy[k]; paintCard(k); }); });
+    }
+    // "Closes in 3h 20m" on open Who wins? cards; at the cut-off the card is fetched again.
+    var closeIn = function (ms) {
+      var m = Math.ceil(ms / 6e4), d = Math.floor(m / 1440), h = Math.floor(m / 60) % 24;
+      return 'Closes in ' + (d ? d + 'd ' + h + 'h' : h ? h + 'h ' + (m % 60) + 'm' : m + 'm');
+    };
+    function tickClocks() {
+      var due = [];
+      list.querySelectorAll('[data-bk-close-at]').forEach(function (c) {
+        var left = Number(c.getAttribute('data-bk-close-at')) - Date.now();
+        if (left > 0) c.textContent = closeIn(left);
+        else { c.textContent = 'Picks closed'; var w = c.closest('[data-bk-card]'); if (w) due.push(w.getAttribute('data-bk-card')); }
+      });
+      if (due.length) fetchCards(due);
+    }
+    // Every 30 s: the clocks; every 2 minutes: the cards themselves (a change made somewhere the
+    // live connection doesn't hear about, like an admin moving someone on a run).
+    var ticks = 0, cardTimer = setInterval(function () {
+      if (!el.isConnected) return current && current.el === el ? current.off() : null;
+      if (document.visibilityState !== 'visible') return;
+      tickClocks();
+      if (++ticks % 4 === 0) fetchCards(cardKeys());
+    }, 30000);
+    offs.push(function () { clearInterval(cardTimer); });
+    function setAttach(a) {
+      attach = a;
+      attachEl.hidden = !a;
+      attachEl.innerHTML = a ? '<span><b>Sharing</b>' + esc(a.title) + (a.sub ? ' · ' + esc(a.sub) : '') + '</span><button type="button" data-bk-noattach aria-label="Don’t share it">×</button>' : '';
+      if (a && input) input.focus();
     }
     setAll(B.messages); draw();
     // The keyboard: the room is pinned to the part of the screen you can see (the visual
@@ -150,7 +222,7 @@
 
     // A fresh copy (the page may have come from the phone's copy), merged in.
     fetch('/app/barkadahan/messages', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) { if (j && el.isConnected) { merge(j.messages); draw('stay'); setOnline(j.online); } }).catch(function () {});
+      .then(function (j) { if (j && el.isConnected) { Object.keys(j.cards || {}).forEach(function (k) { cards[k] = j.cards[k]; }); if (j.seen !== undefined) seen = j.seen; merge(j.messages); draw('stay'); setOnline(j.online); } }).catch(function () {});
 
     // Older messages when scrolled to the top.
     list.addEventListener('scroll', function () {
@@ -159,6 +231,7 @@
       fetch('/app/barkadahan/messages?before=' + msgs[0].at + '&id=' + encodeURIComponent(msgs[0].id), { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (j) {
         loadingOld = false;
         if (!j.messages.length) { noMore = true; draw('top'); return; }
+        Object.keys(j.cards || {}).forEach(function (k) { cards[k] = j.cards[k]; });
         setAll(j.messages.concat(msgs)); draw('top');
       }).catch(function () { loadingOld = false; });
     });
@@ -187,7 +260,10 @@
         } else if (had !== pending.length) draw();
         delete typers[d.m.pid]; paintTyping();
         if (d.m.pid !== me.pid) markRead();
+        if (d.m.card && !cards[d.m.card]) fetchCards([d.m.card]);
       }
+      if (d.type === 'seen') { seen = d.seen; paintSeen(); }
+      if (d.type === 'card' && cardKeys().indexOf(d.key) !== -1) fetchCards([d.key]);
       if (d.type === 'rx' && byId[d.id]) { byId[d.id].rx = d.rx; patch(d.id); }
       if (d.type === 'del' && byId[d.id]) { byId[d.id].deleted = true; byId[d.id].body = ''; byId[d.id].rx = {}; patch(d.id); }
       if (d.type === 'typing' && d.pid !== me.pid) { typers[d.pid] = { name: d.name, until: Date.now() + 4000 }; paintTyping(); setTimeout(paintTyping, 4100); }
@@ -202,15 +278,16 @@
     function send(text) {
       // id: also the phone's id for the send (cid), so a retry is stored once and the live
       // copy of it replaces this one.
-      var p = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), pid: me.pid, at: Date.now(), body: text, mentions: Object.keys(mentions).filter(function (k) { return text.indexOf('@' + mentions[k]) !== -1; }), reply: replyTo ? { id: replyTo.id, name: replyTo.name, body: replyTo.body } : null, rx: {}, pending: true };
+      var p = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), pid: me.pid, at: Date.now(), body: text, mentions: Object.keys(mentions).filter(function (k) { return text.indexOf('@' + mentions[k]) !== -1; }), reply: replyTo ? { id: replyTo.id, name: replyTo.name, body: replyTo.body } : null, rx: {}, pending: true, card: attach ? attach.key : null };
       p.replyTo = replyTo && replyTo.id;
       pending.push(p); draw();
       deliver(p);
-      mentions = {}; setReply(null);
+      mentions = {}; setReply(null); setAttach(null);
     }
     function deliver(p) {
       p.failed = false; draw('stay');
-      post('/app/barkadahan/messages', { body: p.body, replyTo: p.replyTo || null, mentions: p.mentions, cid: p.id }).then(function (j) {
+      post('/app/barkadahan/messages', { body: p.body, replyTo: p.replyTo || null, mentions: p.mentions, cid: p.id, card: p.card || undefined }).then(function (j) {
+        Object.keys(j.cards || {}).forEach(function (k) { cards[k] = j.cards[k]; });
         pending = pending.filter(function (x) { return x !== p; });
         if (!byId[j.m.id]) { msgs.push(j.m); byId[j.m.id] = j.m; }
         draw();
@@ -220,7 +297,7 @@
       var grow = function () { input.style.height = 'auto'; input.style.height = Math.min(120, input.scrollHeight) + 'px'; };
       form.addEventListener('submit', function (e) {
         e.preventDefault();
-        var text = input.value.trim(); if (!text) return;
+        var text = input.value.trim(); if (!text && !attach) return;
         input.value = ''; grow(); closeMention(); send(text); input.focus();
       });
       input.addEventListener('keydown', function (e) {
@@ -235,7 +312,7 @@
     function setReply(m) {
       replyTo = m;
       replyEl.hidden = !m;
-      replyEl.innerHTML = m ? '<span><b>Replying to ' + esc(m.name) + '</b>' + esc(m.body.slice(0, 80)) + '</span><button type="button" data-bk-noreply aria-label="Cancel reply">×</button>' : '';
+      replyEl.innerHTML = m ? '<span><b>Replying to ' + esc(m.name) + '</b>' + esc(m.body ? m.body.slice(0, 80) : m.card ? 'Shared a card' : '') + '</span><button type="button" data-bk-noreply aria-label="Cancel reply">×</button>' : '';
       if (m && input) input.focus();
     }
 
@@ -260,18 +337,109 @@
       if (input && document.activeElement === input) input.blur();
       if (emoSheet) { emoSheet.remove(); emoSheet = null; }
       var mine = m.pid === me.pid, acts = [];
+      var nRx = Object.keys(m.rx || {}).reduce(function (n, k) { return n + m.rx[k].length; }, 0);
+      if (nRx) acts.push(['who-rx', 'Reactions', '', Object.keys(m.rx).filter(function (k) { return m.rx[k].length; }).join(' ') + ' · ' + nRx]);
+      if (!m.pending) acts.push(['who-seen', 'Seen by']);
       if (!me.cant) acts.push(['reply', 'Reply']);
-      acts.push(['copy', 'Copy']);
+      if (m.body) acts.push(['copy', 'Copy']);
       if (!mine) acts.push(['report', 'Report']);
       if (mine || me.mod) acts.push(['delete', 'Delete', 'red']);
       if (me.mod && !mine) acts.push(['mute', 'Mute ' + m.name + '…']);
       sheet = document.createElement('div');
       sheet.className = 'bk-hold'; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-label', 'Message actions');
       sheet.innerHTML = '<div class="bk-hold__in">' + (me.cant ? '' : '<div class="bk-hold__rx">' + B.reactions.map(function (r) { var on = (m.rx[r] || []).indexOf(me.pid) !== -1; return '<button type="button" class="' + (on ? 'is-on' : '') + '" data-bk-react="' + r + '" aria-label="React ' + r + '">' + r + '</button>'; }).join('') + '</div>')
-        + '<div class="bk-hold__msg">' + (m.reply ? '<span class="bk-q"><b>' + esc(m.reply.name) + '</b>' + esc(m.reply.body) + '</span>' : '') + bodyHtml(m) + '</div>'
-        + '<div class="bk-hold__acts">' + acts.map(function (a) { return '<button type="button" class="' + (a[2] || '') + '" data-bk-act="' + a[0] + '">' + esc(a[1]) + '</button>'; }).join('') + '</div></div>';
+        + '<div class="bk-hold__msg">' + (m.reply ? '<span class="bk-q"><b>' + esc(m.reply.name) + '</b>' + esc(m.reply.body) + '</span>' : '') + (m.body ? bodyHtml(m) : m.card ? '<i>Shared a card</i>' : '') + '</div>'
+        + '<div class="bk-hold__acts">' + acts.map(function (a) { return '<button type="button" class="' + (a[2] || '') + '" data-bk-act="' + a[0] + '">' + esc(a[1]) + (/^who/.test(a[0]) ? '<span class="bk-hold__r">' + esc(a[3] || '') + chevSvg + '</span>' : '') + '</button>'; }).join('') + '</div></div>';
       sheet._m = m;
       el.appendChild(sheet);
+    }
+    // A list sheet in the same place as the hold menu: title, optional tabs, rows.
+    function listSheet(title, label) {
+      closeSheet();
+      if (input && document.activeElement === input) input.blur();
+      if (emoSheet) { emoSheet.remove(); emoSheet = null; }
+      sheet = document.createElement('div');
+      sheet.className = 'bk-hold'; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-label', label || title);
+      sheet.innerHTML = '<div class="bk-hold__in bk-sheet"><div class="bk-sheet__h"><b>' + esc(title) + '</b><small data-bk-sheet-n></small></div><div class="bk-sheet__body" data-bk-sheet-body><p class="bk-sheet__empty">Loading…</p></div></div>';
+      el.appendChild(sheet);
+      return sheet;
+    }
+    var personRow = function (p, right, rightCls) {
+      return '<div class="bk-row">' + avatar(p) + '<span class="bk-row__t">' + esc(p.pid === me.pid ? 'You' : p.full || p.name) + '<small>' + esc(p.team || 'No team') + '</small></span><span class="bk-row__v' + (rightCls ? ' ' + rightCls : '') + '">' + right + '</span></div>';
+    };
+    var seenAt = function (ms) { return dayOf(ms) === todayStr() ? timeOf(ms) : dayOf(ms).replace(/^\w+, /, ''); };
+    // Who reacted (tabs: All, then one per emoji) or who's seen it, for one message.
+    function openWho(m, kind, only) {
+      var sh = listSheet(kind === 'rx' ? 'Reactions' : 'Seen by');
+      fetch('/app/barkadahan/messages/' + encodeURIComponent(m.id) + '/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Couldn’t load that. Try again.'); return j; }); })
+        .then(function (j) {
+          if (sheet !== sh) return;
+          var body = sh.querySelector('[data-bk-sheet-body]'), n = sh.querySelector('[data-bk-sheet-n]');
+          if (kind === 'seen') {
+            var rows = j.seen.filter(function (p) { return p.pid !== me.pid; });
+            n.textContent = rows.length || '';
+            body.innerHTML = rows.length ? '<div class="bk-sheet__list">' + rows.map(function (p) { return personRow(p, esc(seenAt(p.at))); }).join('') + '</div>'
+              : '<p class="bk-sheet__empty">Nobody else has opened the chat since this came in.</p>';
+            return;
+          }
+          var paint = function (pick) {
+            var emo = []; j.rx.forEach(function (r) { if (emo.indexOf(r.emoji) === -1) emo.push(r.emoji); });
+            var rows = pick ? j.rx.filter(function (r) { return r.emoji === pick; }) : j.rx;
+            n.textContent = j.rx.length || '';
+            body.innerHTML = (emo.length > 1 ? '<div class="bk-sheet__tabs" role="tablist">' + ['' ].concat(emo).map(function (e) {
+              var c = e ? j.rx.filter(function (r) { return r.emoji === e; }).length : j.rx.length;
+              return '<button type="button" role="tab" aria-selected="' + (e === (pick || '')) + '" class="' + (e === (pick || '') ? 'is-on' : '') + '" data-bk-tab="' + esc(e) + '">' + (e || 'All') + ' <b class="num">' + c + '</b></button>';
+            }).join('') + '</div>' : '')
+              + (rows.length ? '<div class="bk-sheet__list">' + rows.map(function (r) { return personRow(r, r.emoji, 'is-emo'); }).join('') + '</div>' : '<p class="bk-sheet__empty">No reactions yet.</p>');
+          };
+          sh._tab = paint;
+          paint(only && j.rx.some(function (r) { return r.emoji === only; }) ? only : '');
+        })
+        .catch(function (err) { if (sheet === sh) sh.querySelector('[data-bk-sheet-body]').innerHTML = '<p class="bk-sheet__empty">' + esc(err.message || 'No connection.') + '</p>'; });
+    }
+    // Admins: what's open right now, to share as a card.
+    function openShare() {
+      var sh = listSheet('Share to the chat');
+      sh.querySelector('[data-bk-sheet-n]').textContent = 'Admins only';
+      fetch('/app/barkadahan/share', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Couldn’t load that. Try again.'); return j; }); })
+        .then(function (j) { if (sheet === sh) sh.querySelector('[data-bk-sheet-body]').innerHTML = j.html + '<p class="bk-sheet__foot">Pick one and add a line if you like. Players join or pick right on the card.</p>'; })
+        .catch(function (err) { if (sheet === sh) sh.querySelector('[data-bk-sheet-body]').innerHTML = '<p class="bk-sheet__empty">' + esc(err.message || 'No connection.') + '</p>'; });
+    }
+    // Asks first (cancel a spot, a claim that can't be cancelled), in the hold menu's place.
+    function ask(text, yes, go) {
+      closeSheet();
+      sheet = document.createElement('div'); sheet.className = 'bk-hold'; sheet._go = go;
+      sheet.innerHTML = '<div class="bk-hold__in"><div class="bk-hold__msg">' + esc(text) + '</div><div class="bk-hold__acts"><button type="button" data-bk-ask-go="yes">' + esc(yes) + '</button><button type="button" data-bk-ask-go="no">Not now</button></div></div>';
+      el.appendChild(sheet);
+    }
+    // A card's own buttons: the site's own routes, then the card is drawn again.
+    function cardBusy(w, on) { w.classList.toggle('is-busy', on); w.querySelectorAll('button').forEach(function (b) { b.disabled = on; }); }
+    function papawisAct(b) {
+      var w = b.closest('[data-bk-card]'), key = w.getAttribute('data-bk-card'), act = b.getAttribute('data-bk-pw'), run = b.getAttribute('data-bk-run');
+      if (!navigator.onLine) return toast('You’re offline. This needs a connection, so nothing was sent.', 'err');
+      var go = function () {
+        cardBusy(w, true);
+        post('/papawis/' + encodeURIComponent(run) + '/' + act, {}).then(function (j) {
+          toast(act === 'cancel' ? 'You’re off the list' : j.status === 'waitlist' ? 'You’re on the waitlist' : j.status === 'pending' ? 'You’re listed · send your deposit to confirm' : 'You’re in!', act === 'cancel' ? '' : 'ok');
+          fetchCards([key]);
+        }, function (err) { toast(err.message, 'err'); fetchCards([key]); });
+      };
+      var q = b.getAttribute('data-bk-ask');
+      if (q) return ask(q, act === 'cancel' ? (b.textContent.trim() === 'Leave' ? 'Leave the waitlist' : 'Cancel my spot') : 'Claim it', go);
+      go();
+    }
+    function pickAct(b) {
+      var w = b.closest('[data-bk-card]'), card = b.closest('[data-bk-pick]'), key = w.getAttribute('data-bk-card'), side = b.getAttribute('data-side');
+      if (b.disabled || b.classList.contains('is-mine') || w.classList.contains('is-busy')) return;
+      if (!navigator.onLine) return toast('You’re offline. Picks need a connection, so nothing was sent.', 'err');
+      card.querySelectorAll('.pick__opt').forEach(function (o) { o.classList.toggle('is-mine', o === b); });
+      cardBusy(w, true);
+      post('/games/' + encodeURIComponent(card.getAttribute('data-bk-pick')) + '/pick', { side: side }).then(function () {
+        toast('Picked ' + card.getAttribute('data-pick-' + side), 'ok');
+        fetchCards([key]);
+      }, function (err) { toast(err.message, 'err'); fetchCards([key]); });
     }
     // The menu opens when the finger lifts after a hold, not while it's still down: opened
     // under the finger, the lift landed on the sheet and pressed whatever was there (Report, or
@@ -279,21 +447,23 @@
     // audit, 2026-10-28). The bubble dims once the hold counts, so you know to let go.
     var holdT = null, holdAt = null, held = null, quietUntil = 0;
     var cancelHold = function () { clearTimeout(holdT); holdT = null; if (held) { held.b.classList.remove('is-held'); held = null; } };
+    // Holding a reaction pill lists who reacted with it (a tap still adds or takes back yours).
     list.addEventListener('pointerdown', function (e) {
-      var b = e.target.closest('[data-bk-hold]'); if (!b) return;
+      var rxb = e.target.closest('[data-bk-rx]');
+      var b = rxb || e.target.closest('[data-bk-hold]'); if (!b) return;
       cancelHold();
       holdAt = { x: e.clientX, y: e.clientY };
       holdT = setTimeout(function () {
         holdT = null;
         var id = b.closest('[data-id]').getAttribute('data-id');
-        if (byId[id]) { held = { b: b, m: byId[id] }; b.classList.add('is-held'); if (navigator.vibrate) navigator.vibrate(10); }
+        if (byId[id]) { held = { b: b, m: byId[id], rx: rxb ? rxb.getAttribute('data-bk-rx') : null }; b.classList.add('is-held'); if (navigator.vibrate) navigator.vibrate(10); }
       }, HOLD_MS);
     });
     var release = function () {
       if (!held) return cancelHold();
-      var m = held.m; cancelHold();
+      var m = held.m, rx = held.rx; cancelHold();
       quietUntil = Date.now() + 400; // the click that follows this lift
-      openMenu(m);
+      if (rx) openWho(m, 'rx', rx); else openMenu(m);
     };
     list.addEventListener('pointerup', release);
     // iPhone can cancel a still finger at the end of a long press: that's still a hold.
@@ -328,8 +498,20 @@
 
     el.addEventListener('click', function (e) {
       var t = e.target;
-      if (Date.now() < quietUntil && t.closest('.bk-hold')) { e.preventDefault(); return; }
+      // The click that follows a hold's lift lands on what was under the finger (the menu, a
+      // reaction pill, a card's button or link): it never counts.
+      if (Date.now() < quietUntil) { e.preventDefault(); e.stopPropagation(); return; }
       var rxb = t.closest('[data-bk-rx]'); if (rxb) return react(byId[rxb.closest('[data-id]').getAttribute('data-id')], rxb.getAttribute('data-bk-rx'));
+      var pwb = t.closest('[data-bk-pw]'); if (pwb && !pwb.disabled) return papawisAct(pwb);
+      var pkb = t.closest('[data-bk-pick] .pick__opt'); if (pkb) return pickAct(pkb);
+      var sn = t.closest('[data-bk-seen]'); if (sn && byId[sn.getAttribute('data-bk-seen')]) return openWho(byId[sn.getAttribute('data-bk-seen')], 'seen');
+      if (t.closest('[data-bk-share]')) return openShare();
+      var sp = t.closest('[data-bk-share-pick]');
+      if (sp) { closeSheet(); return setAttach({ key: sp.getAttribute('data-bk-share-pick'), title: sp.getAttribute('data-title'), sub: sp.getAttribute('data-sub') }); }
+      if (t.closest('[data-bk-noattach]')) return setAttach(null);
+      var tab = t.closest('[data-bk-tab]'); if (tab && sheet && sheet._tab) return sheet._tab(tab.getAttribute('data-bk-tab'));
+      var ag = t.closest('[data-bk-ask-go]');
+      if (ag && sheet) { var go = sheet._go; closeSheet(); if (ag.getAttribute('data-bk-ask-go') === 'yes' && go) go(); return; }
       if (t.closest('[data-bk-retry]')) { var id = t.closest('[data-id]').getAttribute('data-id'); var p = pending.filter(function (x) { return x.id === id; })[0]; if (p) deliver(p); return; }
       if (t.closest('[data-bk-noreply]')) return setReply(null);
       if (t.closest('[data-bk-emoji]')) return toggleEmoji();
@@ -354,6 +536,8 @@
       var a = t.closest('[data-bk-act]');
       if (a && sheet) {
         var m = sheet._m, act = a.getAttribute('data-bk-act'); closeSheet();
+        if (act === 'who-rx') return openWho(m, 'rx');
+        if (act === 'who-seen') return openWho(m, 'seen');
         if (act === 'reply') return setReply(m);
         if (act === 'copy') { try { navigator.clipboard.writeText(m.body).then(function () { toast('Copied'); }); } catch (x2) {} return; }
         if (act === 'report') return post('/app/barkadahan/messages/' + encodeURIComponent(m.id) + '/report', {}).then(function (j) { toast(j.message || 'Reported'); }, function (err) { toast(err.message, 'err'); });
