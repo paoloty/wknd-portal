@@ -117,10 +117,11 @@ function papawisCard(it) {
 
 const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard };
 
-// A card's pictures (the big ones, decoding="async"; not the faces) wait as data-src until the
-// card nears the screen (public/app.js wakeImgs): Home used to pull all 20 covers, ~1.7 MB,
-// for the one and a half cards in view (Fable speed audit, 2026-10-28).
-const deferImgs = html => html.replace(/<img\b[^>]*\bdecoding="async"[^>]*>/g, tag => tag.replace(' src="', ' data-src="').replace(' srcset="', ' data-srcset="'));
+// A card's pictures wait as data-src until the card nears the screen (public/app.js wakeImgs):
+// Home used to pull all 20 covers, ~1.7 MB, for the one and a half cards in view (Fable speed
+// audit, 2026-10-28). The faces too, now that the first page comes in Home's own HTML: there
+// they'd load ahead of the app's script.
+const deferImgs = html => html.replace(/<img\b[^>]*>/g, tag => tag.replace(' src="', ' data-src="').replace(' srcset="', ' data-srcset="'));
 
 // items: [{ kind, day, ... }]; prevDay: the day header already shown above this page.
 // eager: how many cards load their pictures at once (the first page's top two).
@@ -129,7 +130,10 @@ export function appFeedRows(items, prevDay = '', { eager = 0 } = {}) {
   return items.map((it, i) => {
     const head = it.day && it.day !== day ? `<div class="feed-day"><span>${esc(it.day)}</span></div>` : '';
     if (it.day) day = it.day;
-    const card = CARD[it.kind] ? CARD[it.kind](it) : '';
+    // data-fk: the card's key, so a fresh Home can update only the cards that changed
+    // (public/app.js patchHome).
+    const fk = it.href || (it.kind === 'papawis' ? `pw:${it.run?.id}` : `${it.kind}:${it.id || i}`);
+    const card = CARD[it.kind] ? CARD[it.kind](it).replace(/^\s*<([a-z]+)/, `<$1 data-fk="${esc(fk)}"`) : '';
     return head + (i < eager ? card : deferImgs(card));
   }).join('');
 }
@@ -140,7 +144,9 @@ export function appFeedRows(items, prevDay = '', { eager = 0 } = {}) {
 // rail: the next game day's games (loaded after the screen from /app/rail, public/app.js initBlocks).
 // live: a game is being scored (or reviewed, for admins) now, so the live card loads at once and
 // every 15 s; otherwise Home only checks once a minute.
-export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todos = [], pinned = null, rail = false, live = true }) {
+// feed: the feed's first page ({ html, next }, server.js appFeedPage), in the screen itself so
+// the cards come with Home instead of one request later (Fable speed audit, 2026-10-28).
+export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todos = [], pinned = null, rail = false, live = true, feed = null }) {
   const strip = todoCard(todos);
   return `${header}
   ${setupHtml}
@@ -154,7 +160,7 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todo
   ${pinned ? `<div class="feed feed--pinned">${annCard(pinned)}</div>` : ''}
   <div class="live-now" data-block-src="/app/live-now" data-block-every="15000" data-block-idle="60000"${live ? '' : ' data-block-later'} hidden></div>
   ${rail ? '<div class="rail-block" data-block-src="/app/rail"><div class="rail-h"><b class="skel skel--line skel--short" style="width:120px"></b></div><div class="rail"><div class="rc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span></div><div class="rc skel-card"></div></div></div>' : ''}
-  ${lazyList({ src: '/app/feed/items', cards: true, empty: 'Nothing here yet. Results, news and announcements show up here.' })}`;
+  ${lazyList({ src: '/app/feed/items', cards: true, first: feed, empty: 'Nothing here yet. Results, news and announcements show up here.' })}`;
 }
 
 const navbar = (back, title) => `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">${esc(title)}</span><span></span></div>`;

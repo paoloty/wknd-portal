@@ -6603,6 +6603,7 @@ app.get('/app', requireApp, (req, res) => {
     setupHtml: setupCard(setup), installHtml: installCard,
     todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
     live: appLiveNowGames().length > 0 || (canWatchReview(req, me.playerId) && appReviewNowGames().length > 0),
+    feed: appFeedPage(me),
   }) });
 });
 
@@ -6778,9 +6779,10 @@ function appFeedItem(it, me, extra) {
 }
 
 // /app/feed/items?before=<at>:<id>&day=<last day header shown>
-app.get('/app/feed/items', requireAppData, (req, res) => {
-  const me = appMe(req);
-  const m = /^(\d+):(.+)$/.exec(String(req.query.before || ''));
+app.get('/app/feed/items', requireAppData, (req, res) => res.json(appFeedPage(appMe(req), req.query.before, req.query.day)));
+// One page of the feed: { html, next }. Home draws the first page in the screen itself.
+function appFeedPage(me, before, prevDay) {
+  const m = /^(\d+):(.+)$/.exec(String(before || ''));
   const all = appFeedIndex();
   const from = m ? all.findIndex(it => it.at < Number(m[1]) || (it.at === Number(m[1]) && String(it.id).localeCompare(m[2]) < 0)) : 0;
   const page = from < 0 ? [] : all.slice(from, from + APP_FEED_PAGE);
@@ -6790,11 +6792,11 @@ app.get('/app/feed/items', requireAppData, (req, res) => {
   // and the one action), so the card can join right there.
   if (page.some(it => it.kind === 'papawis')) extra.runs = appPapawisRuns(me);
   const items = page.map(it => appFeedItem(it, me, extra));
-  const html = appFeedRows(items, String(req.query.day || ''), { eager: m ? 0 : 2 });
+  const html = appFeedRows(items, String(prevDay || ''), { eager: m ? 0 : 2 });
   const last = page[page.length - 1];
   const more = from >= 0 && from + APP_FEED_PAGE < all.length;
-  res.json({ html, next: more ? `/app/feed/items?before=${last.at}:${encodeURIComponent(last.id)}&day=${encodeURIComponent(items[items.length - 1].day || '')}` : null });
-});
+  return { html, next: more ? `/app/feed/items?before=${last.at}:${encodeURIComponent(last.id)}&day=${encodeURIComponent(items[items.length - 1].day || '')}` : null };
+}
 
 // Announcement photos at the feed's widths (?w=640|720|960) or the admin list's thumbnail (160).
 const ANN_WIDTHS = new Set([160, 640, 720, 960]);
@@ -15315,6 +15317,22 @@ const picksCloseTime = () => {
 // Everything the picks surfaces need, built once per request. Odds for every played game are
 // its pre-game odds (computeOdds only looks at earlier dates), so records and "upset" calls
 // stay fixed after the fact.
+// The odds of every played game (computeOdds against all the others: the slow part, ~100 ms on
+// prod) only change when a played game does, so they're kept, keyed on exactly what they're
+// worked out from (each played game's teams, scores, day and season). A score fix, a new final
+// or a game going under review changes the key; nothing has to remember to clear it. A few kept:
+// a pick builds a one-game context, which mustn't push out the whole season's.
+const picksOddsMemo = new Map();
+function playedOdds(played) {
+  const key = played.map(g => `${g.id}|${g.ymd}|${g.season}|${g.a}|${g.b}|${g.sa}|${g.sb}`).sort().join(';');
+  let val = picksOddsMemo.get(key);
+  if (!val) {
+    val = Object.fromEntries(played.map(g => [g.id, computeOdds(g, played)]));
+    if (picksOddsMemo.size >= 4) picksOddsMemo.delete(picksOddsMemo.keys().next().value);
+  } else picksOddsMemo.delete(key);
+  picksOddsMemo.set(key, val); // newest last
+  return val;
+}
 function buildPicksContext(games) {
   const all = games.map(g => toPickGame(g, gameYmd));
   const played = all.filter(g => g.played);
@@ -15322,7 +15340,7 @@ function buildPicksContext(games) {
     all, played,
     byId: Object.fromEntries(all.map(g => [g.id, g])),
     // Odds switched off = no odds anywhere, including "upset" (which is judged against them).
-    oddsById: pickOddsEnabled() ? Object.fromEntries(played.map(g => [g.id, computeOdds(g, played)])) : {},
+    oddsById: pickOddsEnabled() ? playedOdds(played) : {},
     picks: getAllGamePicks(),
     settings: getAllGamePickSettings(),
   };
@@ -15332,10 +15350,11 @@ function buildPicksContext(games) {
 // (so a later box-score fix can't move anyone's points), else the pre-game odds. Scored even
 // with the global odds switch off; a game with its odds hidden scores ±1 like a toss-up.
 function scoringOdds(settled, pctx) {
+  const memo = playedOdds(pctx.played); // the kept odds, even with the odds switch off
   return Object.fromEntries(settled.map(g => {
     if (pctx.settings[g.id]?.hide_odds) return [g.id, null];
     const stored = getGamePreview(g.id);
-    return [g.id, (stored?.frozen && stored.odds) || computeOdds(g, pctx.played)];
+    return [g.id, (stored?.frozen && stored.odds) || (g.id in memo ? memo[g.id] : computeOdds(g, pctx.played))];
   }));
 }
 

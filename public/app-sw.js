@@ -72,8 +72,19 @@ async function launch(e, url) {
   const key = keyOf(url);
   const copy = await caches.match(key, { cacheName: PAGES });
   const fresh = fetch(e.request).then(async (res) => { await keepPage(key, res); return res; });
-  if (copy) { e.waitUntil(fresh.catch(() => {})); return copy; }
+  if (copy) { e.waitUntil(fresh.then((res) => handOver(e, key, res)).catch(() => {})); return copy; }
   return fresh.catch(async () => (await caches.match('/app/offline')) || Response.error());
+}
+// The fresh screen fetched behind a launch's copy goes to the page (app.js launchFresh), which
+// swaps it in: the page used to fetch it again. html null: not a plain screen (signed out,
+// redirected), so the page asks the server itself. The page may not be there yet: tried for 5 s.
+async function handOver(e, key, res) {
+  const html = res.ok && res.type === 'basic' && !res.redirected ? await res.text() : null;
+  for (let i = 0; i < 20; i++) {
+    const c = e.resultingClientId ? await self.clients.get(e.resultingClientId) : null;
+    if (c) { c.postMessage({ type: 'fresh', url: key, html }); return; }
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
 }
 
 async function inAppNav(e, url) {
