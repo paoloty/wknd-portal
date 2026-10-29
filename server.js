@@ -6115,7 +6115,7 @@ import { liveExtras } from './lib/live-extras.js';
 import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comments.js';
 import { appSharePage } from './views/app/share.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
-import { appPicksPage } from './views/app/picks.js';
+import { appPicksPage, pickWhoHtml } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
 import { appPlayerPage, appPlayerMissing, appSeasonPage } from './views/app/season.js';
 import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
@@ -8931,6 +8931,24 @@ app.get('/app/picks', requireApp, (req, res) => {
     return { date: shortDate(g.date), matchup: `${g.team_a_name} vs ${g.team_b_name}`, pick, color: colorOf(pick), correct: !!x.correct };
   }).filter(Boolean);
   sendTab(res, me, { title: 'Who wins? · WKND', tab: 'picks', body: appPicksPage({ record, games, board, past }) });
+});
+
+// Who picked a game (the card's "N picked", views/app/picks.js pickWhoHtml): faces and names
+// always, sides once picks close.
+app.get('/app/picks/:id/who', requireAppData, (req, res) => {
+  if (!picksEnabled()) return res.status(404).json({ error: 'Picks are off right now.' });
+  const ctx = bkPickCtx(), game = ctx.games[req.params.id], pg = ctx.byId[req.params.id];
+  if (!game || !pg || game.under_review) return res.status(404).json({ error: 'That game isn’t here any more.' });
+  const closed = !!pg.played || picksClosedFor(pg, ctx.settings[game.id], ctx.clock);
+  const teams = getAllTeams(), me = req.session.playerPlayerId;
+  const people = getGamePicksWithPlayers(game.id).filter(x => x.player_id).map(x => {
+    const name = displayPlayerName(x.player_name || '');
+    const t = teams.find(tt => tt.name === x.team_name);
+    return { pid: x.player_id, name, team: titleCase(x.team_name || ''), ring: t ? teamColorById(teams, t.id) : 'var(--subtle)', photo: playerPhotoUrl(x.player_id, 96),
+      initials: initials(name), side: closed ? x.side : null, me: x.player_id === me };
+  }).sort((x, y) => (y.me - x.me) || x.name.localeCompare(y.name));
+  res.json({ title: `${people.length} picked · ${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`,
+    html: pickWhoHtml({ closed, a: { name: titleCase(game.team_a_name), color: ctx.colorOf(game.team_a_name) }, b: { name: titleCase(game.team_b_name), color: ctx.colorOf(game.team_b_name) }, people }) });
 });
 
 // ── Papawis (views/app/papawis.js) ──
