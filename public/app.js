@@ -1111,7 +1111,7 @@
     document.body.appendChild(el);
     document.documentElement.classList.add('has-sheet');
     sheet = el; fitSheet();
-    swipeToClose(el, '.adm-input', '.adm-pick');
+    swipeToClose(el, '.adm-input');
     requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('is-open'); }); });
     return el;
   }
@@ -2099,22 +2099,29 @@
         var p = document.createElement('p'); p.className = 'ct__empty'; p.textContent = e;
         $('.sheet__body', el).innerHTML = ''; $('.sheet__body', el).appendChild(p);
       });
-    swipeToClose(el, '.th__comp', '.th__list');
+    swipeToClose(el, '.th__comp');
   }
   // Swipe down to close a sheet: from the top bar, or anywhere in its list once that's
   // scrolled to the top (a swipe up still scrolls it). Not from skip (the box you type in).
-  function swipeToClose(el, skip, listSel) {
-    var box = $('.sheet__box', el), y0 = null, dy = 0, list = null, dragging = false;
+  // A pull down closes the sheet only from the very top: if anything between the finger and
+  // the sheet is scrolled down (the comments, a "Who picked" list, the sheet's own body),
+  // the pull scrolls that back up instead. Checked on whatever scrolls, not one named list:
+  // the Who picked sheet scrolls its body, which a named-list check missed (the whole sheet
+  // slid down mid-list, Paolo's recording 2026-10-29).
+  function swipeToClose(el, skip) {
+    var box = $('.sheet__box', el), y0 = null, dy = 0, from = null, dragging = false;
+    var scrolled = function (n) { for (; n && n !== box.parentNode; n = n.parentNode) if (n.scrollTop > 0) return true; return false; };
     box.addEventListener('touchstart', function (e) {
       if (e.touches.length > 1 || (e.target.closest && e.target.closest(skip))) { y0 = null; return; }
-      list = e.target.closest && e.target.closest(listSel);
+      from = e.target;
       y0 = e.touches[0].clientY; dy = 0; dragging = false;
     }, { passive: true });
     box.addEventListener('touchmove', function (e) {
       if (y0 === null) return;
       var d = e.touches[0].clientY - y0;
       if (!dragging) {
-        if (d <= 0 || (list && list.scrollTop > 0)) { if (d < 0 || (list && list.scrollTop > 0)) y0 = null; return; }
+        if (d === 0) return;
+        if (d < 0 || scrolled(from)) { y0 = null; return; }
         dragging = true; box.style.transition = 'none';
       }
       e.preventDefault(); // the sheet moves, not the list behind the finger

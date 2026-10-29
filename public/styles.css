@@ -9679,16 +9679,22 @@ select:is(.form-input, .admin-input, .agm-modal-input, .agm-modal-select, .au-in
 .pkc-foot__talk { display: inline-flex; align-items: center; gap: 5px; }
 
 /* "Who picked" list */
-.pkc-dlg { width: min(420px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 64px)); margin: auto; padding: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+/* One scroll only: the dialog is a column, its head stays put and the list scrolls (sized to
+   the screen actually visible, dvh, so a short phone doesn't scroll the box as well). */
+.pkc-dlg { width: min(420px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 64px)); max-height: min(560px, calc(100dvh - 48px)); margin: auto; padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(0,0,0,.6); }
 .pkc-dlg::backdrop { background: rgba(5,8,14,.7); }
-.pkc-dlg[open] { animation: pkc-rise .28s cubic-bezier(.22,1,.36,1); }
+.pkc-dlg[open] { display: flex; flex-direction: column; animation: pkc-rise .28s cubic-bezier(.22,1,.36,1); }
+/* The page behind holds still while the list is open (public pick-card.js openList). */
+html.pkc-lock, html.pkc-lock body { overflow: hidden; }
 @keyframes pkc-rise { from { transform: translateY(12px); opacity: 0; } }
-.pkc-dlg__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 16px 12px; border-bottom: 1px solid var(--border); }
+.pkc-dlg__head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 16px 12px; border-bottom: 1px solid var(--border); }
 .pkc-dlg__head h2 { margin: 0; font-size: 16px; font-weight: 800; }
 .pkc-dlg__head p { margin: 2px 0 0; font-size: 12.5px; color: var(--text-muted); }
 .pkc-dlg__x { flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--text-muted); font-size: 15px; cursor: pointer; }
-.pkc-dlg__list { list-style: none; margin: 0; padding: 6px 8px 10px; max-height: 440px; overflow-y: auto; }
-.pkc-dlg__list li { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; animation: pkc-row .3s ease both; animation-delay: calc(var(--i) * 25ms); }
+.pkc-dlg__list { flex: 1; min-height: 0; list-style: none; margin: 0; padding: 6px 8px 10px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+/* Rows ripple in, but only the first screenful waits its turn: from the 12th on they all
+   start together, so a long list scrolled quickly never shows empty rows. */
+.pkc-dlg__list li { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; animation: pkc-row .3s ease both; animation-delay: calc(min(var(--i), 12) * 25ms); }
 .pkc-dlg__list li.is-me { background: rgba(245,147,50,.08); }
 .pkc-dlg__list li > a { display: flex; align-items: center; gap: 10px; min-width: 0; color: inherit; text-decoration: none; }
 .pkc-dlg__list li > a:hover .pkc-dlg__nm { text-decoration: underline; }

@@ -484,6 +484,8 @@ export function pickCardScript() {
     if (!dlg) {
       dlg = document.createElement('dialog'); dlg.className = 'pkc-dlg'; dlg.setAttribute('aria-labelledby', 'pkc-dlg-h');
       dlg.addEventListener('click', function (e) { if (e.target === dlg || e.target.closest('[data-pkc-close]')) dlg.close(); });
+      // The page behind stays put while the list is open (iPhone scrolls it otherwise).
+      dlg.addEventListener('close', function () { document.documentElement.classList.remove('pkc-lock'); });
       document.body.appendChild(dlg);
     }
     var list = faces.slice().sort(function (x, y) { return (y.me ? 1 : 0) - (x.me ? 1 : 0) || String(x.name).localeCompare(String(y.name)); });
@@ -497,7 +499,9 @@ export function pickCardScript() {
         var chip = p.side ? '<span class="pkc-dlg__chip' + (final ? (p.right ? ' is-ok' : ' is-miss') : '') + '">' + (final ? (p.right ? '✓ ' : '✕ ') : '') + '<span class="team-dot" style="background:' + esc(p.sideColor || '#888') + ';width:8px;height:8px"></span>' + esc(tc(names[p.side])) + '</span>' : '';
         return '<li style="--i:' + i + '"' + (p.me ? ' class="is-me"' : '') + '><a href="/players/' + encodeURIComponent(p.id) + '"><span class="av-stack__av' + (p.me ? ' av-stack__av--me' : '') + '" style="--team:' + esc(p.color) + ';--av:32px"><span aria-hidden="true">' + esc(p.ini) + '</span><img src="/api/player/' + encodeURIComponent(p.id) + '/photo?w=96" alt="" loading="lazy" onerror="this.remove()"></span><span class="pkc-dlg__nm">' + esc(p.me ? p.name + ' · You' : p.name) + '</span></a>' + chip + '</li>';
       }).join('') + '</ul>';
+    document.documentElement.classList.add('pkc-lock');
     dlg.showModal();
+    dlg.querySelector('.pkc-dlg__list').scrollTop = 0;
   }
 
   document.addEventListener('click', function (e) {
