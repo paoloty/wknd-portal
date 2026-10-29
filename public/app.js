@@ -156,6 +156,9 @@
     var src = block.getAttribute('data-block-src');
     var put = function (html) {
       if (!block.isConnected || html === block._html) return;
+      // Built into the screen: the first fresh copy only goes in if it's different.
+      var first = block._first; block._first = null;
+      if (first != null && block._html === undefined) { var t = document.createElement('template'); t.innerHTML = html; if (t.innerHTML === first) { block._html = html; return; } }
       block._html = html;
       if (!html) { block.hidden = true; return; }
       var rail = $('[data-rail]', block), left = rail ? rail.scrollLeft : 0; // stay on the card in view
@@ -183,9 +186,10 @@
   }
   function initBlocks() {
     $$('[data-block-src]').forEach(function (b) {
-      // data-block-later: the server knows there's nothing to show yet (no game live), so no
-      // request now, only the slow check below.
-      if (!b.hasAttribute('data-block-later')) loadBlock(b);
+      // data-block-have: the server built it into the screen (or knows there's nothing to show
+      // yet: no game live), so no request now, only the checks below.
+      if (b.hasAttribute('data-block-have')) { if (b._first === undefined) { b._first = b.innerHTML; initRails(b); } }
+      else loadBlock(b);
       // A block that keeps itself fresh (Home's live card): again every N ms while it's on
       // screen, or every data-block-idle ms while it's empty (nothing live, nothing to poll for).
       var every = Number(b.getAttribute('data-block-every')), idle = Number(b.getAttribute('data-block-idle')) || every;
@@ -2478,13 +2482,21 @@
     var live = $('main.app'), fresh = doc.querySelector('main.app');
     if (!live || !fresh || !live.querySelector('[data-lazy-inline]') || !fresh.querySelector('[data-lazy-inline]')) return false;
     var before = new DOMParser().parseFromString('<main>' + shown.main + '</main>', 'text/html').querySelector('main');
-    var L = live.children, O = before.children, N = fresh.children;
+    // Set aside: the poll popup, which leaves the screen as it opens (initPollTakeover; the same
+    // one on both sides, or every launch while a poll is up redrew all of Home), and the
+    // notifications card, the same markup always, shown by its own script before this one ran.
+    var tk = function (m) { var t = m.querySelector(':scope > [data-tk]'); return t ? t.outerHTML : ''; };
+    if (tk(before) !== tk(fresh)) return false;
+    var parts = function (m) { return Array.prototype.filter.call(m.children, function (c) { return !c.matches('[data-tk], [data-push-ask]'); }); };
+    var L = parts(live), O = parts(before), N = parts(fresh);
     if (L.length !== O.length || O.length !== N.length) return false;
-    var swaps = [], lists = [];
+    var swaps = [], lists = [], blocks = [];
     for (var i = 0; i < N.length; i++) {
       if (O[i].tagName !== N[i].tagName || L[i].tagName !== N[i].tagName) return false;
       if (O[i].outerHTML === N[i].outerHTML) continue;
       if (N[i].hasAttribute('data-lazy-inline')) { lists.push([L[i], O[i], N[i]]); continue; }
+      // A block built in (the rail, the live card): its inside, as a fresh load of it would.
+      if (N[i].matches('[data-block-have]') && L[i].matches('[data-block-have]') && !N[i].querySelector('form, input')) { blocks.push([L[i], N[i]]); continue; }
       // Parts that set themselves up (blocks, forms, countdowns, sheets): the whole screen.
       if (N[i].matches('[data-block-src], form, [data-push-ask], .poll-take') || N[i].querySelector('[data-block-src], form, input, [data-countdown], [data-countdown-to], [data-close-at], [data-pw-cd]')) return false;
       swaps.push([L[i], N[i]]);
@@ -2503,7 +2515,14 @@
       s[0].replaceWith(el);
       wakeImgs(el);
     });
-    if (swaps.length) { initVideos(); initPapawis(); if (window.wkndBkSync) window.wkndBkSync(); }
+    blocks.forEach(function (b) {
+      var el = b[0];
+      el.innerHTML = document.importNode(b[1], true).innerHTML; el.hidden = b[1].hidden;
+      el._html = undefined; el._first = el.innerHTML;
+      initRails(el); wakeImgs(el);
+    });
+    if (blocks.length) initPicks();
+    if (swaps.length || blocks.length) { initVideos(); initPapawis(); if (window.wkndBkSync) window.wkndBkSync(); }
     return true;
   }
   var prefetch = function (url) { if (!pages[url] && !inflight[url] && navigator.onLine) fetchPage(url).catch(function () {}); };

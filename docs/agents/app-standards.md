@@ -8,7 +8,7 @@ Rules marked **(target)** describe something not built yet: new code follows the
 
 Each uncached request from the Philippines costs ~1.3–1.7 s (PH → Cloudflare LAX → VPS); the server renders in 10–90 ms. **What costs time is the number of requests a screen makes one after another, not how fast the code runs.**
 
-1. **One request per screen.** Everything above the fold comes in the screen's HTML. Fetch lazily (`lazyList()`, `data-block-src`) only for page 2 onward or content below the fold.
+1. **One request per screen.** Everything above the fold comes in the screen's HTML. Fetch lazily (`lazyList()`, `data-block-src`) only for page 2 onward or content below the fold. **Nothing above the fold appears after the first paint:** a block or card that shows up late pushes everything under it down (Home's rail, live card and notifications card did, 2026-10-29). Build it into the HTML (`data-block-have` keeps a block's later refreshes), and a card only the phone can decide on gets a tiny inline script right after it.
 2. **No side effects on a GET.** Screens are prefetched on touch, refreshed in the background and re-fetched by the service worker. Logging, "seen" marks and counters go in a POST, a beacon or the lazy data request.
 3. **Server render ≤ 50 ms.** No whole-table work per request (picks context, odds, all registrations); memoise it and bust on write.
 4. **HTML ≤ ~150 KB raw.** No large inline scripts or JSON blobs.

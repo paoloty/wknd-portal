@@ -141,12 +141,15 @@ export function appFeedRows(items, prevDay = '', { eager = 0 } = {}) {
 // Home: setup card, then (only when something has a deadline) the To do card, the pinned
 // announcement, and the feed. Up next lives on My Team and the full To do on Me.
 // todos: views/app/home.js todoCard items · pinned: an announcement item or null
-// rail: the next game day's games (loaded after the screen from /app/rail, public/app.js initBlocks).
-// live: a game is being scored (or reviewed, for admins) now, so the live card loads at once and
-// every 15 s; otherwise Home only checks once a minute.
+// rail: the next game day's games (server.js appRailHtml), '' for none. Built in, not loaded after:
+// a block that lands after the screen pushes everything under it down (Paolo: "jittery", 2026-10-29).
+// live: the live card (server.js appLiveNowHtml), '' when nothing's live: then Home only checks once
+// a minute; while live, every 15 s. data-block-have: already filled, no load on arrival.
+// The notifications card is shown by the script after it, before the first paint, for the same
+// reason (public/app.js initPush shows it after a swap).
 // feed: the feed's first page ({ html, next }, server.js appFeedPage), in the screen itself so
 // the cards come with Home instead of one request later (Fable speed audit, 2026-10-28).
-export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todos = [], pinned = null, rail = false, live = true, feed = null }) {
+export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todos = [], pinned = null, rail = '', live = '', feed = null }) {
   const strip = todoCard(todos);
   return `${header}
   ${setupHtml}
@@ -155,11 +158,11 @@ export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todo
     <b>Turn on notifications?</b>
     <p>Picks closing, new Papawis runs, your stat card after a game. You choose which in Settings.</p>
     <div class="push-ask__btns"><button type="button" class="btn" data-push-ask-on>Turn on notifications</button><button type="button" class="btn btn--plain" data-push-ask-off>Not now</button></div>
-  </div>
+  </div><script>(function(){try{if('serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window&&Notification.permission==='default'&&Date.now()>Number(localStorage.getItem('wknd-push-ask')||0))document.currentScript.previousElementSibling.hidden=false;}catch(e){}})();</script>
   ${strip}
   ${pinned ? `<div class="feed feed--pinned">${annCard(pinned)}</div>` : ''}
-  <div class="live-now" data-block-src="/app/live-now" data-block-every="15000" data-block-idle="60000"${live ? '' : ' data-block-later'} hidden></div>
-  ${rail ? '<div class="rail-block" data-block-src="/app/rail"><div class="rail-h"><b class="skel skel--line skel--short" style="width:120px"></b></div><div class="rail"><div class="rc skel-card"><span class="skel skel--line skel--short"></span><span class="skel skel--block"></span><span class="skel skel--line"></span></div><div class="rc skel-card"></div></div></div>' : ''}
+  <div class="live-now" data-block-src="/app/live-now" data-block-every="15000" data-block-idle="60000" data-block-have${live ? '' : ' hidden'}>${live}</div>
+  ${rail ? `<div class="rail-block" data-block-src="/app/rail" data-block-have>${rail}</div>` : ''}
   ${lazyList({ src: '/app/feed/items', cards: true, first: feed, empty: 'Nothing here yet. Results, news and announcements show up here.' })}`;
 }
 
