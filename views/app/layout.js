@@ -110,7 +110,8 @@ export function appAvatar({ playerId, initials = '', ring = '', size = '', badge
   const cls = size ? ` avatar--${size}` : '';
   const img = playerId ? `<img src="${esc(photoUrl)}" alt="" onerror="this.remove()">` : '';
   const b = badge ? `<span class="badge-dot">${badge > 9 ? '9+' : badge}</span>` : '';
-  return `<span class="avatar-wrap"><span class="avatar${cls}" style="--ring:${esc(ring || 'var(--subtle)')}">${esc(initials)}${img}</span>${b}</span>`;
+  // data-pid: tapping a face opens the player's profile (public/app.js), unless it sits in a link.
+  return `<span class="avatar-wrap"${playerId ? ` data-pid="${esc(playerId)}"` : ''}><span class="avatar${cls}" style="--ring:${esc(ring || 'var(--subtle)')}">${esc(initials)}${img}</span>${b}</span>`;
 }
 
 // "Install the app" wall (installWall: the app_require_install setting). On a phone the app

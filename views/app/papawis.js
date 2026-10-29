@@ -7,6 +7,7 @@
 // voucher (public/app.js initPapawis).
 import { esc, appAvatar, backChev, chev, icons, lazyList } from './layout.js';
 import { papawisAdminStrip } from './admin-papawis.js';
+import { appSocialBar } from './comments.js';
 
 const lt = title => `<header class="lt"><h1>${esc(title)}</h1></header>`;
 // "**Blue** is …" → bold names (the stored write-up marks them that way).
@@ -104,6 +105,7 @@ function runCard(r) {
       <p class="msg msg--err" data-pw-msg role="alert" hidden></p>
     </div>
     ${r.admin ? papawisAdminStrip(r.admin) : ''}
+    ${appSocialBar(r.social)}
   </section>`;
 }
 

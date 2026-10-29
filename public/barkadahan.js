@@ -21,7 +21,7 @@
   var onlyEmoji = function (s) { try { return /^[\p{Extended_Pictographic}‍️\s]{1,16}$/u.test(s) && Array.from(s.replace(/\s/g, '')).length <= 8; } catch (e) { return false; } };
   var avatar = function (m) {
     // The same markup as views/app/layout.js appAvatar.
-    return '<span class="avatar-wrap bk-av"><span class="avatar" style="--ring:' + esc(m.ring || 'var(--subtle)') + '">' + esc(m.initials || '?') + (m.photo ? '<img src="' + esc(m.photo) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '</span></span>';
+    return '<span class="avatar-wrap bk-av"' + (m.pid ? ' data-pid="' + esc(m.pid) + '"' : '') + '><span class="avatar" style="--ring:' + esc(m.ring || 'var(--subtle)') + '">' + esc(m.initials || '?') + (m.photo ? '<img src="' + esc(m.photo) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '</span></span>';
   };
 
   // The room on screen now; its listeners on window/document/visualViewport come off when it's
@@ -63,7 +63,7 @@
       var state = m.pending ? '<span class="bk-st">' + (m.failed ? 'Not sent · <button type="button" data-bk-retry>Retry</button>' : 'Sending…') + '</span>' : '';
       return '<div class="bk-m' + (mine ? ' is-me' : '') + (cont ? ' is-cont' : '') + '" data-id="' + esc(m.id) + '">'
         + (mine || cont ? '' : avatar(m))
-        + '<div class="bk-m__b">' + (mine || cont ? '' : '<div class="bk-who"><span class="dot" style="--c:' + esc(m.ring || 'var(--subtle)') + '"></span><b>' + esc(m.name) + '</b><span>' + esc(timeOf(m.at)) + '</span></div>')
+        + '<div class="bk-m__b">' + (mine || cont ? '' : '<div class="bk-who"><span class="dot" style="--c:' + esc(m.ring || 'var(--subtle)') + '"></span><b data-pid="' + esc(m.pid) + '">' + esc(m.name) + '</b><span>' + esc(timeOf(m.at)) + '</span></div>')
         + bubble + rxHtml(m) + state + '</div></div>';
     }
     var nearBottom = function () { return list.scrollHeight - list.scrollTop - list.clientHeight < 80; };
@@ -365,7 +365,7 @@
       return sheet;
     }
     var personRow = function (p, right, rightCls) {
-      return '<div class="bk-row">' + avatar(p) + '<span class="bk-row__t">' + esc(p.pid === me.pid ? 'You' : p.full || p.name) + '<small>' + esc(p.team || 'No team') + '</small></span><span class="bk-row__v' + (rightCls ? ' ' + rightCls : '') + '">' + right + '</span></div>';
+      return '<div class="bk-row" data-pid="' + esc(p.pid) + '">' + avatar(p) + '<span class="bk-row__t">' + esc(p.pid === me.pid ? 'You' : p.full || p.name) + '<small>' + esc(p.team || 'No team') + '</small></span><span class="bk-row__v' + (rightCls ? ' ' + rightCls : '') + '">' + right + '</span></div>';
     };
     var seenAt = function (ms) { return dayOf(ms) === todayStr() ? timeOf(ms) : dayOf(ms).replace(/^\w+, /, ''); };
     // Who reacted (tabs: All, then one per emoji) or who's seen it, for one message.

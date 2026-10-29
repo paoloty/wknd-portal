@@ -102,7 +102,7 @@ function papawisCard(it) {
   const r = it.run;
   const pct = r.max ? Math.min(100, Math.round((r.filled / r.max) * 100)) : 0;
   const faces = r.faces.slice(0, 8); // overlapping, as on the Papawis tab
-  return `<article class="sx px" data-pw-card="${esc(r.id)}"><a class="gx__link" href="/app/papawis">
+  return `<article class="sx px${it.social ? ' has-cx' : ''}" data-pw-card="${esc(r.id)}"><a class="gx__link" href="/app/papawis">
     ${r.photo ? `<div class="px__pic"><img src="${esc(r.photo)}" alt="" decoding="async"></div>` : ''}
     <div class="sx__body">
       <div class="px__top"><span class="sx__chip sx__chip--amber">Papawis</span><span class="px__when">${esc([r.today ? 'Today' : r.day, r.time].filter(Boolean).join(' · '))}</span></div>
@@ -112,7 +112,7 @@ function papawisCard(it) {
       ${faces.length ? `<span class="pwr__stack px__stack"><span class="pwr__faces">${faces.map(f => `<span class="pwr__face${f.me ? ' is-me' : ''}">${appAvatar({ playerId: f.playerId, initials: f.ini, ring: f.color, photoUrl: f.photoUrl })}</span>`).join('')}${r.faces.length > faces.length ? `<span class="pwr__more">+${r.faces.length - faces.length}</span>` : ''}</span></span>` : ''}
       <div class="px__foot"><span>${r.filled} of ${r.max} in${r.waiting ? ` · ${r.waiting} waiting` : ''}</span><b>${r.full ? 'Full' : `${r.open} spot${r.open === 1 ? '' : 's'} left`}</b></div>
     </div>
-  </a><div class="sx__act pwr__action">${papawisAction(r)}<p class="msg msg--err" data-pw-msg hidden></p></div></article>`;
+  </a><div class="sx__act pwr__action">${papawisAction(r)}<p class="msg msg--err" data-pw-msg hidden></p></div>${appSocialBar(it.social)}</article>`;
 }
 
 const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard };

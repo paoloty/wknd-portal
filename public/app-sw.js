@@ -45,10 +45,11 @@ const wipe = () => Promise.all([PAGES, DATA].map((k) => caches.delete(k)));
 
 const isShellAsset = (url) => url.origin === location.origin
   && (/^\/(app\.css|app\.js|table-scroll\.js|share-cards\.js|scorer\.js|score-engine\.js|live-score\.js|live-chat\.js|barkadahan\.js|app-icon-[\w-]+\.png|favicon-\d+\.png)$/.test(url.pathname) || url.pathname.startsWith('/fonts/'));
-// Screens worth keeping: the tabs, settings, notifications, games and news posts. Not
+// Screens worth keeping: the tabs, settings, notifications, games, news posts, profiles and the
+// Season screen. Not
 // sign-in, setup, Face ID, Settle (money) or anything that posts.
 const isScreen = (url) => url.origin === location.origin
-  && /^\/app(\/(picks|papawis|papawis\/(?!past$)[^/]+|team|me|settings|notifications|games\/[^/]+|games\/[^/]+\/share|posts\/[^/]+|score|score\/[^/]+|practice|help\/scoring|help\/scoring\/[^/]+))?\/?$/.test(url.pathname);
+  && /^\/app(\/(picks|papawis|papawis\/(?!past$)[^/]+|team|me|settings|players\/[^/]+|season|season\/(bracket|games)|notifications|games\/[^/]+|games\/[^/]+\/share|posts\/[^/]+|score|score\/[^/]+|practice|help\/scoring|help\/scoring\/[^/]+))?\/?$/.test(url.pathname);
 const isData = (url) => url.origin === location.origin && (/^\/app\/(feed|notifications)\/items$/.test(url.pathname) || url.pathname === '/app/papawis/past' || url.pathname === '/app/rail');
 const isImage = (url) => url.origin === location.origin
   && (/^\/api\/photo\/[^/]+$/.test(url.pathname) || /^\/api\/player\/[^/]+\/photo$/.test(url.pathname) || /^\/app\/announcements\/[^/]+\/image$/.test(url.pathname));
