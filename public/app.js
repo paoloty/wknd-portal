@@ -47,6 +47,94 @@
   // (Not one still waiting to be woken: no src yet reads as "complete" with no width.)
   $$('.media img, .gx__hero img, .nx__pic img').forEach(function (img) { if (img.getAttribute('src') && img.complete && !img.naturalWidth) imgFailed(img); });
 
+  // ════ A player's profile (views/app/season.js appPlayerPage) ════
+  // The cover drifts at half the scroll (parallax) and stretches on a pull down at the top; the
+  // back button sits on a dark pill until the nav turns solid past the cover; once the name has
+  // gone under the nav, the sticky bar under it shows the photo, first name and the section
+  // chips (the one in view lit). Chips jump to their section; the name goes back to the top.
+  // Reduce Motion: no parallax, the bar just switches.
+  var ppOff = null;
+  function initProfile() {
+    if (ppOff) ppOff();
+    var pp = $('[data-pp]'); if (!pp) return;
+    var cover = $('[data-pp-cover]', pp), img = cover && $('img', cover), name = $('[data-pp-name]', pp), nav = $('.pp-nav', pp);
+    var chips = $$('[data-pp-go]', $('[data-pp-jump]', pp));
+    // tapped: the chip just tapped stays lit while the page scrolls there (a section near the end
+    // can't reach the top), until the player scrolls themselves.
+    var still = window.matchMedia('(prefers-reduced-motion: reduce)').matches, raf = 0, tapped = -1;
+    var navBottom = function () { return nav ? nav.getBoundingClientRect().bottom : 44; };
+    var paint = function () {
+      raf = 0;
+      if (!pp.isConnected) return off();
+      var y = window.scrollY, ch = cover.offsetHeight || 1, nb = navBottom();
+      if (img && !still) img.style.transform = y < 0 ? 'scale(' + (1 + -y / ch).toFixed(3) + ')' : y < ch ? 'translate3d(0,' + Math.round(y * 0.5) + 'px,0)' : '';
+      var top = name.getBoundingClientRect().top;
+      var mini = still ? (top < nb ? 1 : 0) : Math.max(0, Math.min(1, (nb + 10 - top) / 30));
+      pp.style.setProperty('--pp-mini', mini.toFixed(3));
+      pp.classList.toggle('is-mini', mini > 0.5);
+      pp.classList.toggle('is-solid', cover.getBoundingClientRect().bottom <= nb + 2);
+      var cur = 0;
+      chips.forEach(function (c, i) { var s = document.getElementById(c.getAttribute('data-pp-go')); if (s && s.getBoundingClientRect().top <= nb + 80) cur = i; });
+      // At the very end of the page: the last section in view, since it can't scroll any higher.
+      if (window.innerHeight + y >= document.documentElement.scrollHeight - 4) chips.forEach(function (c, i) { var s = document.getElementById(c.getAttribute('data-pp-go')); if (s && s.getBoundingClientRect().top < window.innerHeight - 80) cur = i; });
+      if (tapped >= 0) cur = tapped;
+      chips.forEach(function (c, i) { c.classList.toggle('is-on', i === cur); });
+    };
+    var onScroll = function () { if (!raf) raf = requestAnimationFrame(paint); };
+    var own = function () { if (tapped >= 0) { tapped = -1; onScroll(); } };
+    var off = function () { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); window.removeEventListener('touchstart', own); window.removeEventListener('wheel', own); ppOff = null; };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    window.addEventListener('touchstart', own, { passive: true });
+    window.addEventListener('wheel', own, { passive: true });
+    ppOff = off;
+    // Bound again on each setup (this run's tapped and chips), the last one taken off.
+    if (pp._ppClick) pp.removeEventListener('click', pp._ppClick);
+    {
+      pp.addEventListener('click', pp._ppClick = function (e) {
+        var go = e.target.closest('[data-pp-go]'), up = e.target.closest('[data-pp-top]');
+        if (!go && !up) return;
+        e.preventDefault();
+        var s = go && document.getElementById(go.getAttribute('data-pp-go'));
+        tapped = go ? chips.map(function (c) { return c.getAttribute('data-pp-go'); }).indexOf(go.getAttribute('data-pp-go')) : -1;
+        window.scrollTo({ top: s ? Math.max(0, window.scrollY + s.getBoundingClientRect().top - navBottom() - 58) : 0, behavior: still ? 'auto' : 'smooth' });
+      });
+    }
+    paint();
+  }
+
+  // Me → cover photo: shrunk on the phone first (a 12 MP photo would take ages on a weak signal),
+  // then cropped wide by the server (POST /app/me/cover). Remove goes back to the latest game's.
+  var coverBusy = false;
+  document.addEventListener('click', function (e) {
+    var pick = e.target.closest && e.target.closest('[data-cover-pick]');
+    if (pick) { var inp = $('[data-cover-input]'); if (inp) { inp.value = ''; inp.click(); } return; }
+    var rm = e.target.closest && e.target.closest('[data-cover-remove]');
+    if (!rm || coverBusy) return;
+    if (!window.confirm('Remove your cover photo? Your profile goes back to your latest game’s photo.')) return;
+    coverBusy = true;
+    postJson('/app/me/cover/remove', {}).then(function () { coverBusy = false; toast('Cover removed'); refreshScreen(true); }, function (err) { coverBusy = false; toast(err && err.message && err.message !== 'failed' ? err.message : 'That didn’t go through. Try again.', 'err'); });
+  });
+  document.addEventListener('change', function (e) {
+    var inp = e.target.closest && e.target.closest('[data-cover-input]');
+    if (!inp || !inp.files || !inp.files[0] || coverBusy) return;
+    var file = inp.files[0];
+    if (!/^image\//.test(file.type || '')) return toast('That isn’t a photo.', 'err');
+    if (!navigator.onLine) return toast('You’re offline. Nothing was sent.', 'err');
+    coverBusy = true; toast('Uploading your cover…', 'info');
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      var s = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+      var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      postJson('/app/me/cover', { dataUrl: c.toDataURL('image/jpeg', 0.86) }).then(function () { coverBusy = false; toast('Cover saved'); refreshScreen(true); },
+        function (err) { coverBusy = false; toast(err && err.message && err.message !== 'failed' ? err.message : 'That didn’t go through. Try again.', 'err'); });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); coverBusy = false; toast('Couldn’t read that photo. Try another.', 'err'); };
+    img.src = url;
+  });
+
   // ════ Blocks ════
   // A part of a screen that loads after it (Home's rail, /app/rail → JSON { html }): the copy
   // on the phone shows at once (public/app-sw.js keeps one), then the network's. A kept or
@@ -650,7 +738,7 @@
     initScorer();
     initLive(); initChat();
     initGameRecap();
-    initPractice(); initGuide(); initBarkadahan(); initOnlineSwitch();
+    initPractice(); initGuide(); initBarkadahan(); initOnlineSwitch(); initProfile();
     if (window.wkndBkSync) window.wkndBkSync();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s

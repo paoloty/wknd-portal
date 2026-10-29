@@ -183,7 +183,7 @@ import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
 import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './lib/ai.js';
 import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS, voiceFlavor, voiceProblems, voiceTraits, DEFAULT_VOICES } from './lib/ai-voices.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
-import { computeSeasonBadges, statCatCount, qualifyingCats } from './lib/badges.js';
+import { computeSeasonBadges, statCatCount, qualifyingCats, BADGE_ICONS } from './lib/badges.js';
 import { leaderMinGames, awardMinGames, qualifiesPerGame, meetsLeaderRule, CAREER_MIN_GP } from './lib/qualification.js';
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
@@ -5804,6 +5804,13 @@ function sendPlayerJersey(req, res, { failed = false } = {}) {
   res.type('image/svg+xml').send(svg);
 }
 
+// A player's own cover (the app's profile), at the feed's widths like game covers.
+app.get('/api/player/:id/cover', async (req, res) => {
+  const row = getPlayerCover(req.params.id);
+  if (!row) return res.status(404).end();
+  await sendPlayerPhoto(req, res, row.data_url, { widths: COVER_WIDTHS, maxAge: 86400 });
+});
+
 app.get('/api/player/:id/photo', async (req, res) => {
   const row = getPlayerPhoto(req.params.id);
   if (!row) return res.status(404).end();
@@ -6098,7 +6105,7 @@ import { appScorerGuidePage, appScorerChapterPage } from './views/app/help.js';
 import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
-import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince } from './lib/portal-db.js';
+import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince } from './lib/portal-db.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
@@ -8587,12 +8594,37 @@ const ordinal = n => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 
 // A player's profile: what the site's public /players/:id shows (no money, nothing private).
 // Any face or name in the app opens it (public/app.js, [data-pid]); your own opens Me.
 const APP_TOP_AWARDS = new Set(['champion', 'finals_mvp', 'mvp', 'dpoy']);
+// The profile's cover: the player's own, else the photo of the latest game they played that has
+// one, else null (the team colour). { img, srcset, own } | null.
+function appPlayerCover(pid, log = getPlayerGameLog(pid).filter(g => g.status === 'played')) {
+  const at = getPlayerCoverAt(pid);
+  if (at) return { ...sizedSrc(`/api/player/${encodeURIComponent(pid)}/cover?v=${at}`), own: true };
+  const withCover = new Set(getAllGames().filter(g => g.has_cover).map(g => String(g.id)));
+  const g = log.find(x => withCover.has(String(x.id)));
+  return g ? { ...sizedSrc(`/api/photo/${encodeURIComponent(g.id)}?v=${gameCoverVersion(String(g.id))}`), own: false } : null;
+}
+// Me → Cover photo: the phone sends it downscaled; it's cropped wide here, as a Papawis cover.
+app.post('/app/me/cover', requireAppData, express.json({ limit: '20mb' }), async (req, res) => {
+  if (req.session.impersonating) return res.status(403).json({ error: 'Viewing as a player is read-only.' });
+  const buf = parseDataUrl(String(req.body?.dataUrl || ''));
+  if (!buf) return res.status(400).json({ error: 'That isn’t a photo.' });
+  try {
+    const out = await sharp(buf).rotate().resize(1600, 900, { fit: 'cover', position: 'attention' }).jpeg({ quality: 80, progressive: true }).toBuffer();
+    setPlayerCover(req.session.playerPlayerId, 'data:image/jpeg;base64,' + out.toString('base64'));
+    res.json({ ok: true });
+  } catch (e) { console.error('[player cover]', e.message); res.status(500).json({ error: 'Couldn’t use that photo. Try another.' }); }
+});
+app.post('/app/me/cover/remove', requireAppData, (req, res) => {
+  if (req.session.impersonating) return res.status(403).json({ error: 'Viewing as a player is read-only.' });
+  deletePlayerCover(req.session.playerPlayerId);
+  res.json({ ok: true });
+});
 app.get('/app/players/:id', requireApp, (req, res) => {
   const me = appMe(req);
   const back = APP_BACK[req.query.from] ? appBack(req) : { href: '/app', label: 'Back', tab: 'home' };
   const p = getPlayerWithTeam(req.params.id);
   if (!p) return sendTab(res, me, { title: 'Player · WKND', tab: back.tab, body: appPlayerMissing(back) });
-  if (p.id === me.playerId) return res.redirect('/app/me');
+  if (p.id === me.playerId && req.query.as !== 'public') return res.redirect('/app/me'); // Me → View my profile: ?as=public
   const season = String(getPortalCurrentSeason());
   const log = getPlayerGameLog(p.id).filter(g => g.status === 'played');
   // Regular season only, as Me and the site profile's season line.
@@ -8603,11 +8635,25 @@ app.get('/app/players/:id', requireApp, (req, res) => {
   const name = displayPlayerName(p.name || '');
   const ring = teamColorById(getAllTeams(), p.team_id);
   const statsByType = getPlayerStatsByType(p.id);
+  // This season's badges, as the site profile works them out (lib/badges.js): regular-season
+  // games, and the team they played for this season for Iron Man. Best first.
+  let badges = [];
+  try {
+    const row = statsByType.seasons.find(r => r.game_type === 'regular' && String(r.season) === season);
+    if (row) {
+      const teamId = inSeason[0]?.player_team_id || p.team_id;
+      const TIER = { gold: 0, silver: 1, bronze: 2 };
+      const rank = b => (b.kind === 'legendary' ? -1 : b.kind === 'tiered' ? TIER[b.tier] : 3);
+      badges = computeSeasonBadges(row, inSeason, teamId ? getTeamGamesCount(teamId, season) : 0).earned
+        .sort((x, y) => rank(x) - rank(y))
+        .map(b => ({ name: b.name, tier: b.kind === 'tiered' ? b.tier : b.kind === 'legendary' ? 'legendary' : '', meta: b.meta || '', icon: BADGE_ICONS[b.icon] || BADGE_ICONS.basketball }));
+    }
+  } catch (e) { console.error('[app profile badges]', e.message); }
   sendTab(res, me, { title: `${name} · WKND`, tab: back.tab, body: appPlayerPage({
-    back,
+    back, badges, season: season, cover: appPlayerCover(p.id, log),
     p: { id: p.id, name, initials: initials(name), ring, photoUrl: playerPhotoUrl(p.id, 192), team: titleCase(p.team_name || ''),
       number: String(p.number ?? ''), positions: parsePositions(p.positions).join(' / '), writeup: String(p.writeup || '').trim() },
-    season: inSeason.length ? {
+    stats: inSeason.length ? {
       label: `Season ${season} · ${inSeason.length} game${inSeason.length === 1 ? '' : 's'}`,
       tiles: [[per('pts'), 'PTS'], [per('reb'), 'REB'], [per('ast'), 'AST'], tries ? [(threes / tries * 100).toFixed(1), '3P%'] : [String(inSeason.length), 'GP']],
       foot: `${per('stl')} steals · ${per('blk')} blocks a game${threes ? ` · ${threes} three${threes === 1 ? '' : 's'}` : ''}`,
@@ -8740,7 +8786,7 @@ app.get('/app/me', requireApp, (req, res) => {
   const toScore = scorableGameIds(me.playerId).length;
   if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: getPlayerById(me.playerId)?.is_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
   const scoring = scoringMenuFor(me.playerId) ? { games: toScore } : null;
-  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring,
+  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: me.playerId ? { own: !!getPlayerCoverAt(me.playerId) } : null,
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
     games,
