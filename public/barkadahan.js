@@ -398,6 +398,25 @@
         })
         .catch(function (err) { if (sheet === sh) sh.querySelector('[data-bk-sheet-body]').innerHTML = '<p class="bk-sheet__empty">' + esc(err.message || 'No connection.') + '</p>'; });
     }
+    // A person's menu (a face or name tapped in the room or its lists): View profile, Mention,
+    // and Mute for admins. Who they are comes from their messages, else the people list.
+    function personMenu(pid) {
+      var m = null; for (var k = msgs.length - 1; k >= 0; k--) if (msgs[k].pid === pid) { m = msgs[k]; break; }
+      var full = (m && m.full) || nameOf[pid] || 'Player', short = (m && m.name) || full;
+      var p = m || { pid: pid, initials: full.split(' ').map(function (w) { return w.charAt(0); }).join('').slice(0, 2), ring: '', photo: '' };
+      closeSheet();
+      if (input && document.activeElement === input) input.blur();
+      if (emoSheet) { emoSheet.remove(); emoSheet = null; }
+      var self = pid === me.pid, acts = [['profile', self ? 'View your profile' : 'View profile']];
+      if (!self && !me.cant && nameOf[pid]) acts.push(['mention', 'Mention @' + nameOf[pid]]);
+      if (!self && me.mod) acts.push(['mute', 'Mute ' + short + '…']);
+      sheet = document.createElement('div');
+      sheet.className = 'bk-hold'; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-label', full);
+      sheet._m = { pid: pid, name: nameOf[pid] || full, short: short };
+      sheet.innerHTML = '<div class="bk-hold__in"><div class="bk-hold__msg bk-pm">' + avatar(p).replace(' data-pid=', ' data-self=') + '<span><b>' + esc(full) + '</b>' + (m && m.team ? '<small>' + esc(m.team) + '</small>' : '') + '</span></div>'
+        + '<div class="bk-hold__acts">' + acts.map(function (a) { return '<button type="button" data-bk-pm="' + a[0] + '">' + esc(a[1]) + '</button>'; }).join('') + '</div></div>';
+      el.appendChild(sheet);
+    }
     // Admins: what's open right now, to share as a card.
     function openShare() {
       var sh = listSheet('Share to the chat');
@@ -501,6 +520,25 @@
       // The click that follows a hold's lift lands on what was under the finger (the menu, a
       // reaction pill, a card's button or link): it never counts.
       if (Date.now() < quietUntil) { e.preventDefault(); e.stopPropagation(); return; }
+      // A face or name here opens a small menu, not the profile straight away (Paolo, 2026-10-29).
+      var pf = t.closest('[data-pid]');
+      if (pf && !t.closest('button:not(.bk-row), a')) { e.preventDefault(); return personMenu(pf.getAttribute('data-pid')); }
+      var pm = t.closest('[data-bk-pm]');
+      if (pm && sheet) {
+        var who = sheet._m; closeSheet();
+        var act2 = pm.getAttribute('data-bk-pm');
+        if (act2 === 'profile') { var a2 = document.createElement('a'); a2.href = '/app/players/' + encodeURIComponent(who.pid); el.appendChild(a2); a2.click(); a2.remove(); return; }
+        if (act2 === 'mention' && input) {
+          var at = input.value && !/\s$/.test(input.value) ? ' ' : '';
+          input.value += at + '@' + who.name + ' '; mentions[who.pid] = who.name; input.dispatchEvent(new Event('input')); input.focus(); return;
+        }
+        if (act2 === 'mute') {
+          sheet = document.createElement('div'); sheet.className = 'bk-hold'; sheet._m = { pid: who.pid, name: who.short };
+          sheet.innerHTML = '<div class="bk-hold__in"><div class="bk-hold__msg">Mute ' + esc(who.short) + ' in the Barkadahan? They can still read.</div><div class="bk-hold__acts"><button type="button" data-bk-mute="1">For a day</button><button type="button" data-bk-mute="7">For a week</button><button type="button" data-bk-mute="cancel">Cancel</button></div></div>';
+          el.appendChild(sheet); return;
+        }
+        return;
+      }
       var rxb = t.closest('[data-bk-rx]'); if (rxb) return react(byId[rxb.closest('[data-id]').getAttribute('data-id')], rxb.getAttribute('data-bk-rx'));
       var pwb = t.closest('[data-bk-pw]'); if (pwb && !pwb.disabled) return papawisAct(pwb);
       var pkb = t.closest('[data-bk-pick] .pick__opt'); if (pkb) return pickAct(pkb);

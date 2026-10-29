@@ -27,7 +27,7 @@ export function appBarkadahanPage({ bundle }) {
 }
 
 const ago = ms => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'Just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ago`; };
-const row = (p, right, rightCls = '') => `<div class="cell"><span class="bk-av${right === 'Now' ? ' is-on' : ''}">${appAvatar({ playerId: p.pid, initials: p.initials, ring: p.ring, photoUrl: p.photo })}</span>
+const row = (p, right, rightCls = '') => `<div class="cell" data-pid="${esc(p.pid)}"><span class="bk-av${right === 'Now' ? ' is-on' : ''}">${appAvatar({ playerId: p.pid, initials: p.initials, ring: p.ring, photoUrl: p.photo })}</span>
   <span class="cell__t">${esc(p.full)}<small>${esc(p.team || 'No team')}</small></span><span class="cell__v ${rightCls}">${esc(right)}</span></div>`;
 
 // now / earlier: bkPerson rows (earlier with seen ms). hiddenMe: this player hides themselves.
