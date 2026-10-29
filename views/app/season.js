@@ -23,7 +23,22 @@ const medal = b => `<span class="pp-md${b.tier ? ` is-${esc(b.tier)}` : ''}" ari
 // Scrolling (public/app.js initProfile): the cover drifts at half speed (parallax) and stretches on
 // a pull down; once the name has gone under the nav, the sticky bar below it shows the photo and
 // first name, then chips that jump to each section (the one in view lit).
-export function appPlayerPage({ back, p, cover, season, stats, games, badges = [], career, awards, papawis }) {
+// No cover photo: one drawn in the team's colour (a deep shade of it, faint half-court lines,
+// the team name), part of the page, nothing to load.
+function teamCover(p) {
+  const name = esc(String(p.team || 'WKND').toUpperCase());
+  return `<svg class="pp-cover__art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <rect width="1600" height="900" fill="currentColor"/>
+    <g fill="none" stroke="#fff" stroke-opacity=".13" stroke-width="6">
+      <path d="M0 880H1600"/><path d="M560 880V470H1040V880"/><circle cx="800" cy="470" r="150"/>
+      <path d="M220 880V700A580 580 0 0 1 1380 700V880"/><path d="M0 120H1600" stroke-opacity=".07"/><circle cx="800" cy="-60" r="230" stroke-opacity=".08"/>
+    </g>
+    <text x="1560" y="400" text-anchor="end" font-family="Archivo, system-ui, sans-serif" font-weight="900" font-style="italic" font-size="300" fill="#fff" fill-opacity=".07" letter-spacing="-8">${name}</text>
+  </svg>`;
+}
+
+// mine: your own profile — the cover gets Add / Change cover (and Remove) buttons.
+export function appPlayerPage({ back, p, cover, mine = false, season, stats, games, badges = [], career, awards, papawis }) {
   const first = p.name.split(' ')[0];
   const parts = [stats && ['pp-stats', 'Stats'], ['pp-games', 'Games'], badges.length && ['pp-badges', 'Badges'], career.length && ['pp-career', 'Career'], awards.length && ['pp-awards', 'Awards']].filter(Boolean);
   const shown = badges.slice(0, 8), more = badges.slice(8);
@@ -34,7 +49,13 @@ export function appPlayerPage({ back, p, cover, season, stats, games, badges = [
     <button type="button" class="pp-jump__who" data-pp-top aria-label="Back to the top">${appAvatar({ playerId: p.id, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}<b>${esc(first)}</b></button>
     <nav class="pp-jump__chips" aria-label="Sections">${parts.map(([id, label], i) => `<a href="#${id}" data-pp-go="${id}"${i ? '' : ' class="is-on"'}>${label}</a>`).join('')}</nav>
   </div>
-  <div class="pp-cover" data-pp-cover style="--team:${esc(p.ring)}">${cover ? `<img src="${esc(cover.img)}" srcset="${esc(cover.srcset)}" sizes="(min-width: 560px) 560px, 100vw" alt="" decoding="async">` : ''}</div>
+  <div class="pp-cover" data-pp-cover style="--team:${esc(p.ring)}">${cover ? `<img src="${esc(cover.img)}" srcset="${esc(cover.srcset)}" sizes="(min-width: 560px) 560px, 100vw" alt="" decoding="async">` : teamCover(p)}
+    ${mine ? `<div class="pp-cover__edit">
+      ${cover ? `<button type="button" class="pp-cover__btn is-icon" data-cover-remove aria-label="Remove cover photo">${icons.close}</button>` : ''}
+      <button type="button" class="pp-cover__btn" data-cover-pick>${icons.camera}<span>${cover ? 'Change cover' : 'Add cover'}</span></button>
+      <input type="file" accept="image/*" data-cover-input hidden>
+    </div>` : ''}
+  </div>
   <div class="pp-hero">
     ${appAvatar({ playerId: p.id, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl, size: 'xl' })}
     <h1 class="pp-hero__name" data-pp-name>${esc(p.name)}</h1>

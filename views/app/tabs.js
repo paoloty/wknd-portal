@@ -72,10 +72,10 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
   <p class="foot-note">Points · rebounds · assists</p>` : '<div class="empty">No games played yet this season.</div>'}
   <div class="sec">Profile</div>
   <div class="group group--icons">
-    <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?as=public"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>As other players see it</small></span>${chev}</a>
+    <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?from=me"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>As other players see it · add a cover</small></span>${chev}</a>
     <a class="cell" href="/app/setup/photo"><span class="ico">${icons.camera}</span><span class="cell__t">Change photo</span>${chev}</a>
-    ${cover ? `<button type="button" class="cell" data-cover-pick><span class="ico">${icons.image}</span><span class="cell__t">${cover.own ? 'Change cover photo' : 'Add a cover photo'}<small>${cover.own ? 'The wide photo at the top of your profile' : 'For now it’s your latest game’s photo'}</small></span>${chev}</button>
-    ${cover.own ? `<button type="button" class="cell" data-cover-remove><span class="ico">${icons.close}</span><span class="cell__t">Remove cover photo<small>Go back to your latest game’s photo</small></span></button>` : ''}
+    ${cover ? `<button type="button" class="cell" data-cover-pick><span class="ico">${icons.image}</span><span class="cell__t">${cover.own ? 'Change cover photo' : 'Add a cover photo'}<small>${cover.own ? 'The wide photo at the top of your profile' : 'For now it’s your team’s colours'}</small></span>${chev}</button>
+    ${cover.own ? `<button type="button" class="cell" data-cover-remove><span class="ico">${icons.close}</span><span class="cell__t">Remove cover photo<small>Go back to your team’s colours</small></span></button>` : ''}
     <input type="file" accept="image/*" data-cover-input hidden>` : ''}
     <a class="cell" href="/app/setup/details"><span class="ico">${icons.user}</span><span class="cell__t">Edit details</span>${chev}</a>
   </div>`;
