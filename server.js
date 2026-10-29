@@ -21825,6 +21825,7 @@ import { adminSignupDetailBody } from './views/admin/season-signup-detail.js';
 import { adminReturningBody }  from './views/admin/season-returning.js';
 import { adminSeasonCandidatesBody } from './views/admin/season-candidates.js';
 import { loadSeasonCandidates } from './lib/season-candidates.js';
+import { addSeasonContribution, removeLastSeasonContribution } from './lib/portal-db.js';
 import { adminCommentsBody }   from './views/admin/season-comments.js';
 import { adminAssessmentReviewsListBody } from './views/admin/season-assessment-reviews.js';
 import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
@@ -21985,6 +21986,15 @@ app.get('/admin/season/candidates', requireAuth, (req, res) => {
     currentPath: '/admin/season/candidates',
     body: adminSeasonCandidatesBody({ data, capacity, query: req.query }),
   }));
+});
+// Contribution ticks from the candidates row menu: add one (setup / referee / other) or take
+// back the newest.
+app.post('/admin/season/candidates/:id/contribution', requireAuth, express.json(), (req, res) => {
+  if (!getPlayerWithTeam(req.params.id)) return res.status(404).json({ error: 'Not found' });
+  if (req.body?.undo) { removeLastSeasonContribution(req.params.id); return res.json({ ok: true }); }
+  const r = addSeasonContribution(req.params.id, String(req.body?.kind || ''), req.session?.playerName || 'admin');
+  if (r.error) return res.status(400).json({ error: 'Unknown kind of help.' });
+  res.json({ ok: true });
 });
 
 app.get('/admin/season/assessment-reviews', requireAuth, (req, res) => {

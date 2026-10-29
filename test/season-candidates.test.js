@@ -3,7 +3,7 @@
 // nothing here reads or writes it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gradeSeason, rankCandidates } from '../lib/season-candidates.js';
+import { gradeSeason, rankCandidates, isSeasonFee, RULES } from '../lib/season-candidates.js';
 
 const season = { firstGame: '2026-09-13', lastRegular: '2026-10-18', lastGame: '2026-11-08', over: true };
 const charge = (date, amount = 3750) => ({ type: 'charge', amount, date });
@@ -44,6 +44,15 @@ test('a balance under ₱100 counts as settled', () => {
   assert.equal(gradeSeason([charge('2026-09-01'), pay('2026-09-10', 3730)], season, { now }).grade, 'ontime');
 });
 
+test('only season-fee rows count, not Papawis or other charges tagged with the season', () => {
+  assert.equal(isSeasonFee({ category: 'Season Fee' }), true);
+  assert.equal(isSeasonFee({ category: 'season_fee' }), true);
+  assert.equal(isSeasonFee({ category: 'Game Fee' }), true);
+  assert.equal(isSeasonFee({ category: 'Papawis' }), false);
+  assert.equal(isSeasonFee({ category: 'Other' }), false);
+  assert.equal(isSeasonFee({ category: '' }), false);
+});
+
 test('no season fee means no grade', () => {
   assert.equal(gradeSeason([], season, { now }), null);
 });
@@ -68,6 +77,48 @@ test('ranking: eligible first, then group, then active online, then clean payers
   assert.deepEqual(by.owes.blockers, ['Owes']);
   assert.equal(by.owes.group, 3); // owing drops out of group 1
   assert.equal(by.regular.group, 2);
+});
+
+test('marks: low attendance, conduct, late cancels; under half of last season leaves Group 1', () => {
+  const by = Object.fromEntries(rankCandidates([
+    person('clean', { playedLast: true, activeWeeks: 8, attendance: { played: 6, teamGames: 7 } }),
+    person('patchy', { playedLast: true, activeWeeks: 8, attendance: { played: 4, teamGames: 7 } }),
+    person('absent', { playedLast: true, activeWeeks: 8, attendance: { played: 2, teamGames: 7 } }),
+    person('fined', { playedLast: true, activeWeeks: 8, conduct: { fines: 1, maxTechs: 0, dq: 0 } }),
+    person('hothead', { playedLast: true, activeWeeks: 8, conduct: { fines: 2, maxTechs: 0, dq: 0 } }),
+    person('flaky', { playedLast: true, activeWeeks: 8, lateCancels: 2 }),
+  ]).map(r => [r.id, r]));
+  assert.deepEqual(by.clean.marks, []);
+  assert.deepEqual(by.patchy.marks, ['attendance']);
+  assert.equal(by.patchy.group, 1);
+  assert.equal(by.absent.group, 3);
+  assert.deepEqual(by.fined.marks, ['conduct']);
+  assert.equal(by.fined.discuss, false);
+  assert.equal(by.hothead.discuss, true);
+  assert.deepEqual(by.flaky.marks, ['lateCancels']);
+  assert.ok(by.clean.rank < by.patchy.rank);
+});
+
+test('pluses lift a player inside the group: league + Papawis, contributed', () => {
+  const ranked = rankCandidates([
+    person('plain', { playedLast: true, activeWeeks: 9 }),
+    person('both', { playedLast: true, activeWeeks: 7, papawisRuns: 5 }),
+    person('helper', { playedLast: true, activeWeeks: 7, contributions: 2 }),
+  ]);
+  // both and helper tie on one plus; both has more Papawis runs.
+  assert.deepEqual(ranked.map(r => r.id), ['both', 'helper', 'plain']);
+  assert.deepEqual(ranked.find(r => r.id === 'both').pluses, ['both']);
+  assert.deepEqual(ranked.find(r => r.id === 'helper').pluses, ['contributed']);
+});
+
+test('approved admins get no marks but keep the must-haves', () => {
+  const rules = { ...RULES, noMarksPlayerIds: ['adm'] };
+  const [a] = rankCandidates([person('adm', { playedLast: true, activeWeeks: 0, pay: [G('after')], lateCancels: 5 })], { rules });
+  assert.deepEqual(a.marks, []);
+  assert.equal(a.payFirst, false);
+  assert.equal(a.exempt, true);
+  const [b] = rankCandidates([person('adm', { playedLast: true, balance: 900 })], { rules });
+  assert.equal(b.eligible, false);
 });
 
 test('one after-season grade is enough for pay first', () => {
