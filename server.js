@@ -8784,7 +8784,7 @@ app.get('/app/me', requireApp, (req, res) => {
   const toScore = scorableGameIds(me.playerId).length;
   if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: getPlayerById(me.playerId)?.is_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
   const scoring = scoringMenuFor(me.playerId) ? { games: toScore } : null;
-  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring,
+  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
     games,
@@ -9300,7 +9300,7 @@ app.get('/app/settings', requireApp, (req, res) => {
   ];
   const prefs = getPushPrefs(me.reg.id);
   const push = PUSH_KINDS.map(k => ({ ...k, on: prefs[k.key] !== false }));
-  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push, cover: me.playerId ? { own: !!getPlayerCoverAt(me.playerId) } : null, analytics: !getPlayerById(me.playerId)?.analytics_off, online: barkadahanOn() ? !getPlayerById(me.playerId)?.online_hidden : null }) });
+  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push, analytics: !getPlayerById(me.playerId)?.analytics_off, online: barkadahanOn() ? !getPlayerById(me.playerId)?.online_hidden : null }) });
 });
 // Settings → Analytics: { on }. Takes effect on the next page load (public/app.js reloads).
 app.post('/app/analytics', requireAppData, express.json(), (req, res) => {
