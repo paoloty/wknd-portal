@@ -991,6 +991,7 @@ a.sx:active { transform: scale(.99); }
 .gx__link:active { opacity: .92; }
 .cx { padding: 0 16px 12px; }
 .sx .sx__body + .cx, .gx__link + .cx { margin-top: -4px; }
+.pick .cx { padding: 0; margin-top: 12px; } /* the pick card already has its padding */
 .cx__btns { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid var(--hair); }
 .cx__b { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .cx__b svg { width: 16px; height: 16px; }
@@ -2535,3 +2536,5 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .ss-gm__side b { font-size: 13px; font-weight: 600; }
 .ss-gm__side b.up { color: var(--amber-text); }
 .ss-gm__side small { font-size: 12px; color: var(--muted); }
+.ss-gm__potg { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 12px; line-height: 1.35; color: var(--muted); }
+.ss-gm__potg b { flex: none; font: 600 11px/1 var(--font-num); letter-spacing: .08em; color: var(--amber-text); }

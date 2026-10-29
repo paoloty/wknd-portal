@@ -91,7 +91,7 @@ function gamesTab({ days, mineOnly, myTeam }) {
   const side = (t, played) => `<span class="ss-gt${played && !t.won ? ' is-lost' : ''}">${dotOf(t.color)}<span>${esc(t.name)}</span><b class="num">${t.score ?? ''}</b></span>`;
   return `${chips}${days.map(d => `<div class="sec">${esc(d.head)}<span class="sec__r">${esc(d.date)}</span></div>
   <div class="group">${d.games.map(g => {
-    const inner = `<span class="ss-gm__teams">${side(g.a, g.played)}${side(g.b, g.played)}</span><span class="ss-gm__side"><b${g.next ? ' class="up"' : ''}>${esc(g.side)}</b>${g.pick ? '<span class="pill">Pick</span>' : g.sideSub ? `<small>${esc(g.sideSub)}</small>` : ''}</span>`;
+    const inner = `<span class="ss-gm__teams">${side(g.a, g.played)}${side(g.b, g.played)}${g.potg ? `<small class="ss-gm__potg"><b>POTG</b>${esc(g.potg)}</small>` : ''}</span><span class="ss-gm__side"><b${g.next ? ' class="up"' : ''}>${esc(g.side)}</b>${g.pick ? '<span class="pill">Pick</span>' : g.sideSub ? `<small>${esc(g.sideSub)}</small>` : ''}</span>`;
     return g.href ? `<a class="ss-gm" href="${esc(g.href)}">${inner}</a>` : `<div class="ss-gm">${inner}</div>`;
   }).join('')}</div>`).join('')}`;
 }

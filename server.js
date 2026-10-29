@@ -8429,6 +8429,7 @@ function appGamePreview(req, res, me, back, g, reviewView = false) {
     // the "watch it live" link (this is it). Never kept on the phone, like the game screen's.
     review: reviewCardHere,
     chat: live && !live.ended && !reviewView && liveChatOn() ? liveChatData(g, req) : null,
+    thread: appCommentsOn() && !reviewView && !(live && !live.ended) ? appThreadData({ kind: 'game', key: g.id, game: g }, req) : null,
   }) });
 }
 // The viewer's own team in this game (their box score opens on it).
@@ -8686,6 +8687,8 @@ function appSeasonData(me) {
     const t = (name, id, score, won) => ({ name: titleCase(name), color: teamColorById(teams, id), score: played ? score : '', won });
     return { played, a: t(g.team_a_name, g.team_a_id, sa, sa > sb), b: t(g.team_b_name, g.team_b_id, sb, sb > sa), teams: [g.team_a_id, g.team_b_id],
       side: played ? 'Final' : (gameTipLabel(g) || 'Time TBA'), sideSub: played ? (g.youtube_url ? 'Video' : g.game_writeup ? 'Recap' : '') : '',
+      // Player of the game (a co-POTG as "A & B"), as the game screen and /playoffs name them.
+      potg: played ? potgIdsFor(g, getGameStats(g.id)).map(id => displayPlayerName(getPlayerById(id)?.name || '')).filter(Boolean).join(' & ') : '',
       pick: !played && pickOpen(g), next: !played, href: played ? `/app/games/${encodeURIComponent(g.id)}` : pickOpen(g) ? `/app/picks#g-${encodeURIComponent(g.id)}` : '' };
   };
   const byDay = new Map();
@@ -8870,7 +8873,8 @@ app.get('/app/picks', requireApp, (req, res) => {
   const row = sp.board.rows.find(x => x.playerId === me.playerId);
   const tiedAt = rank => sp.board.rows.filter(y => y.rank === rank).length > 1;
   const record = r ? { wl: `${r.correct}–${r.wrong}`, net: fmtPts(r.net), rank: row?.rank || null, tied: !!row && tiedAt(row.rank) } : null;
-  const games = open.map(o => appPickGame(o, gameOf[o.id], colorOf));
+  const social = appSocialFor(open.map(o => o.id), me.playerId);
+  const games = open.map(o => ({ ...appPickGame(o, gameOf[o.id], colorOf), social: social?.[o.id] || null }));
   // Pickmaster: the top 10, and the player's own row under a gap when they're further down.
   const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const boardRow = (x, gap = false) => ({ rank: x.rank, tied: tiedAt(x.rank), name: displayPlayerName(players[x.playerId]?.name || ''), wl: `${x.correct}–${x.wrong}`, net: fmtPts(x.net), me: x.playerId === me.playerId, gap });

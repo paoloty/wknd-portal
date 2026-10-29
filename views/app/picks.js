@@ -3,6 +3,7 @@
 // through the same POST /games/:id/pick, so the rules live in one place. Same reveal rule as
 // the site: the pickers' split shows once you've picked (or picks are closed).
 import { esc, icons } from './layout.js';
+import { appSocialBar } from './comments.js';
 
 const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
 // FAV / DOG / EVEN from the odds model's chance for one side.
@@ -64,6 +65,7 @@ export function pickCard(g) {
     ${stakes(g)}
     ${g.marginGuess ? '<p class="pick__note">Finals tiebreaker (guess the winning margin) <span class="tag-muted">Soon</span></p>' : ''}
     <p class="pick__msg" data-pick-msg hidden></p>
+    ${appSocialBar(g.social)}
   </section>`;
 }
 

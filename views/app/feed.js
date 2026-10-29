@@ -337,7 +337,9 @@ export function appLiveParts(l, { meId = '', myTeamId = '', extras = null } = {}
 
 // Before tip-off: the game's preview. pick: the pick card while picks are open (or the pick
 // made); preview: server.js appPreview.
-export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null, reviewLive = false, review = null, chat = null }) {
+// thread: appThreadData (server.js) — the game's comments, the same thread as the site's
+// pre-game talk; null while it's live (the live chat is the talk then) or comments are off.
+export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null, reviewLive = false, review = null, chat = null, thread = null }) {
   const w = (p.watch || []).filter(Boolean);
   // The section bar (the finished game's, sticky, lights the section in view), once there are
   // three or more sections below the top. Live: the live screen's own sections (the cards it
@@ -346,7 +348,7 @@ export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b
   const LIVE = [['lx-odds', 'Win odds'], ['lx-mom', 'Momentum'], ['lx-hot', 'Who’s hot'], ['lx-pace', 'Pace'], ['lx-picks', 'Picks'], ['gr-box', 'Box score'], ['lv-plays', 'Plays']];
   const chips = live?.parts
     ? [...LIVE.filter(([id]) => live.parts.body.includes(`id="${id}"`)), [p.story ? 'pv-story' : 'pv-matchup', 'Preview']]
-    : [p.story ? ['pv-story', 'Storyline'] : null, ['pv-matchup', 'Matchup'], w.length ? ['pv-watch', 'Players to watch'] : null].filter(Boolean);
+    : [p.story ? ['pv-story', 'Storyline'] : null, ['pv-matchup', 'Matchup'], w.length ? ['pv-watch', 'Players to watch'] : null, thread ? ['comments', 'Comments'] : null].filter(Boolean);
   const bar = chips.length > 2 ? jumpBar(chips) : '';
   // While there's a pick card it is the top of the screen (it has the matchup, day and time).
   return `${navbar(back, title)}
@@ -369,5 +371,9 @@ export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b
     ${p.series ? `<div class="pv__line"><span>All-time series</span><b>${esc(p.series)}</b></div>` : ''}
   </section>
   ${w.length ? `<section class="fc art" id="pv-watch"><div class="kick">Players to watch</div>${w.map(x => potgStrip(x, '')).join('')}</section>` : ''}
+  ${thread ? `<section class="fc art th-sec" id="comments">
+      <div class="kick">Comments<span data-th-count-label>${thread.count ? ` · ${thread.count}` : ''}</span></div>
+      ${appThreadPanel(thread)}
+    </section>` : ''}
   <div style="height:12px"></div>${chat ? liveChatHtml(chat) : ''}`;
 }
