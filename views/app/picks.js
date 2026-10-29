@@ -2,7 +2,7 @@
 // from the same openPicks() objects as the site's pick cards (views/pick-card.js) and saved
 // through the same POST /games/:id/pick, so the rules live in one place. Same reveal rule as
 // the site: the pickers' split shows once you've picked (or picks are closed).
-import { esc, icons } from './layout.js';
+import { esc, icons, appAvatar, chev } from './layout.js';
 import { appSocialBar } from './comments.js';
 
 const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
@@ -39,7 +39,9 @@ export function pickOption(g, side) {
 function faces(g) {
   const n = g.faces.length, me = g.faces.some(f => f.me);
   const text = !n ? (g.closed ? 'Nobody picked this one' : 'No picks yet · be the first') : `${me ? (n === 1 ? 'You' : `You + ${n - 1}`) : n} picked`;
-  return `<div class="pick__who">${n ? `<span class="pick__stack">${g.faces.slice(0, 5).map(f => `<span style="--c:${esc(f.color)}"${f.me ? ' class="is-me"' : ''}>${esc(f.ini)}</span>`).join('')}</span>` : ''}<span>${text}</span></div>`;
+  const inner = `${n ? `<span class="pick__stack">${g.faces.slice(0, 5).map(f => `<span style="--c:${esc(f.color)}"${f.me ? ' class="is-me"' : ''}>${esc(f.ini)}</span>`).join('')}</span>` : ''}<span>${text}</span>`;
+  // Tap to see who (pickWhoHtml).
+  return n ? `<button type="button" class="pick__who pick__who--btn" data-pick-who="${esc(g.id)}" aria-label="${esc(text)}: see who">${inner}<span class="pick__who-see">See who${chev}</span></button>` : `<div class="pick__who">${inner}</div>`;
 }
 
 function stakes(g) {
@@ -92,4 +94,18 @@ export function appPicksPage({ record, games = [], off = false, board = [], past
     : '<div class="empty pick-empty">No games to pick right now. They show up here once the next game day is on the schedule.</div>'}
   ${boardHtml}
   ${pastHtml}`}`;
+}
+
+// Who picked a game (tap "N picked" on a card, public/app.js): everyone's face and name; which
+// team each picked only once picks close (before that the sides stay hidden, as on the site, so
+// nobody copies the crowd). Names open profiles (data-pid).
+// people: [{ pid, name, team, ring, photo, initials, side: 'a'|'b'|null, me }] · a / b: { name, color }
+export function pickWhoHtml({ closed, a, b, people }) {
+  if (!people.length) return '<p class="pick-who__empty">Nobody has picked this one yet.</p>';
+  const row = p => `<div class="cell" data-pid="${esc(p.pid)}">${appAvatar({ playerId: p.pid, initials: p.initials, ring: p.ring, photoUrl: p.photo })}<span class="cell__t">${esc(p.me ? `${p.name} · You` : p.name)}<small>${esc(p.team || 'No team')}</small></span></div>`;
+  if (!closed) return `<p class="pick-who__note">Which team each one picked shows when picks close.</p><div class="group">${people.map(row).join('')}</div>`;
+  return ['a', 'b'].map(s => {
+    const list = people.filter(p => p.side === s), t = s === 'a' ? a : b;
+    return list.length ? `<div class="sec"><span class="dot" style="--c:${esc(t.color)}"></span> Picked ${esc(t.name)} · ${list.length}</div><div class="group">${list.map(row).join('')}</div>` : '';
+  }).join('');
 }

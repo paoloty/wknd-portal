@@ -2589,3 +2589,8 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .bk-pm span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .bk-pm b { font-weight: 600; }
 .bk-pm small { font-size: 12px; color: var(--muted); }
+/* Who picked (views/app/picks.js pickWhoHtml): the card's faces row opens it. */
+.pick__who--btn { width: 100%; text-align: left; color: inherit; }
+.pick__who-see { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--amber-text); font-weight: 600; }
+.pick__who-see .chev { width: 7px; height: 11px; }
+.pick-who__note, .pick-who__empty { margin: 4px 16px 12px; font-size: 13px; color: var(--muted); }

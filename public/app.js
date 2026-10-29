@@ -107,6 +107,16 @@
   // then cropped wide by the server (POST /app/me/cover). Remove goes back to the latest game's.
   var coverBusy = false;
   document.addEventListener('click', function (e) {
+    // A pick card's "N picked": who picked, in a sheet (sides once picks close).
+    var pw = e.target.closest && e.target.closest('[data-pick-who]');
+    if (pw) {
+      var sh = admSheet('Who picked', '<p class="pick-who__note">Loading…</p>');
+      fetch('/app/picks/' + encodeURIComponent(pw.getAttribute('data-pick-who')) + '/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Couldn’t load that. Try again.'); return j; }); })
+        .then(function (j) { if (sheet !== sh) return; $('.sheet__head b', sh).textContent = j.title; $('.adm-sheet__body', sh).innerHTML = j.html; },
+          function (err) { if (sheet === sh) $('.adm-sheet__body', sh).innerHTML = '<p class="pick-who__note">' + admEsc(err.message || 'No connection.') + '</p>'; });
+      return;
+    }
     // Your profile's camera on the photo: the same upload as setup's photo step (its input is on the page).
     var ph = e.target.closest && e.target.closest('[data-photo-pick]');
     if (ph) { var pin = $('[data-photo-input]'); if (pin) pin.click(); return; }
