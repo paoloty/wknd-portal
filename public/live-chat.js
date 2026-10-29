@@ -5,7 +5,7 @@
 (function () {
   var KEY = 'wknd-chat-hidden';
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
-  var item = function (c) { return '<div class="lc__m is-new" data-id="' + esc(c.id) + '"><span class="lc__av" style="--c:' + esc(c.color || '#5b6475') + '">' + esc(c.initials || '?') + '</span><span class="lc__b"><b>' + esc(c.displayName) + '</b> ' + esc(c.body) + '</span></div>'; };
+  var item = function (c) { return '<div class="lc__m is-new" data-id="' + esc(c.id) + '"><span class="lc__av" style="--c:' + esc(c.color || '#5b6475') + '">' + esc(c.initials || '?') + '</span><span class="lc__b"><b' + ((c.playerId || c.player_id) ? ' data-pid="' + esc(c.playerId || c.player_id) + '"' : '') + '>' + esc(c.displayName) + '</b> ' + esc(c.body) + '</span></div>'; };
   var hiddenPref = function () { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } };
 
   function mount(el) {

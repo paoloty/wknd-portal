@@ -107,6 +107,9 @@
   // then cropped wide by the server (POST /app/me/cover). Remove goes back to the latest game's.
   var coverBusy = false;
   document.addEventListener('click', function (e) {
+    // Your profile's camera on the photo: the same upload as setup's photo step (its input is on the page).
+    var ph = e.target.closest && e.target.closest('[data-photo-pick]');
+    if (ph) { var pin = $('[data-photo-input]'); if (pin) pin.click(); return; }
     var pick = e.target.closest && e.target.closest('[data-cover-pick]');
     if (pick) { var inp = $('[data-cover-input]'); if (inp) { inp.value = ''; inp.click(); } return; }
     var rm = e.target.closest && e.target.closest('[data-cover-remove]');

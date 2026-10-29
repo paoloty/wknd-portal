@@ -7223,7 +7223,7 @@ function liveChatData(game, req) {
   return {
     gameId: game.id, watching: watchingCount(game.id), canPost: !!(req.session?.playerRegId && pid) && !getBannedPlayerIds().has(pid) && !req.session?.impersonating,
     login: `/login?next=${encodeURIComponent(`/games/${gameSlug(game)}`)}`,
-    items: rows.map(c => ({ id: c.id, body: c.body, displayName: displayPlayerName(c.player_name || ''), initials: initials(c.player_name || ''), color: teamColor(c.team_name || ''), created_at: c.created_at })),
+    items: rows.map(c => ({ id: c.id, playerId: c.player_id, body: c.body, displayName: displayPlayerName(c.player_name || ''), initials: initials(c.player_name || ''), color: teamColor(c.team_name || ''), created_at: c.created_at })),
   };
 }
 // A game being scored, small: the ticker, the homepage's playoff scoreboard and Coming up.
@@ -8784,7 +8784,7 @@ app.get('/app/me', requireApp, (req, res) => {
   const toScore = scorableGameIds(me.playerId).length;
   if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: getPlayerById(me.playerId)?.is_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
   const scoring = scoringMenuFor(me.playerId) ? { games: toScore } : null;
-  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: me.playerId ? { own: !!getPlayerCoverAt(me.playerId) } : null,
+  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring,
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
     games,
@@ -8921,7 +8921,7 @@ app.get('/app/picks', requireApp, (req, res) => {
   const games = open.map(o => ({ ...appPickGame(o, gameOf[o.id], colorOf), social: social?.[o.id] || null }));
   // Pickmaster: the top 10, and the player's own row under a gap when they're further down.
   const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-  const boardRow = (x, gap = false) => ({ rank: x.rank, tied: tiedAt(x.rank), name: displayPlayerName(players[x.playerId]?.name || ''), wl: `${x.correct}–${x.wrong}`, net: fmtPts(x.net), me: x.playerId === me.playerId, gap });
+  const boardRow = (x, gap = false) => ({ pid: x.playerId, rank: x.rank, tied: tiedAt(x.rank), name: displayPlayerName(players[x.playerId]?.name || ''), wl: `${x.correct}–${x.wrong}`, net: fmtPts(x.net), me: x.playerId === me.playerId, gap });
   const board = sp.board.rows.slice(0, 10).map(x => boardRow(x));
   if (row && !board.some(x => x.me)) board.push(boardRow(row, true));
   const past = (r?.results || []).slice().reverse().slice(0, 10).map(x => {
@@ -9282,7 +9282,7 @@ app.get('/app/settings', requireApp, (req, res) => {
   ];
   const prefs = getPushPrefs(me.reg.id);
   const push = PUSH_KINDS.map(k => ({ ...k, on: prefs[k.key] !== false }));
-  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push, analytics: !getPlayerById(me.playerId)?.analytics_off, online: barkadahanOn() ? !getPlayerById(me.playerId)?.online_hidden : null }) });
+  sendTab(res, me, { title: 'Settings · WKND', tab: 'me', body: appSettingsPage({ me, rows, push, cover: me.playerId ? { own: !!getPlayerCoverAt(me.playerId) } : null, analytics: !getPlayerById(me.playerId)?.analytics_off, online: barkadahanOn() ? !getPlayerById(me.playerId)?.online_hidden : null }) });
 });
 // Settings → Analytics: { on }. Takes effect on the next page load (public/app.js reloads).
 app.post('/app/analytics', requireAppData, express.json(), (req, res) => {

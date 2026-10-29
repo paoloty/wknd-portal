@@ -17,7 +17,7 @@ const peso = n => `₱${Math.round(Number(n) || 0).toLocaleString('en-PH')}`;
 // One seat. f: { ini, first, color, me, photoUrl, playerId, pending } · ring: '' = neutral
 // (teams: Light / Dark say the side, so the league ring stays out of it).
 function seat(f, { ring = f.color } = {}) {
-  return `<div class="pw-seat${f.me ? ' is-me' : ''}">${appAvatar({ playerId: f.playerId, initials: f.ini, ring: f.me ? 'var(--amber)' : ring, photoUrl: f.photoUrl })}<span class="pw-seat__n">${esc(f.me ? 'You' : f.first)}</span></div>`;
+  return `<div class="pw-seat${f.me ? ' is-me' : ''}"${f.playerId ? ` data-pid="${esc(f.playerId)}"` : ''}>${appAvatar({ playerId: f.playerId, initials: f.ini, ring: f.me ? 'var(--amber)' : ring, photoUrl: f.photoUrl })}<span class="pw-seat__n">${esc(f.me ? 'You' : f.first)}</span></div>`;
 }
 const emptySeat = n => `<div class="pw-seat is-empty"><span class="pw-seat__av" aria-hidden="true"></span><span class="pw-seat__n">${n}</span></div>`;
 const youSeat = () => `<div class="pw-seat is-you"><span class="pw-seat__av" aria-hidden="true">${icons.plus}</span><span class="pw-seat__n">You?</span></div>`;

@@ -44,13 +44,13 @@ function leadersCard(teams, watch) {
     const [x, y] = teams.map(t => top(t, k));
     if (!x[k] && !y[k]) return '';
     const row = (r, t, other) => (r[k]
-      ? `<div class="gr-ld__r">${appAvatar({ playerId: r.playerId, initials: ini(r.name), ring: t.color, photoUrl: r.photo })}<span class="gr-ld__n">${esc(r.name)}</span><b${r[k] >= other[k] ? ' class="is-hi"' : ''}>${r[k]}</b></div>`
+      ? `<div class="gr-ld__r"${r.playerId ? ` data-pid="${esc(r.playerId)}"` : ''}>${appAvatar({ playerId: r.playerId, initials: ini(r.name), ring: t.color, photoUrl: r.photo })}<span class="gr-ld__n">${esc(r.name)}</span><b${r[k] >= other[k] ? ' class="is-hi"' : ''}>${r[k]}</b></div>`
       : `<div class="gr-ld__r">${appAvatar({ ring: t.color })}<span class="gr-ld__n mut">Nobody</span><b>0</b></div>`);
     return `<div class="gr-ld"><span class="kick">${label}</span>${row(x, teams[0], y)}${row(y, teams[1], x)}</div>`;
   }).join('');
   const wl = watch.length ? `<div class="gr-wl">${head('Watch list', 'From the preview')}${watch.map(w => {
     const d = w.pts == null ? null : Math.round((w.pts - w.ppg) * 10) / 10;
-    return `<div class="gr-wl__r">${appAvatar({ playerId: w.playerId, initials: w.initials, ring: w.ring, photoUrl: w.photoUrl })}
+    return `<div class="gr-wl__r"${w.playerId ? ` data-pid="${esc(w.playerId)}"` : ''}>${appAvatar({ playerId: w.playerId, initials: w.initials, ring: w.ring, photoUrl: w.photoUrl })}
       <div class="gr-wl__b"><b>${esc(w.name)}</b><small>${w.ppg.toFixed(1)} a game vs ${esc(w.opp)} before this</small></div>
       ${w.pts == null ? '<span class="gr-wl__v"><small>Didn’t play</small></span>'
         : `<span class="gr-wl__v"><b class="num">${w.pts}</b><em class="gr-u${d > 0 ? ' up' : d < 0 ? ' dn' : ''}">${signed(d)}</em></span>`}</div>`;
@@ -196,7 +196,7 @@ export function boxCard(teams, meId, myTeamId, dnp) {
     return `<div class="gr-bx" data-gr-panel="${i}"${i === on ? '' : ' hidden'}>
       <div class="gr-bx__scroll"><table class="gr-tb" data-gr-table>
         <thead><tr><th scope="col">Player</th>${cols.map((c, j) => `<th scope="col"><button type="button" data-gr-sort="${j}"${c[2] ? ' data-low' : ''}${j ? '' : ' class="is-on"'} aria-label="Sort by ${c[0]}">${c[0]}</button></th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r => `<tr${r.playerId === meId ? ' class="is-me"' : ''}><th scope="row"><span class="gr-tb__no">${esc(r.number)}</span><span class="gr-tb__nm">${esc(r.name)}</span>${r.playerId === meId ? '<small>you</small>' : ''}</th>${cols.map((c, j) => {
+        <tbody>${rows.map(r => `<tr${r.playerId === meId ? ' class="is-me"' : ''}><th scope="row"><span class="gr-tb__no">${esc(r.number)}</span><span class="gr-tb__nm"${r.playerId ? ` data-pid="${esc(r.playerId)}"` : ''}>${esc(r.name)}</span>${r.playerId === meId ? '<small>you</small>' : ''}</th>${cols.map((c, j) => {
           const v = c[1](r);
           return `<td data-v="${v}" class="${[!c[2] && v > 0 && v === max[j] ? 'is-hi' : '', j ? '' : 'is-on'].filter(Boolean).join(' ')}">${c[3] ? c[3](r) : v}</td>`;
         }).join('')}</tr>`).join('')}</tbody>

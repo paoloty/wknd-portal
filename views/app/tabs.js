@@ -44,8 +44,7 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
 // todos: views/app/home.js todoCard items · season: { label, gp, ppg, rpg, apg }
 // games: [{ date, opp, won, my, oppScore, line, href }]
 // scoring: { games } for scorers, anyone picked to score, and admins (server.js scoringMenuFor), else null.
-// cover: { own } — whether the profile cover is the player's own photo (else their latest game's).
-export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null }) {
+export function appMePage({ me, season, games, positions, todos = [], scoring = null }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
   <div class="card glow prof">
     ${appAvatar({ ...me, size: 'lg' })}
@@ -72,11 +71,9 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
   <p class="foot-note">Points · rebounds · assists</p>` : '<div class="empty">No games played yet this season.</div>'}
   <div class="sec">Profile</div>
   <div class="group group--icons">
-    <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?from=me"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>As other players see it · add a cover</small></span>${chev}</a>
+    <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?from=me"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>As other players see it</small></span>${chev}</a>
     <a class="cell" href="/app/setup/photo"><span class="ico">${icons.camera}</span><span class="cell__t">Change photo</span>${chev}</a>
-    ${cover ? `<button type="button" class="cell" data-cover-pick><span class="ico">${icons.image}</span><span class="cell__t">${cover.own ? 'Change cover photo' : 'Add a cover photo'}<small>${cover.own ? 'The wide photo at the top of your profile' : 'For now it’s your team’s colours'}</small></span>${chev}</button>
-    ${cover.own ? `<button type="button" class="cell" data-cover-remove><span class="ico">${icons.close}</span><span class="cell__t">Remove cover photo<small>Go back to your team’s colours</small></span></button>` : ''}
-    <input type="file" accept="image/*" data-cover-input hidden>` : ''}
+
     <a class="cell" href="/app/setup/details"><span class="ico">${icons.user}</span><span class="cell__t">Edit details</span>${chev}</a>
   </div>`;
 }
@@ -86,7 +83,8 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
 // push: [{ key, label, sub, on }] — the kinds of notification (lib/push.js PUSH_KINDS).
 // The on/off for this phone is the browser's, so public/app.js (initPush) fills that part in.
 // online: Show me as online (Barkadahan), or null when the Barkadahan is off.
-export function appSettingsPage({ me, rows, push = [], analytics = true, online = null }) {
+// cover: { own } — the profile's cover is the player's own photo (else their team's colours), or null.
+export function appSettingsPage({ me, rows, push = [], analytics = true, online = null, cover = null }) {
   const row = r => {
     const inner = `<span class="ico">${icons[r.icon]}</span><span class="cell__t">${esc(r.title)}</span>${r.count ? `<span class="count">${r.count}</span>` : ''}${r.value ? `<span class="cell__v">${esc(r.value)}</span>` : ''}`;
     return isAppHref(r.href) ? `<a class="cell" href="${esc(r.href)}">${inner}${chev}</a>` : `<div class="cell">${inner}${r.soon ? soonTag : ''}</div>`;
@@ -94,6 +92,12 @@ export function appSettingsPage({ me, rows, push = [], analytics = true, online 
   return `
   <div class="navbar"><a class="navbar__back" href="/app/me">${backChev}Me</a><span class="navbar__title">Settings</span><span></span></div>
   <div class="group group--icons">${rows.map(row).join('')}</div>
+  ${cover ? `<div class="sec">Profile</div>
+  <div class="group group--icons">
+    <button type="button" class="cell" data-cover-pick><span class="ico">${icons.image}</span><span class="cell__t">${cover.own ? 'Change cover photo' : 'Add a cover photo'}<small>${cover.own ? 'The wide photo at the top of your profile' : 'For now it’s your team’s colours'}</small></span>${chev}</button>
+    ${cover.own ? `<button type="button" class="cell" data-cover-remove><span class="ico">${icons.close}</span><span class="cell__t">Remove cover photo<small>Go back to your team’s colours</small></span></button>` : ''}
+    <input type="file" accept="image/*" data-cover-input hidden>
+  </div>` : ''}
   <div class="sec">Notifications</div>
   <div class="group" data-push>
     <div class="cell"><span class="ico ico--amber">${icons.bell}</span><span class="cell__t">On this phone<small data-push-status>Checking…</small></span>

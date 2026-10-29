@@ -35,7 +35,7 @@ function media({ img = '', srcset = '', yt = '', label = '' } = {}, { inCard = f
 }
 
 const potgLabel = p => (p.co ? 'Co-player of the game' : 'Player of the game');
-const potgStrip = (p, label = potgLabel(p)) => `<div class="potg">${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}
+const potgStrip = (p, label = potgLabel(p)) => `<div class="potg"${p.playerId ? ` data-pid="${esc(p.playerId)}"` : ''}>${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}
   <div class="potg__t">${label ? `<small>${label}</small>` : ''}<b>${esc(p.name)}</b><em>${esc(p.line)}</em></div></div>`;
 
 const paras = text => String(text || '').split(/\n{2,}/).map(t => t.trim()).filter(Boolean)
@@ -62,7 +62,7 @@ function gameHero(g, { band = false } = {}) {
     </div>`;
 }
 // Player of the game: the amber strip with a ★ on their ring.
-const potgBox = (p, label = potgLabel(p)) => `<div class="gx__potg">${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}<i class="gx__star" aria-hidden="true">★</i>
+const potgBox = (p, label = potgLabel(p)) => `<div class="gx__potg"${p.playerId ? ` data-pid="${esc(p.playerId)}"` : ''}>${appAvatar({ playerId: p.playerId, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl })}<i class="gx__star" aria-hidden="true">★</i>
   <div class="potg__t">${label ? `<small>${label}</small>` : ''}<b>${esc(p.name)}</b><em>${esc(p.line)}</em></div></div>`;
 
 // social: the 🔥 / 💬 bar (views/app/comments.js), outside the link so its buttons work.

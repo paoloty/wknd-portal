@@ -11,7 +11,7 @@ const BUBBLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>';
 
 // One message: the same markup public/live-chat.js builds for new ones.
-export const chatItem = c => `<div class="lc__m" data-id="${esc(c.id)}"><span class="lc__av" style="--c:${esc(c.color || '#5b6475')}">${esc(c.initials || '?')}</span><span class="lc__b"><b>${esc(c.displayName)}</b> ${esc(c.body)}</span></div>`;
+export const chatItem = c => `<div class="lc__m" data-id="${esc(c.id)}"><span class="lc__av" style="--c:${esc(c.color || '#5b6475')}">${esc(c.initials || '?')}</span><span class="lc__b"><b${c.playerId || c.player_id ? ` data-pid="${esc(c.playerId || c.player_id)}"` : ''}>${esc(c.displayName)}</b> ${esc(c.body)}</span></div>`;
 
 export function liveChatHtml(chat) {
   if (!chat) return '';

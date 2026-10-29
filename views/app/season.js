@@ -37,7 +37,7 @@ function teamCover(p) {
   </svg>`;
 }
 
-// mine: your own profile — the cover gets Add / Change cover (and Remove) buttons.
+// mine: your own profile — a camera on the photo changes it (the cover is changed in Settings).
 export function appPlayerPage({ back, p, cover, mine = false, season, stats, games, badges = [], career, awards, papawis }) {
   const first = p.name.split(' ')[0];
   const parts = [stats && ['pp-stats', 'Stats'], ['pp-games', 'Games'], badges.length && ['pp-badges', 'Badges'], career.length && ['pp-career', 'Career'], awards.length && ['pp-awards', 'Awards']].filter(Boolean);
@@ -50,14 +50,10 @@ export function appPlayerPage({ back, p, cover, mine = false, season, stats, gam
     <nav class="pp-jump__chips" aria-label="Sections">${parts.map(([id, label], i) => `<a href="#${id}" data-pp-go="${id}"${i ? '' : ' class="is-on"'}>${label}</a>`).join('')}</nav>
   </div>
   <div class="pp-cover" data-pp-cover style="--team:${esc(p.ring)}">${cover ? `<img src="${esc(cover.img)}" srcset="${esc(cover.srcset)}" sizes="(min-width: 560px) 560px, 100vw" alt="" decoding="async">` : teamCover(p)}
-    ${mine ? `<div class="pp-cover__edit">
-      ${cover ? `<button type="button" class="pp-cover__btn is-icon" data-cover-remove aria-label="Remove cover photo">${icons.close}</button>` : ''}
-      <button type="button" class="pp-cover__btn" data-cover-pick>${icons.camera}<span>${cover ? 'Change cover' : 'Add cover'}</span></button>
-      <input type="file" accept="image/*" data-cover-input hidden>
-    </div>` : ''}
   </div>
   <div class="pp-hero">
-    ${appAvatar({ playerId: p.id, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl, size: 'xl' })}
+    <span class="pp-av"${mine ? ' data-photo-preview' : ''}>${appAvatar({ playerId: p.id, initials: p.initials, ring: p.ring, photoUrl: p.photoUrl, size: 'xxl' }).replace(' data-pid=', ' data-self=')}${mine ? `<button type="button" class="pp-av__edit" data-photo-pick aria-label="Change your photo">${icons.camera}</button><input type="file" accept="image/*" data-photo-input hidden>` : ''}</span>
+    ${mine ? '<div class="msg pp-photo-msg" data-photo-msg hidden></div>' : ''}
     <h1 class="pp-hero__name" data-pp-name>${esc(p.name)}</h1>
     <div class="pp-hero__meta"><span class="dot" style="--c:${esc(p.ring)}"></span>${esc([p.team || 'No team', p.number !== '' ? `#${p.number}` : '', p.positions].filter(Boolean).join(' · '))}</div>
     ${awards.some(a => a.top) ? `<div class="pp-chips">${awards.filter(a => a.top).slice(0, 3).map(a => `<span class="pp-chip">${esc(a.icon)} ${esc(a.label)} S${esc(a.season)}</span>`).join('')}</div>` : ''}
