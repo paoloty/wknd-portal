@@ -83,7 +83,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
     columns: [
       { key: 'rank', label: '#', num: true, nowrap: true, cell: r => `<span class="aui-num">${r.rank}</span>` },
       { key: 'name', label: 'Player', primary: true, cell: r => `<span class="aui-who">${avatar(r.name, '', { size: 32, playerId: r.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}</span><span class="aui-cell__sub">${escHtml(why(r))}</span></span></span>` },
-      { key: 'online', label: 'Online', num: true, nowrap: true, cell: r => `<span class="aui-num">${r.activeWeeks}</span><span class="aui-muted">/${W}</span>${r.active ? ` ${badge('Active', 'green')}` : ''}` },
+      { key: 'online', label: 'Online', num: true, nowrap: true, cell: r => `<span class="aui-cell__stack"><span><span class="aui-num">${r.activeWeeks}</span><span class="aui-muted">/${W}</span>${r.active ? ` ${badge('Active', 'green')}` : ''}</span><span class="aui-cell__sub">Site ${r.online.site} · App ${r.online.app}</span></span>` },
       ...seasonCols,
       { key: 'runs', label: 'Papawis', num: true, phone: false, cell: r => `<span class="aui-num">${r.papawisRuns}</span>` },
       { key: 'games', label: 'Games', num: true, phone: false, cell: r => `<span class="aui-num">${totalGames(r)}</span>` },
@@ -92,6 +92,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
     expand: r => facts([
       ['Why this group', escHtml(why(r))],
       ['Online', `${r.activeWeeks} of the last ${W} weeks${r.active ? '' : ` (needs ${RULES.onlineWeeksNeeded}${r.isNew ? '; new members are exempt' : ''})`}`],
+      ['Site and app', `Site ${r.online.site} weeks · App ${r.online.app} weeks · Actions ${r.online.action} weeks · last seen ${escHtml(r.online.lastSeen || `over ${W} weeks ago`)}`],
       ['League games', seasons.map(s => `Season ${s.season}: ${r.games[s.season] || 0}`).join(' · ')],
       ['Papawis runs', `${r.papawisRuns} in the last 12 months`],
       ...seasons.map((s, i) => payFacts(r.pay[i], s.season)),
