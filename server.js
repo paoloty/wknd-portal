@@ -21979,7 +21979,7 @@ app.get('/admin/season/returning', requireAuth, (req, res) => {
 
 // Next season's candidates ranked by the draft criteria (lib/season-candidates.js). Read-only.
 app.get('/admin/season/candidates', requireAuth, (req, res) => {
-  const data = loadSeasonCandidates();
+  const data = loadSeasonCandidates({ ignorePayment: req.query.nopay === '1' });
   const capacity = Number(getSetting('season_roster_capacity', '0')) || 0;
   res.send(renderAdminPage(req, {
     title: `Season ${data.target} Candidates`,
