@@ -2575,3 +2575,10 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .pp-more summary { list-style: none; display: flex; align-items: center; min-height: 44px; padding: 0 31px; font-size: 14px; font-weight: 600; color: var(--amber-text); cursor: pointer; }
 .pp-more summary::-webkit-details-marker { display: none; }
 .pp-more[open] summary { display: none; }
+/* No cover photo: one drawn in the team's colour (views/app/season.js teamCover); your own profile's cover buttons. */
+.pp-cover__art { position: absolute; inset: 0; width: 100%; height: 100%; color: color-mix(in srgb, var(--team, var(--subtle)) 48%, #0a0e16); transform-origin: 50% 100%; will-change: transform; }
+.pp-cover__edit { position: absolute; right: 12px; bottom: 12px; z-index: 2; display: flex; gap: 8px; }
+.pp-cover__btn { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px 0 12px; border-radius: 999px; background: rgba(5, 7, 12, .55); color: #fff; font-size: 13px; font-weight: 600; line-height: 1; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.pp-cover__btn svg { width: 16px; height: 16px; }
+.pp-cover__btn.is-icon { width: 40px; padding: 0; justify-content: center; }
+.pp-cover__btn::after { content: ""; position: absolute; inset: -3px; } /* 44px to tap */

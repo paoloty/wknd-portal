@@ -8594,14 +8594,11 @@ const ordinal = n => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 
 // A player's profile: what the site's public /players/:id shows (no money, nothing private).
 // Any face or name in the app opens it (public/app.js, [data-pid]); your own opens Me.
 const APP_TOP_AWARDS = new Set(['champion', 'finals_mvp', 'mvp', 'dpoy']);
-// The profile's cover: the player's own, else the photo of the latest game they played that has
-// one, else null (the team colour). { img, srcset, own } | null.
-function appPlayerCover(pid, log = getPlayerGameLog(pid).filter(g => g.status === 'played')) {
+// The profile's cover: the player's own photo, or null, and then the profile draws one in their
+// team's colour (views/app/season.js teamCover). Game photos aren't used (Paolo, 2026-10-29).
+function appPlayerCover(pid) {
   const at = getPlayerCoverAt(pid);
-  if (at) return { ...sizedSrc(`/api/player/${encodeURIComponent(pid)}/cover?v=${at}`), own: true };
-  const withCover = new Set(getAllGames().filter(g => g.has_cover).map(g => String(g.id)));
-  const g = log.find(x => withCover.has(String(x.id)));
-  return g ? { ...sizedSrc(`/api/photo/${encodeURIComponent(g.id)}?v=${gameCoverVersion(String(g.id))}`), own: false } : null;
+  return at ? { ...sizedSrc(`/api/player/${encodeURIComponent(pid)}/cover?v=${at}`), own: true } : null;
 }
 // Me → Cover photo: the phone sends it downscaled; it's cropped wide here, as a Papawis cover.
 app.post('/app/me/cover', requireAppData, express.json({ limit: '20mb' }), async (req, res) => {
@@ -8624,7 +8621,8 @@ app.get('/app/players/:id', requireApp, (req, res) => {
   const back = APP_BACK[req.query.from] ? appBack(req) : { href: '/app', label: 'Back', tab: 'home' };
   const p = getPlayerWithTeam(req.params.id);
   if (!p) return sendTab(res, me, { title: 'Player · WKND', tab: back.tab, body: appPlayerMissing(back) });
-  if (p.id === me.playerId && req.query.as !== 'public') return res.redirect('/app/me'); // Me → View my profile: ?as=public
+  // Your own opens too (to see how it looks, and to add or change your cover there).
+  const mine = p.id === me.playerId;
   const season = String(getPortalCurrentSeason());
   const log = getPlayerGameLog(p.id).filter(g => g.status === 'played');
   // Regular season only, as Me and the site profile's season line.
@@ -8650,7 +8648,7 @@ app.get('/app/players/:id', requireApp, (req, res) => {
     }
   } catch (e) { console.error('[app profile badges]', e.message); }
   sendTab(res, me, { title: `${name} · WKND`, tab: back.tab, body: appPlayerPage({
-    back, badges, season: season, cover: appPlayerCover(p.id, log),
+    back, badges, season: season, cover: appPlayerCover(p.id), mine: mine && !req.session.impersonating,
     p: { id: p.id, name, initials: initials(name), ring, photoUrl: playerPhotoUrl(p.id, 192), team: titleCase(p.team_name || ''),
       number: String(p.number ?? ''), positions: parsePositions(p.positions).join(' / '), writeup: String(p.writeup || '').trim() },
     stats: inSeason.length ? {

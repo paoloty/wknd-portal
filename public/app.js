@@ -57,7 +57,7 @@
   function initProfile() {
     if (ppOff) ppOff();
     var pp = $('[data-pp]'); if (!pp) return;
-    var cover = $('[data-pp-cover]', pp), img = cover && $('img', cover), name = $('[data-pp-name]', pp), nav = $('.pp-nav', pp);
+    var cover = $('[data-pp-cover]', pp), img = cover && $('img, .pp-cover__art', cover), name = $('[data-pp-name]', pp), nav = $('.pp-nav', pp);
     var chips = $$('[data-pp-go]', $('[data-pp-jump]', pp));
     // tapped: the chip just tapped stays lit while the page scrolls there (a section near the end
     // can't reach the top), until the player scrolls themselves.
@@ -111,7 +111,7 @@
     if (pick) { var inp = $('[data-cover-input]'); if (inp) { inp.value = ''; inp.click(); } return; }
     var rm = e.target.closest && e.target.closest('[data-cover-remove]');
     if (!rm || coverBusy) return;
-    if (!window.confirm('Remove your cover photo? Your profile goes back to your latest game’s photo.')) return;
+    if (!window.confirm('Remove your cover photo? Your profile goes back to your team’s colours.')) return;
     coverBusy = true;
     postJson('/app/me/cover/remove', {}).then(function () { coverBusy = false; toast('Cover removed'); refreshScreen(true); }, function (err) { coverBusy = false; toast(err && err.message && err.message !== 'failed' ? err.message : 'That didn’t go through. Try again.', 'err'); });
   });
