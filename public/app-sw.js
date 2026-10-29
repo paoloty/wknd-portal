@@ -11,7 +11,7 @@
 //           to the copy when offline or slow. A push fetches its screen ahead (Android, warm).
 //   data    the first page of the feed and notifications lists, and Home's rail (JSON) —
 //           network first, the copy offline; newest 30.
-//   img     feed and game pictures, player photos, announcement photos — versioned ones
+//   img     feed and game pictures, player photos and covers, announcement photos — versioned ones
 //           cache first, the rest answered from the copy while refreshed; trimmed to the
 //           newest 300. (Not YouTube's thumbnails: another site's pictures are stored
 //           padded to megabytes each, which would eat the phone's quota.)
@@ -52,7 +52,7 @@ const isScreen = (url) => url.origin === location.origin
   && /^\/app(\/(picks|papawis|papawis\/(?!past$)[^/]+|team|me|settings|players\/[^/]+|season|season\/(bracket|games)|notifications|games\/[^/]+|games\/[^/]+\/share|posts\/[^/]+|score|score\/[^/]+|practice|help\/scoring|help\/scoring\/[^/]+))?\/?$/.test(url.pathname);
 const isData = (url) => url.origin === location.origin && (/^\/app\/(feed|notifications)\/items$/.test(url.pathname) || url.pathname === '/app/papawis/past' || url.pathname === '/app/rail');
 const isImage = (url) => url.origin === location.origin
-  && (/^\/api\/photo\/[^/]+$/.test(url.pathname) || /^\/api\/player\/[^/]+\/photo$/.test(url.pathname) || /^\/app\/announcements\/[^/]+\/image$/.test(url.pathname));
+  && (/^\/api\/photo\/[^/]+$/.test(url.pathname) || /^\/api\/player\/[^/]+\/(photo|cover)$/.test(url.pathname) || /^\/app\/announcements\/[^/]+\/image$/.test(url.pathname));
 const keyOf = (url) => url.pathname + url.search;
 
 // A screen response worth keeping: a real page from this app, not a redirect to sign-in.
