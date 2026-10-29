@@ -258,7 +258,7 @@ import { bonusCutoff, ballotClose, isPast, fmtMoment, tallyBallots, podiumPoints
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
 import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
-import { estimatedPapawisPrice, ACTIVITY_LABELS as PAPAWIS_ACTIVITY_LABELS } from './views/admin/papawis.js';
+import { estimatedPapawisPrice, hasSavedPapawisAmount, hoursBetween, estimateTotal, roundTo10, defaultPapawisPrice, REFEREE_RATE_DEFAULT, ACTIVITY_LABELS as PAPAWIS_ACTIVITY_LABELS } from './views/admin/papawis.js';
 import { adminPapawisActivityBody } from './views/admin/papawis-activity.js';
 import { adminPapawisRunsBody } from './views/admin/papawis-runs.js';
 import { adminPapawisRunBody } from './views/admin/papawis-run.js';
@@ -9193,19 +9193,21 @@ function papawisAdminTodo(g, signups = getPapawisSignups(g.id)) {
   const canAnnounce = open && !locked && !g.announced_at && !(g.announce_send_at && g.announce_send_at > Date.now()) && confirmed.length < g.max_slots;
   const catchUp = open ? confirmed.filter(s => !s.guest_name && s.team && s.reminder_sent_at && !s.team_notified_at).length : 0;
   const unpaid = g.status === 'completed' ? confirmed.filter(s => !s.paid_at).length : 0;
-  return { pending, canAnnounce, catchUp, unpaid };
+  const closeOut = open && pwDaysUntil(g.date) < 0;
+  return { pending, canAnnounce, catchUp, unpaid, closeOut };
 }
 function appPapawisAdminHint(g) {
   if (!g) return null;
   const t = papawisAdminTodo(g);
   const notAnnounced = t.canAnnounce && isPapawisSignupOpenNow(g);
   const note = [
+    t.closeOut ? 'Set the price and close out' : '',
     t.pending ? `${t.pending} deposit${t.pending === 1 ? '' : 's'} to confirm` : '',
     notAnnounced ? 'Not announced yet' : '',
     t.catchUp ? `${t.catchUp} team email${t.catchUp === 1 ? '' : 's'} to send` : '',
     t.unpaid ? `${t.unpaid} still owe` : '',
   ].filter(Boolean).join(' · ');
-  return { id: g.id, note: note || 'Roster, teams, money and messages', count: t.pending + t.catchUp + (notAnnounced ? 1 : 0) };
+  return { id: g.id, note: note || 'Roster, teams, money and messages', count: t.pending + t.catchUp + (notAnnounced ? 1 : 0) + (t.closeOut ? 1 : 0) };
 }
 
 app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
@@ -9237,7 +9239,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
     confirmedCount: confirmed.length, waitCount: waitlist.length, paidCount: confirmed.filter(s => s.paid).length,
     count: confirmed.length + waitlist.length + pending.length,
     canAnnounce: todo.canAnnounce, catchUp: todo.catchUp, teamsSent: papawisTeamsSent(signups.filter(s => s.status === 'confirmed')), fmt,
-    players: [], teams: { built: false, all: [] }, activity: [], broadcast: null, messenger: '',
+    players: [], teams: { built: false, all: [] }, activity: [], broadcast: null, messenger: '', calc: null,
   };
   // Only what the open tab shows (one request per screen, and a fast render).
   if (tab === 'roster' && canManage) {
@@ -9257,6 +9259,19 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
       const h = parseHeightCm(r.height);
       return { id: r.id, team: r.team || '', guest: !!r.guest_name, name: r.guest_name || displayPlayerName(r.player_name), meta: [pos.join('/'), h ? `${Math.round(h)} cm` : ''].filter(Boolean).join(' · ') };
     }) };
+  }
+  // Open run: the amounts, as the site's Money tab starts them (views/admin/papawis-run.js):
+  // what's saved on the run, else the court's rate and the run's hours, a referee by default.
+  if (tab === 'money' && open) {
+    const saved = hasSavedPapawisAmount(g);
+    const rate = g.court_rate_per_hour || getPapawisCourtByName(g.location)?.price_per_hour || '';
+    const hours = g.session_hours || hoursBetween(g.start_time, g.end_time) || '';
+    const hasRef = saved ? !!g.has_referee : true;
+    const refRate = g.referee_rate_per_hour || REFEREE_RATE_DEFAULT;
+    const total = estimateTotal({ rate: Number(rate) || 0, hours: Number(hours) || 0, hasReferee: hasRef, refereeRate: refRate });
+    const n = confirmed.length;
+    d.calc = { rate, hours, hasRef, refRate, min: g.min_per_player || '', saved,
+      price: g.min_per_player ? roundTo10(g.min_per_player) : total && n ? roundTo10(total / n) : defaultPapawisPrice(n) || '' };
   }
   if (tab === 'money' && completed) {
     // The site's "possible match": a payment the player already sent, to link instead of

@@ -2,8 +2,8 @@
 // section (server.js appPapawisAdmin). The same run page as /admin/papawis/:id
 // (views/admin/papawis-run.js), drawn in the app's look: cover, roster, teams, money,
 // messages and activity. Every action posts to the site's own /admin/papawis routes
-// (public/app.js initAdminPapawis), so the site and the app can't drift apart. Court, time,
-// price close-out and cancelling stay on the full site (linked at the bottom).
+// (public/app.js initAdminPapawis), so the site and the app can't drift apart. Court, time
+// and cancelling stay on the full site (linked at the bottom).
 // Mockups: https://claude.ai/artifact/CM4NXNzpQRsjHxgM9LZSJk
 import { esc, appAvatar, backChev, chev, icons } from './layout.js';
 
@@ -140,13 +140,44 @@ function teamsTab(run, d) {
     </div>`;
 }
 
+// Before close-out: the amounts, as the site's Money tab (views/admin/papawis-run.js). The
+// estimate (court, hours, referee, minimum) saves to /estimate and is what players see per
+// head; the final price charges everyone confirmed through /complete. public/app.js
+// initAdminPapawis keeps the sums live (same maths as public/admin-papawis.js).
+function amountsTab(run, d) {
+  const c = d.calc;
+  if (!c) return '';
+  const n = d.confirmedCount;
+  const num = (label, key, value, attrs = '') => `<label class="adm-calc__f"><span class="adm-lbl">${label}</span>
+    <input class="adm-input num" type="number" inputmode="decimal" min="0" value="${esc(value)}" data-calc="${key}"${attrs}></label>`;
+  return `<div class="sec adm-sec">Price estimate</div>
+    <div class="card adm-card adm-calc" data-adm-calc="${esc(run.id)}" data-count="${n}">
+      <div class="adm-calc__row">${num('Court ₱ per hour', 'rate', c.rate, ' step="1"')}${num('Hours', 'hours', c.hours, ' step="0.25"')}</div>
+      <label class="adm-calc__sw"><span class="cell__t">Referee<small>Paid by the hour, like the court</small></span><input type="checkbox" class="switch" data-calc="hasRef"${c.hasRef ? ' checked' : ''}></label>
+      <div class="adm-calc__row">${num('Referee ₱ per hour', 'ref', c.refRate, ` step="1"${c.hasRef ? '' : ' disabled'}`)}${num('Minimum per player', 'min', c.min, ' step="1" placeholder="Optional"')}</div>
+      <dl class="adm-calc__sum">
+        <div><dt>Court</dt><dd class="num" data-calc-out="court">₱0</dd></div>
+        <div data-calc-refrow${c.hasRef ? '' : ' hidden'}><dt>Referee</dt><dd class="num" data-calc-out="refCost">₱0</dd></div>
+        <div class="is-total"><dt>Total</dt><dd class="num" data-calc-out="total">₱0</dd></div>
+        <div><dt>÷ ${plural(n, 'confirmed player')}</dt><dd class="num" data-calc-out="raw">₱0</dd></div>
+      </dl>
+      <button type="button" class="btn btn--ghost" data-calc-save>Save estimate</button>
+      <p class="adm-help">${c.saved ? 'Saved. ' : ''}Players see this per head on the run and in their reminder email. Nobody is charged.</p>
+    </div>
+    <div class="sec adm-sec">After the game</div>
+    <div class="card adm-card adm-calc">
+      <label class="adm-calc__f"><span class="adm-lbl">Final price per player</span>
+        <span class="adm-calc__peso"><span aria-hidden="true">₱</span><input class="adm-input num" type="number" inputmode="numeric" min="1" step="1" value="${esc(c.price)}" data-calc-price></span></label>
+      <p class="adm-help">Follows the estimate; change it freely. Close out marks the run played and charges ${n ? `all ${plural(n, 'confirmed player')}` : 'every confirmed player'} this price. Free-run vouchers are used up instead of charged.</p>
+      <button type="button" class="btn" data-calc-complete${n ? '' : ' disabled'}>Close out and charge</button>
+      ${n ? '' : '<p class="adm-help">Nobody is confirmed, so there\'s no one to charge.</p>'}
+    </div>`;
+}
+
 // After the game: who paid. Mark paid records the payment in the ledger, as on the site.
 function moneyTab(run, d) {
   if (run.cancelled) return '<div class="empty">Cancelled. Nobody was charged for this run.</div>';
-  if (!run.completed) {
-    return `<p class="msg adm-msg">The price is set and everyone's charged when you close out the run after the game.</p>
-      <div class="adm-actions"><a class="btn btn--ghost" href="/admin/papawis/${esc(run.id)}?tab=money" data-reload>Close out on the full site ${icons.ext}</a></div>`;
-  }
+  if (!run.completed) return amountsTab(run, d);
   const { confirmed } = d;
   const paid = confirmed.filter(s => s.paid).length;
   const rows = confirmed.map(s => {
@@ -259,7 +290,7 @@ export function appAdminPapawisPage({ missing = false, run = null, tab = 'roster
     ${stats}
     <nav class="adm-tabs" aria-label="Run sections">${tabs.map(([k, label, n]) => `<a class="adm-tab${k === current ? ' is-on' : ''}" href="/app/admin/papawis/${esc(run.id)}${k === 'roster' ? '' : `?tab=${k}`}"${k === current ? ' aria-current="page"' : ''}>${label}${n ? ` <span class="num">${n}</span>` : ''}</a>`).join('')}</nav>
     ${body}
-    <p class="foot-note">Court, time, price and cancelling are on the full site. <a class="adm-link" href="/admin/papawis/${esc(run.id)}?tab=settings" data-reload>Run settings</a></p>
+    <p class="foot-note">Court, time and cancelling are on the full site. <a class="adm-link" href="/admin/papawis/${esc(run.id)}?tab=settings" data-reload>Run settings</a></p>
   </div>`;
 }
 

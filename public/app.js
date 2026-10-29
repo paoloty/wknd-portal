@@ -1270,9 +1270,70 @@
     setTimeout(function () { q.focus(); }, 300);
   }
 
+  // The amounts on an open run's Money tab: the same sums as the site's calculator
+  // (public/admin-papawis.js): court and referee by the hour, rounded to ₱10, split across the
+  // confirmed players; a minimum per player wins when set. The final price follows until
+  // it's typed over.
+  var r10 = function (n) { return Math.round(n / 10) * 10; };
+  var calcPeso = function (n) { return '₱' + Math.round(Number(n) || 0).toLocaleString('en-PH'); };
+  function calcNums(box) {
+    var v = function (k) { var el = $('[data-calc="' + k + '"]', box); return el ? el : {}; };
+    var rate = Number(v('rate').value) || 0, hours = Number(v('hours').value) || 0, hasRef = !!v('hasRef').checked;
+    var ref = hasRef ? (Number(v('ref').value) || 0) : 0, min = Number(v('min').value) || 0, count = Number(box.getAttribute('data-count')) || 0;
+    var total = r10(rate * hours + ref * hours), raw = count ? r10(total / count) : 0;
+    return { rate: rate, hours: hours, hasRef: hasRef, ref: ref, min: min, count: count, court: r10(rate * hours), refCost: r10(ref * hours), total: total, raw: raw, final: min > 0 ? r10(min) : raw,
+      payload: { court_rate: v('rate').value ? rate : null, hours: v('hours').value ? hours : null, has_referee: hasRef, referee_rate: hasRef && v('ref').value ? ref : null, actual_total: total, min_per_player: v('min').value ? min : null } };
+  }
+  function calcShow(box, follow) {
+    var n = calcNums(box), refEl = $('[data-calc="ref"]', box), refRow = $('[data-calc-refrow]', box);
+    if (refEl) refEl.disabled = !n.hasRef;
+    if (refRow) refRow.hidden = !n.hasRef;
+    var out = function (k, t) { var el = $('[data-calc-out="' + k + '"]', box); if (el) el.textContent = t; };
+    out('court', calcPeso(n.court)); out('refCost', calcPeso(n.refCost)); out('total', calcPeso(n.total)); out('raw', calcPeso(n.raw) + ' each');
+    var price = $('[data-calc-price]');
+    if (follow && price && !price._typed && n.final > 0) price.value = n.final;
+  }
+  function initAdminCalc() {
+    var box = $('[data-adm-calc]');
+    if (box) calcShow(box, false);
+  }
+
   function initAdminPapawis() {
+    initAdminCalc();
     if (admBound) return;
     admBound = true;
+    document.addEventListener('input', function (e) {
+      var box = e.target.closest && e.target.closest('[data-adm-calc]');
+      if (box) { calcShow(box, true); return; }
+      if (e.target.matches && e.target.matches('[data-calc-price]')) e.target._typed = true;
+    });
+    document.addEventListener('change', function (e) {
+      var box = e.target.closest && e.target.closest('[data-adm-calc]');
+      if (box && e.target.matches('[data-calc="hasRef"]')) calcShow(box, true);
+    });
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-calc-save], [data-calc-complete]');
+      if (!b || b.disabled || admBusy) return;
+      var box = $('[data-adm-calc]');
+      if (!box) return;
+      if (!navigator.onLine) { toast('You\'re offline. Nothing was sent.', 'err'); return; }
+      var n = calcNums(box), url = '/admin/papawis/' + encodeURIComponent(box.getAttribute('data-adm-calc'));
+      var send = function (path, body, ok) {
+        admBusy = true; b.disabled = true; b.classList.add('is-busy');
+        return admSend(url + path, body).then(function () { admBusy = false; b.disabled = false; b.classList.remove('is-busy'); toast(ok); refreshScreen(true); },
+          function (err) { admBusy = false; b.disabled = false; b.classList.remove('is-busy'); toast(err.message, 'err'); });
+      };
+      if (b.hasAttribute('data-calc-save')) { send('/estimate', n.payload, 'Estimate saved'); return; }
+      var priceEl = $('[data-calc-price]'), price = Math.round(Number(priceEl && priceEl.value) || 0);
+      if (!n.count) { toast('Nobody is confirmed, so there\'s no one to charge.', 'err'); return; }
+      if (price <= 0) { toast('Enter the final price per player first.', 'err'); if (priceEl) priceEl.focus(); return; }
+      amberAsk('Charge ' + calcPeso(price) + ' to ' + n.count + ' player' + (n.count === 1 ? '' : 's') + '?', 'Marks the run played and adds the charge to everyone confirmed. It can\'t be undone from the app.', 'Charge ' + n.count, 'flag')
+        .then(function (go) {
+          if (!go) return;
+          var body = n.payload; body.price_per_player = price;
+          send('/complete', body, 'Run closed out: ' + n.count + ' charged ' + calcPeso(price));
+        });
+    });
     document.addEventListener('click', function (e) {
       var t = e.target.closest ? e.target : null; if (!t) return;
       var b;

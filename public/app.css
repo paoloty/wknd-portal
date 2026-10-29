@@ -1302,6 +1302,22 @@ html.tk-lock { overflow: hidden; }
 .adm-reach span { font-size: 12px; color: var(--muted); }
 .adm-reach b { font: 700 22px/1 var(--font-num); }
 .adm-help { margin: 0; font-size: 12px; color: var(--muted); }
+.adm-calc__row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.adm-calc__f { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.adm-calc__f .adm-lbl { margin: 0; }
+.adm-calc__f .adm-input:disabled { opacity: .45; }
+.adm-calc__sw { display: flex; align-items: center; gap: 12px; }
+.adm-calc__sw .cell__t { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+.adm-calc__sum { margin: 0; padding: 10px 12px; border-radius: var(--r-in); background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
+.adm-calc__sum div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; }
+.adm-calc__sum dt { color: var(--muted); }
+.adm-calc__sum dd { margin: 0; font: 700 16px/1 var(--font-num); }
+.adm-calc__sum .is-total { padding-top: 6px; border-top: 1px solid var(--hair); }
+.adm-calc__sum .is-total dt { color: var(--text); font-weight: 600; }
+.adm-calc__sum .is-total dd { font-size: 20px; }
+.adm-calc__peso { position: relative; display: block; }
+.adm-calc__peso > span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font: 700 20px/1 var(--font-num); color: var(--muted); pointer-events: none; }
+.adm-calc__peso .adm-input { height: 52px; padding-left: 30px; font: 700 24px/1 var(--font-num); }
 .adm-post { max-height: 220px; overflow: auto; padding: 12px 14px; font-size: 14px; line-height: 1.45; white-space: pre-line; }
 .adm-copy { border-top: 1px solid var(--hair); border-radius: 0; }
 .adm-copy svg { width: 18px; height: 18px; }
