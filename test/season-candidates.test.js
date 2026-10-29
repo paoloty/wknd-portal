@@ -3,7 +3,7 @@
 // nothing here reads or writes it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gradeSeason, rankCandidates } from '../lib/season-candidates.js';
+import { gradeSeason, rankCandidates, isSeasonFee } from '../lib/season-candidates.js';
 
 const season = { firstGame: '2026-09-13', lastRegular: '2026-10-18', lastGame: '2026-11-08', over: true };
 const charge = (date, amount = 3750) => ({ type: 'charge', amount, date });
@@ -42,6 +42,15 @@ test('settled after the last game, or never, is after season once the season is 
 
 test('a balance under ₱100 counts as settled', () => {
   assert.equal(gradeSeason([charge('2026-09-01'), pay('2026-09-10', 3730)], season, { now }).grade, 'ontime');
+});
+
+test('only season-fee rows count, not Papawis or other charges tagged with the season', () => {
+  assert.equal(isSeasonFee({ category: 'Season Fee' }), true);
+  assert.equal(isSeasonFee({ category: 'season_fee' }), true);
+  assert.equal(isSeasonFee({ category: 'Game Fee' }), true);
+  assert.equal(isSeasonFee({ category: 'Papawis' }), false);
+  assert.equal(isSeasonFee({ category: 'Other' }), false);
+  assert.equal(isSeasonFee({ category: '' }), false);
 });
 
 test('no season fee means no grade', () => {
