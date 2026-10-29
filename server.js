@@ -6612,7 +6612,7 @@ app.get('/app', requireApp, (req, res) => {
   if (setup.done === setup.total && !hasAppEvent(me.reg.id, 'setup_done')) logApp(req, 'setup_done');
   // The To do card, Me's look: only things with a deadline (money, an open sign-up), gone
   // once done. Open picks are on the rail (the next game day's cards), so they're not here too.
-  const rail = picksEnabled() && getUpcomingGames(getAllGames()).length > 0;
+  const rail = picksEnabled() && getUpcomingGames(getAllGames()).length > 0 ? appRailHtml(me) : '';
   const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form' || t.review)
     .map(t => t.icon === 'wallet' ? { ...t, href: `${t.href}?from=home` } : t);
   const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now());
@@ -6629,7 +6629,7 @@ app.get('/app', requireApp, (req, res) => {
     header: homeHeader({ phase: appPhase(), unread: me.unread, bk }) + barkadahanCard(bk),
     setupHtml: setupCard(setup), installHtml: installCard,
     todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
-    live: appLiveNowGames().length > 0 || (canWatchReview(req, me.playerId) && appReviewNowGames().length > 0),
+    live: appLiveNowHtml(req, me),
     feed: appFeedPage(me),
   }) });
 });
@@ -8857,8 +8857,9 @@ function appReviewNowGames() {
     // From the moment it starts (no plays yet: 0–0, "No plays yet").
     .map(g => ({ g, l: reviewLiveFor(g) || { score: { a: 0, b: 0 }, empty: true }, review: getScoreGame(g.id).settings.review }));
 }
-app.get('/app/live-now', requireAppData, (req, res) => {
-  const me = appMe(req);
+// Home's live card (views/app/feed.js appLiveNow): '' when nothing is live. In Home itself
+// and again every 15 s from /app/live-now.
+function appLiveNowHtml(req, me) {
   const colorOf = appColorOf(getAllTeams());
   const reviews = canWatchReview(req, me.playerId) ? appReviewNowGames().map(({ g, l, review }) => ({
     id: g.id, href: `/app/games/${encodeURIComponent(g.id)}?review=live`, when: l.empty ? 'No plays yet' : liveWhen(l), line: `${review.name || 'An admin'} is ${review.kind === 'video' ? 're-tracking it from the video' : 'checking the plays'}. Only admins see this.`,
@@ -8872,20 +8873,23 @@ app.get('/app/live-now', requireAppData, (req, res) => {
     const line = run ? `${nm(run.team)} on a ${run.pts}–0 run` : odds ? `${nm(odds.a >= odds.b ? 'a' : 'b')} ${Math.max(odds.a, odds.b)}% to win` : '';
     return { id: g.id, when: liveWhen(l), line, kicker: `Live · ${g.playoff_round || gameTypeLabel(g) || 'Regular season'}`, media: gameMedia(g), a: { name: g.team_a_name, color: colorOf(g.team_a_name), score: l.score.a }, b: { name: g.team_b_name, color: colorOf(g.team_b_name), score: l.score.b } };
   });
+  return appLiveNow([...cards, ...reviews]);
+}
+app.get('/app/live-now', requireAppData, (req, res) => {
   res.set('Cache-Control', 'private, no-store');
-  res.json({ html: appLiveNow([...cards, ...reviews]) });
+  res.json({ html: appLiveNowHtml(req, appMe(req)) });
 });
 // Home's rail (views/app/feed.js appRail): the next game day's games. While picks are open
 // they're pick cards; once closed, preview cards with the player's pick; gone after the games.
-// Loaded after the screen (it needs the full picks context, ~100 ms) as JSON { html }.
-app.get('/app/rail', requireAppData, (req, res) => {
-  const me = appMe(req);
+// In Home itself (~30 ms), so nothing under it jumps when it lands; again from /app/rail
+// (JSON { html }) after a pick on it.
+function appRailHtml(me) {
   const all = getAllGames();
   const sorted = byDate(all);
   const pctx = buildPicksContext(sorted);
   const opens = picksEnabled() ? openPicks(sorted, pctx, me.playerId) : [];
   const day = opens.map(o => o.ymd).filter(Boolean).sort()[0];
-  if (!day) return res.json({ html: '' });
+  if (!day) return '';
   const colorOf = appColorOf(getAllTeams());
   const gameOf = Object.fromEntries(all.map(g => [g.id, g]));
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
@@ -8896,8 +8900,9 @@ app.get('/app/rail', requireAppData, (req, res) => {
     if (l && !l.ended) return { ...g, live: { a: l.score.a, b: l.score.b, when: liveWhen(l) } };
     return o.closed ? { ...g, preview: appPreview(gameOf[o.id], sorted, pctx, playerMap, colorOf) } : g;
   });
-  res.json({ html: appRail({ dayLabel: manilaFormat(Date.parse(`${day}T12:00:00+08:00`), { weekday: 'long' }), cards }) });
-});
+  return appRail({ dayLabel: manilaFormat(Date.parse(`${day}T12:00:00+08:00`), { weekday: 'long' }), cards });
+}
+app.get('/app/rail', requireAppData, (req, res) => res.json({ html: appRailHtml(appMe(req)) }));
 
 // ── Picks (Who wins?) ── The site's openPicks() cards for this player, shaped for the app,
 // then the Pickmaster board and the player's settled picks. Picks are saved by the site's
