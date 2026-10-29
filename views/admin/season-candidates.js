@@ -42,9 +42,12 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
     if (!capacity) return '';
     return r.rank <= capacity ? badge('In', 'green') : badge('Waitlist', 'blue');
   };
+  // No season fee in either graded season (new, Papawis-only, or away): nothing for or against them.
+  const noFeeHistory = r => !r.pay.some(Boolean);
   const flags = r => [
     spot(r),
     r.payFirst ? badge('Pay first', 'amber') : '',
+    noFeeHistory(r) ? badge('No fee history', 'gray') : '',
     r.isNew ? badge('New member', 'gray') : '',
     r.blockers.includes('Owes') ? badge(`Owes ${peso(r.balance)}`, 'red') : '',
     r.blockers.includes('Banned') ? badge('Banned', 'red') : '',
@@ -71,6 +74,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
       { key: 'g2', label: 'Group 2', test: r => r.eligible && r.group === 2 },
       { key: 'g3', label: 'Group 3', test: r => r.eligible && r.group === 3 },
       { key: 'payfirst', label: 'Pay first', test: r => r.payFirst },
+      { key: 'nofee', label: 'No fee history', test: r => r.eligible && noFeeHistory(r) },
       { key: 'blocked', label: 'Not eligible yet', test: r => !r.eligible },
       { key: 'all', label: 'All', test: () => true },
     ],
