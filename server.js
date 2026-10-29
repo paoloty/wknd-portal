@@ -45,7 +45,7 @@ import { playoffsPage, playoffsModel, computeSeeds, pairKey, championHero } from
 import { playoffScoreboard } from './views/playoff-hero.js';
 import { comingSoonPage } from './views/coming-soon.js';
 import { leaderSharePage } from './views/leader-share.js';
-import { playerPage } from './views/player.js';
+import { playerPage, AWARD_META } from './views/player.js';
 import { playersPage } from './views/players.js';
 import { scoreTicker } from './views/ticker.js';
 import { privacyPage, termsPage, rulesPage } from './views/legal.js';
@@ -6110,6 +6110,7 @@ import { appSharePage } from './views/app/share.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
+import { appPlayerPage, appPlayerMissing, appSeasonPage } from './views/app/season.js';
 import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
 import { appAdminPapawisPage, papawisMessengerText } from './views/app/admin-papawis.js';
 import { appFinishGamePage } from './views/app/finish.js';
@@ -6134,7 +6135,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js', 'views/app/season.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6781,7 +6782,7 @@ function appFeedItem(it, me, extra) {
   }
   if (it.kind === 'papawis') {
     const run = extra.runs?.find(r => r.id === it.id);
-    return run ? { kind: 'papawis', day, when: feedWhen(it.at), run } : { kind: 'none', day: '' };
+    return run ? { kind: 'papawis', day, when: feedWhen(it.at), run, social: extra.social?.[`pw:${it.id}`] || null } : { kind: 'none', day: '' };
   }
   const g = it.src;
   const stats = getGameDetailStats(g.id);
@@ -6806,7 +6807,7 @@ function appFeedPage(me, before, prevDay) {
   const from = m ? all.findIndex(it => it.at < Number(m[1]) || (it.at === Number(m[1]) && String(it.id).localeCompare(m[2]) < 0)) : 0;
   const page = from < 0 ? [] : all.slice(from, from + APP_FEED_PAGE);
   const gameIds = page.filter(it => it.kind === 'game').map(it => it.id);
-  const extra = { social: appSocialFor(page.filter(it => it.kind === 'game' || it.kind === 'ann').map(it => (it.kind === 'ann' ? `ann:${it.id}` : it.id)), me.playerId) };
+  const extra = { social: appSocialFor(page.filter(it => ['game', 'ann', 'papawis'].includes(it.kind)).map(it => (it.kind === 'ann' ? `ann:${it.id}` : it.kind === 'papawis' ? `pw:${it.id}` : it.id)), me.playerId) };
   // The page's Papawis runs as the Papawis tab shapes them (who's in, the player's own state
   // and the one action), so the card can join right there.
   if (page.some(it => it.kind === 'papawis')) extra.runs = appPapawisRuns(me);
@@ -6834,6 +6835,8 @@ const appCommentsOn = () => getSetting('comments_enabled', '0') === '1';
 function appThreadTarget(key) {
   const k = String(key || '');
   if (k.startsWith('ann:')) { const ann = getAppAnnouncement(k.slice(4)); return ann ? { kind: 'ann', key: k, ann } : null; }
+  // A Papawis run (2026-10-29: players ask about a run right on it).
+  if (k.startsWith('pw:')) { const run = getSetting('papawis_enabled', '0') === '1' ? getPapawisGame(k.slice(3)) : null; return run ? { kind: 'pw', key: k, run } : null; }
   const game = getGameById(k);
   return game && !game.under_review ? { kind: 'game', key: game.id, game } : null;
 }
@@ -6913,7 +6916,7 @@ app.post('/app/thread/:key/comments/:id/delete', requireAppData, requireThread, 
   if (noViewAs(req, res)) return;
   const c = getCommentById(req.params.id);
   if (!c || c.game_id !== req.thread.key) return res.status(404).json({ error: 'That comment was already deleted.' });
-  if (c.player_id !== req.session.playerPlayerId && !isAdminWithSection(req, 'games-stats')) return res.status(403).json({ error: 'You can only delete your own comments.' });
+  if (c.player_id !== req.session.playerPlayerId && !isAdminWithSection(req, 'games-stats') && !(req.thread.kind === 'pw' && isAdminWithSection(req, 'papawis'))) return res.status(403).json({ error: 'You can only delete your own comments.' });
   const ids = deleteGameComment(c.id);
   if (req.thread.kind === 'game') for (const id of ids) broadcastToGame(req.thread.game.id, { type: 'comment:delete', id });
   appThreadAnswer(res, req.thread, req, c.parent_id ? [c.parent_id] : []);
@@ -8558,13 +8561,158 @@ app.get('/app/team', requireApp, (req, res) => {
     const i = rows.findIndex(r => r.team_id === me.team.id || String(r.team_name || r.name || '').toUpperCase() === String(me.team.name).toUpperCase());
     if (i >= 0 && seasonGames.length) standing = `${ordinal(i + 1)} of ${rows.length}`;
   } catch (e) { console.error('[app team standing]', e.message); }
+  // The Season screen's three ways in, each with one fact for this team.
+  let links = null;
+  try {
+    const d = appSeasonData(me), m = d.m, id = me.team.id;
+    const nextDay = d.days.find(x => x.upcoming);
+    const inSemi = [[m.st1, m.s1, m.s4], [m.st2, m.s2, m.s3]].find(([, hi, lo]) => hi?.id === id || lo?.id === id);
+    links = {
+      standing: standing || `Season ${season}`,
+      bracket: m.champ?.id === id ? 'Champions' : [m.fHigh?.id, m.fLow?.id].includes(id) ? 'In the final'
+        : inSemi && inSemi[0].winner && inSemi[0].winner.id !== id ? 'Season over' : inSemi ? 'Semifinal' : m.seeds.length === 4 ? 'Out' : 'After the season',
+      games: nextDay ? `Next ${nextDay.date.replace(/^\w+, /, '')}` : `${d.days.length} game days`,
+    };
+  } catch (e) { console.error('[app team season links]', e.message); }
   sendTab(res, me, { title: 'My Team · WKND', tab: 'team', body: appTeamPage({
-    me, season, upNext, schedule, roster,
+    me, season, upNext, schedule, roster, links,
     // Regular-season record, as the site's standings and team page show it.
     team: { name: me.team.name, color: me.ring, record: regularGames.length ? `${recordIn(regularGames, me.team.id)} in Season ${season}` : '', standing },
   }) });
 });
 const ordinal = n => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : (n % 10 < 4 ? n % 10 : 0)]}`;
+
+// ── Profiles and the Season screen (views/app/season.js, 2026-10-29) ──
+// A player's profile: what the site's public /players/:id shows (no money, nothing private).
+// Any face or name in the app opens it (public/app.js, [data-pid]); your own opens Me.
+const APP_TOP_AWARDS = new Set(['champion', 'finals_mvp', 'mvp', 'dpoy']);
+app.get('/app/players/:id', requireApp, (req, res) => {
+  const me = appMe(req);
+  const back = APP_BACK[req.query.from] ? appBack(req) : { href: '/app', label: 'Back', tab: 'home' };
+  const p = getPlayerWithTeam(req.params.id);
+  if (!p) return sendTab(res, me, { title: 'Player · WKND', tab: back.tab, body: appPlayerMissing(back) });
+  if (p.id === me.playerId) return res.redirect('/app/me');
+  const season = String(getPortalCurrentSeason());
+  const log = getPlayerGameLog(p.id).filter(g => g.status === 'played');
+  // Regular season only, as Me and the site profile's season line.
+  const inSeason = log.filter(g => String(g.season) === season && g.game_type !== 'playoff' && g.game_type !== 'finals');
+  const sum = k => inSeason.reduce((s, g) => s + (Number(g[k]) || 0), 0);
+  const per = k => (sum(k) / inSeason.length).toFixed(1);
+  const threes = sum('fg3m'), tries = threes + sum('fg3m_miss');
+  const name = displayPlayerName(p.name || '');
+  const ring = teamColorById(getAllTeams(), p.team_id);
+  const statsByType = getPlayerStatsByType(p.id);
+  sendTab(res, me, { title: `${name} · WKND`, tab: back.tab, body: appPlayerPage({
+    back,
+    p: { id: p.id, name, initials: initials(name), ring, photoUrl: playerPhotoUrl(p.id, 192), team: titleCase(p.team_name || ''),
+      number: String(p.number ?? ''), positions: parsePositions(p.positions).join(' / '), writeup: String(p.writeup || '').trim() },
+    season: inSeason.length ? {
+      label: `Season ${season} · ${inSeason.length} game${inSeason.length === 1 ? '' : 's'}`,
+      tiles: [[per('pts'), 'PTS'], [per('reb'), 'REB'], [per('ast'), 'AST'], tries ? [(threes / tries * 100).toFixed(1), '3P%'] : [String(inSeason.length), 'GP']],
+      foot: `${per('stl')} steals · ${per('blk')} blocks a game${threes ? ` · ${threes} three${threes === 1 ? '' : 's'}` : ''}`,
+    } : null,
+    games: log.slice(0, 3).map(g => {
+      const mine = g.team_a_id === g.player_team_id ? 'a' : 'b';
+      const my = Number(mine === 'a' ? g.team_a_score : g.team_b_score), opp = Number(mine === 'a' ? g.team_b_score : g.team_a_score);
+      return { date: shortDate(g.date), opp: titleCase(mine === 'a' ? g.team_b_name : g.team_a_name), kind: g.game_type === 'regular' ? '' : gameTypeLabel(g),
+        won: my > opp, my, oppScore: opp, line: `${g.pts || 0}·${g.reb || 0}·${g.ast || 0}`, href: `/app/games/${encodeURIComponent(g.id)}` };
+    }),
+    career: statsByType.seasons.filter(r => r.game_type === 'regular' && r.games_played).map(r => ({
+      season: r.season, gp: r.games_played, current: String(r.season) === season,
+      ppg: (r.pts / r.games_played).toFixed(1), rpg: (r.reb / r.games_played).toFixed(1), apg: (r.ast / r.games_played).toFixed(1),
+    })),
+    awards: getPlayerAwards(p.id).map(a => ({ icon: AWARD_META[a.award_type]?.icon || '🏅', label: AWARD_META[a.award_type]?.label || a.award_type, season: a.season, top: APP_TOP_AWARDS.has(a.award_type) })),
+    papawis: getSetting('papawis_enabled', '0') === '1' ? (getPapawisTotalsForPlayer(p.id)?.played || 0) : 0,
+  }) });
+});
+
+// The Season screen: Standings · Bracket · Games for the current season. Seeding and series
+// come from the site's own standingsSectionData / playoffsModel (views/playoffs.js), so the
+// app's table and bracket are the site's /standings and /playoffs.
+function appSeasonData(me) {
+  const season = String(getPortalCurrentSeason());
+  const all = getAllGames();
+  const sd = standingsSectionData(season, all);
+  const pd = playoffsSectionData(season);
+  const m = playoffsModel({ standings: pd.standings, games: pd.games, h2h: pd.h2h });
+  const teams = getAllTeams();
+  const colorOf = t => t?.color || teamColor(t?.name || '');
+  const myTeamId = me.team?.id || null;
+  const winnerOf = g => (Number(g.team_a_score) > Number(g.team_b_score) ? g.team_a_id : g.team_b_id);
+  // Who's still in: the finalists, the champion; out: a semifinal's loser.
+  const out = new Set(), inFinal = new Set([m.fHigh?.id, m.fLow?.id].filter(Boolean));
+  for (const [st, hi, lo] of [[m.st1, m.s1, m.s4], [m.st2, m.s2, m.s3]]) if (st.winner) out.add(st.winner.id === hi?.id ? lo?.id : hi?.id);
+  if (m.champ) out.add(m.champ.id === m.fHigh?.id ? m.fLow?.id : m.fHigh?.id);
+  const standings = sd.rows.map((r, i) => {
+    const res = sd.games.filter(g => g.team_a_id === r.id || g.team_b_id === r.id)
+      .sort((x, y) => String(x.date).localeCompare(String(y.date))).map(g => (winnerOf(g) === r.id ? 'W' : 'L'));
+    return { seed: i < m.seeds.length ? i + 1 : null, name: titleCase(r.name), color: colorOf(r), wl: `${r.wins}–${r.losses}`, diff: Number(r.point_diff) || 0,
+      last5: res.slice(-5).join(''), mine: r.id === myTeamId,
+      tag: m.champ?.id === r.id ? 'CHAMPS' : out.has(r.id) || (m.seeds.length && i >= m.seeds.length) ? 'OUT' : inFinal.has(r.id) ? 'FINALS' : '' };
+  });
+  let read = null;
+  try { const s = JSON.parse(getSetting(`section_summary_standings_playoffs:${season}`, '') || 'null'); if (s?.headline) read = { headline: s.headline, body: s.body || '' }; } catch {}
+  // Picks still open, for the Pick pills.
+  const ctx = picksEnabled() ? bkPickCtx() : null;
+  const pickOpen = g => !!ctx && !isPlayedGame(g) && !!ctx.byId[g.id] && !picksClosedFor(ctx.byId[g.id], ctx.settings[g.id], ctx.clock);
+  const when = g => [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · ');
+  // A series: its rows, every game (played, then the next one), and where it stands.
+  const series = [];
+  const seriesCard = (title, sub, games, hi, lo, need, st, tbd) => {
+    const played = st.played;
+    const next = games.find(g => !isPlayedGame(g) && !g.under_review);
+    const rows = [hi, lo].map((t, k) => t ? { seed: m.seedOf(t), name: titleCase(t.name), color: colorOf(t), wins: k ? st.lw : st.hw, need: k ? need.low : need.high, out: !!st.winner && st.winner.id !== t.id } : { tbd: true, name: tbd[k] });
+    const gl = played.map((g, i) => ({ label: `G${i + 1}`, text: `${titleCase(g.team_a_name)} ${g.team_a_score} – ${g.team_b_score} ${titleCase(g.team_b_name)}`, href: `/app/games/${encodeURIComponent(g.id)}` }));
+    if (!st.winner && next) gl.push({ label: `G${played.length + 1}`, text: when(next) || 'Date to follow', href: pickOpen(next) ? `/app/picks#g-${encodeURIComponent(next.id)}` : '', pick: pickOpen(next) });
+    let status = '';
+    if (st.winner) status = `**${titleCase(st.winner.name)}** ${title === 'Finals' ? 'win the title' : 'goes through to the final'}`;
+    else if (hi && lo && played.length) {
+      const hn = need.high - st.hw, ln = need.low - st.lw;
+      const lead = st.hw === st.lw ? `Tied ${st.hw}–${st.lw}` : `**${titleCase((st.hw > st.lw ? hi : lo).name)}** leads ${Math.max(st.hw, st.lw)}–${Math.min(st.hw, st.lw)}`;
+      status = hn === 1 && ln === 1 ? `${lead} · the next game decides it` : `${lead} · ${titleCase(hi.name)} need${hn === 1 ? 's' : ''} ${hn}, ${titleCase(lo.name)} ${ln}`;
+    } else if (hi && lo) status = need.high === need.low ? 'First to two wins' : `**${titleCase(hi.name)}** need one win, **${titleCase(lo.name)}** two`;
+    series.push({ title, sub, rows, games: gl, status, done: !!st.winner, live: !st.winner && !!hi && !!lo && (played.length > 0 || !!next) });
+  };
+  if (m.seeds.length === 4) {
+    seriesCard('Semifinal 1', '1 v 4', m.semi1, m.s1, m.s4, { high: 1, low: 2 }, m.st1, ['', '']);
+    seriesCard('Semifinal 2', '2 v 3', m.semi2, m.s2, m.s3, { high: 1, low: 2 }, m.st2, ['', '']);
+    seriesCard('Finals', 'Best of 3', m.finalsGames, m.fHigh, m.fLow, { high: 2, low: 2 }, m.fin, ['Winner of semifinal 1', 'Winner of semifinal 2']);
+  }
+  // Every game this season by game day: what's next on top (soonest first), then results newest first.
+  const seasonGames = all.filter(g => String(g.season) === season && !g.under_review);
+  const regDays = [...new Set(seasonGames.filter(g => g.game_type === 'regular').map(g => gameYmd(g.date)))].sort();
+  const shape = g => {
+    const played = isPlayedGame(g), sa = Number(g.team_a_score), sb = Number(g.team_b_score);
+    const t = (name, id, score, won) => ({ name: titleCase(name), color: teamColorById(teams, id), score: played ? score : '', won });
+    return { played, a: t(g.team_a_name, g.team_a_id, sa, sa > sb), b: t(g.team_b_name, g.team_b_id, sb, sb > sa), teams: [g.team_a_id, g.team_b_id],
+      side: played ? 'Final' : (gameTipLabel(g) || 'Time TBA'), sideSub: played ? (g.youtube_url ? 'Video' : g.game_writeup ? 'Recap' : '') : '',
+      pick: !played && pickOpen(g), next: !played, href: played ? `/app/games/${encodeURIComponent(g.id)}` : pickOpen(g) ? `/app/picks#g-${encodeURIComponent(g.id)}` : '' };
+  };
+  const byDay = new Map();
+  for (const g of seasonGames.filter(g => isPlayedGame(g) || g.status === 'scheduled' || g.scheduled)) {
+    const ymd = gameYmd(g.date);
+    if (!byDay.has(ymd)) byDay.set(ymd, []);
+    byDay.get(ymd).push(g);
+  }
+  const days = [...byDay.entries()].map(([ymd, gs]) => {
+    const kind = gs.some(g => g.game_type === 'finals') ? 'Finals' : gs.some(g => g.game_type === 'playoff') ? 'Playoffs · Semifinals' : `Week ${regDays.indexOf(ymd) + 1}`;
+    const upcoming = gs.every(g => !isPlayedGame(g));
+    return { ymd, upcoming, head: upcoming ? `Next · ${kind}` : kind, date: manilaDayLabel(ymd),
+      games: gs.sort((x, y) => String(x.tip_time || '').localeCompare(String(y.tip_time || ''))).map(shape) };
+  }).sort((x, y) => (x.upcoming !== y.upcoming ? (x.upcoming ? -1 : 1) : x.upcoming ? x.ymd.localeCompare(y.ymd) : y.ymd.localeCompare(x.ymd)));
+  return { season, standings, read, series, champ: m.champ ? { name: titleCase(m.champ.name), color: colorOf(m.champ) } : null, days, m, myTeamId,
+    label: sd.games.length && !sd.scheduled.length ? `Regular season · final` : `Regular season`,
+    myTeam: me.team ? { name: titleCase(me.team.name), color: me.ring } : null };
+}
+app.get(['/app/season', '/app/season/:tab'], requireApp, (req, res) => {
+  const me = appMe(req);
+  const tab = ['bracket', 'games'].includes(req.params.tab) ? req.params.tab : 'standings';
+  if (req.params.tab && tab === 'standings' && req.params.tab !== 'standings') return res.redirect('/app/season');
+  const d = appSeasonData(me);
+  const mineOnly = tab === 'games' && req.query.team === 'mine' && !!d.myTeamId;
+  const days = mineOnly ? d.days.map(x => ({ ...x, games: x.games.filter(g => g.teams.includes(d.myTeamId)) })).filter(x => x.games.length) : d.days;
+  sendTab(res, me, { title: `Season ${d.season} · WKND`, tab: 'team', body: appSeasonPage({ ...d, tab, days, mineOnly, back: { href: '/app/team', label: 'My Team' } }) });
+});
 
 // Me: profile, To do (money and season, plus a line to Picks), season averages, games.
 app.get('/app/me', requireApp, (req, res) => {
@@ -8953,8 +9101,10 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
 app.get('/app/papawis', requireApp, (req, res) => {
   const me = appMe(req);
   const on = getSetting('papawis_enabled', '0') === '1';
+  const runs = on ? appPapawisRuns(me) : [];
+  const social = runs.length ? appSocialFor(runs.map(r => `pw:${r.id}`), me.playerId) : null;
   sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisPage({
-    off: !on, runs: on ? appPapawisRuns(me).map(r => (appPapawisAdmin(req) ? { ...r, admin: appPapawisAdminHint(getPapawisGame(r.id)) } : r)) : [],
+    off: !on, runs: runs.map(r => ({ ...r, social: social?.[`pw:${r.id}`] || null, ...(appPapawisAdmin(req) ? { admin: appPapawisAdminHint(getPapawisGame(r.id)) } : {}) })),
     totals: on ? getPapawisTotalsForPlayer(me.playerId) : null,
     summary: on ? storedTeamsSummary('papawis_summary', papawisSummaryFacts(getPapawisGames())) : null,
     cutoffDays: PAPAWIS_CUTOFF_DAYS,
@@ -12661,7 +12811,13 @@ function extractMentionedPlayerIds(body, players) {
 // target: appThreadTarget() / { kind: 'game', key, game }. parentId: the comment being replied
 // to; a reply to a reply goes under the same top-level comment (one level of replies).
 // Returns { id } or { error, status }. Banned players can't comment.
-const commentLinkOf = t => (t.kind === 'ann' ? `/app?thread=${encodeURIComponent(t.key)}` : `/games/${gameSlug(t.game)}#talk`);
+const commentLinkOf = t => (t.kind === 'ann' ? `/app?thread=${encodeURIComponent(t.key)}` : t.kind === 'pw' ? `/app/papawis?thread=${encodeURIComponent(t.key)}` : `/games/${gameSlug(t.game)}#talk`);
+// Admins with the Papawis section: a question on a run reaches them.
+function papawisAdminPlayerIds() {
+  return getAllRegistrations().filter(r => r.is_admin && r.status === 'approved' && r.player_id)
+    .filter(r => { const s = expandAdminSections(getRegistrationAdminSections(r)); return !s || s.includes('papawis'); })
+    .map(r => r.player_id);
+}
 const commentExcerpt = (body, n = 140) => (body.length > n ? body.slice(0, n) + '…' : body);
 // One message every 1.5 s and 12 a minute per player (live chat makes fast posting easy).
 const commentTimes = new Map();
@@ -12747,6 +12903,11 @@ function notifyComment(target, saved, parent) {
     ];
     about = `${titleCase(game.team_a_name)} vs ${titleCase(game.team_b_name)}`;
     first = `${isFinal ? 'New comment' : 'Pre-game chatter'} on ${about}`;
+  } else if (target.kind === 'pw') {
+    // Everyone on the run (in, waiting, deposit pending), whoever's commented, and the Papawis admins.
+    involved = [...getPapawisSignups(target.run.id).filter(s => s.player_id && !s.guest_name).map(s => s.player_id), ...getGameCommenterIds(target.key), ...papawisAdminPlayerIds()];
+    about = `the ${pwDay(target.run.date)} Papawis run`;
+    first = `New comment on ${about}`;
   } else {
     involved = getGameCommenterIds(target.key);
     about = target.ann.title ? `“${commentExcerpt(target.ann.title, 40)}”` : 'an announcement';

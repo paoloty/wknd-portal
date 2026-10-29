@@ -749,7 +749,7 @@ function potgWriteups(potgGames, player) {
 }
 
 // ── Awards section ────────────────────────────────────────────────────────────
-const AWARD_META = {
+export const AWARD_META = {
   mvp:             { label: 'Season MVP',                     icon: '🏆', bg: '#f59332', text: '#10141d' },
   dpoy:            { label: 'Defensive Player of the Season', icon: '🛡️', bg: '#3b82f6', text: '#fff'    },
   all_wknd_1:      { label: 'All WKND 1st Team',             icon: '⭐', bg: '#22c55e', text: '#000'    },

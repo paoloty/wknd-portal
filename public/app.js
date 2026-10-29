@@ -2544,9 +2544,22 @@
       e.preventDefault();
       // The tab lights up straight away, before the screen arrives.
       if (a.classList.contains('tab')) { $$('.tab').forEach(function (t) { t.classList.toggle('is-on', t === a); }); }
+      // Back on a screen anyone can open from anywhere (a profile): back in history when an app
+      // screen is behind it, so a face tapped in the chat goes back to the chat.
+      if (a.hasAttribute('data-hist-back') && history.state && history.state.app) { history.back(); return; }
       var url = urlOf(a.href);
       if (url === urlOf(location.href) && !a.hash) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
       go(url, true);
+    });
+    // A face or name (data-pid, views/app/layout.js appAvatar) opens that player's profile,
+    // unless it's part of a link or a button.
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button !== 0) return;
+      var f = e.target.closest && e.target.closest('[data-pid]');
+      if (!f || f.closest('a, button, label')) return;
+      var pid = f.getAttribute('data-pid'); if (!pid) return;
+      e.preventDefault();
+      go('/app/players/' + encodeURIComponent(pid), true);
     });
     var warm = function (e) { var a = e.target.closest && e.target.closest('a'); if (eligible(a)) prefetch(urlOf(a.href)); };
     document.addEventListener('touchstart', warm, { passive: true });

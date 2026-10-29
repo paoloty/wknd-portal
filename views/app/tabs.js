@@ -11,7 +11,8 @@ const resCell = g => `<span class="res ${g.won ? 'res--w' : 'res--l'}">${g.won ?
 // team: { name, color, record, standing } · upNext: views/app/home.js upNextCard data
 // schedule: [{ date, opp, oppColor, played, won, my, oppScore, when, href }]
 // roster: [{ id, name, number, positions, photoUrl, initials, isMe, isHead }]
-export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [], season = '' }) {
+// links: { standing, bracket, games } — the Season screen's tiles, each with one fact (or null).
+export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [], season = '', links = null }) {
   if (!team) {
     return `${lt('My Team')}<div class="empty">You're not on a team yet. Teams show up here once rosters are out.</div>`;
   }
@@ -23,16 +24,21 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
   const upcoming = schedule.filter(g => !g.played), results = schedule.filter(g => g.played).reverse();
   // No team card: Up next already names the team, so the record and standing sit under the title.
   return `<header class="lt"><div><h1>My Team</h1><div class="lt__sub"><span class="dot" style="--c:${esc(team.color)}"></span>${esc([team.name, team.record, team.standing].filter(Boolean).join(' · '))}</div></div></header>
+  ${links ? `<div class="ss-links">
+    <a class="ss-link" href="/app/season"><span class="ico">${icons.me}</span><b>Standings</b><small>${esc(links.standing)}</small></a>
+    <a class="ss-link" href="/app/season/bracket"><span class="ico">${icons.trophy}</span><b>Bracket</b><small>${esc(links.bracket)}</small></a>
+    <a class="ss-link" href="/app/season/games"><span class="ico">${icons.ball}</span><b>Games</b><small>${esc(links.games)}</small></a>
+  </div>` : ''}
   ${upNextCard(upNext)}
   ${upcoming.length ? `<div class="sec">Coming up</div><div class="group">${rows(upcoming)}</div>` : ''}
   ${results.length ? `<div class="sec">Season ${esc(season)} results</div><div class="group">${rows(results)}</div>` : ''}
   <div class="sec">Roster · ${roster.length}</div>
   <div class="group">${roster.map(p => `
-    <div class="cell">
+    <a class="cell" href="${p.isMe ? '/app/me' : `/app/players/${encodeURIComponent(p.id)}?from=team`}">
       ${appAvatar({ playerId: p.id, initials: p.initials, ring: team.color, photoUrl: p.photoUrl })}
       <span class="cell__t">${esc(p.name)}${p.isMe ? ' <span class="muted" style="font-weight:400">· You</span>' : ''}<small>${esc([p.positions, p.isHead ? 'Team head' : ''].filter(Boolean).join(' · ') || ' ')}</small></span>
-      <span class="num roster__no">${p.number !== '' ? `#${esc(p.number)}` : ''}</span>
-    </div>`).join('')}</div>`;
+      <span class="num roster__no">${p.number !== '' ? `#${esc(p.number)}` : ''}</span>${chev}
+    </a>`).join('')}</div>`;
 }
 
 // todos: views/app/home.js todoCard items · season: { label, gp, ppg, rpg, apg }
