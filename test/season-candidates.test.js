@@ -3,7 +3,7 @@
 // nothing here reads or writes it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gradeSeason, rankCandidates, isSeasonFee, RULES } from '../lib/season-candidates.js';
+import { gradeSeason, rankCandidates, isSeasonFee, seasonFeeRows, drawKey, RULES } from '../lib/season-candidates.js';
 
 const season = { firstGame: '2026-09-13', lastRegular: '2026-10-18', lastGame: '2026-11-08', over: true };
 const charge = (date, amount = 3750) => ({ type: 'charge', amount, date });
@@ -130,6 +130,52 @@ test('without payment: owing doesn’t block and nobody is pay first', () => {
   assert.equal(noPay.group, 1);
   assert.equal(noPay.payFirst, false);
   assert.deepEqual(noPay.marks, []);
+});
+
+test('untagged Game Fee / Other payments count toward the season whose bill came before them', () => {
+  const tx = [
+    { type: 'charge', category: 'Season Fee', season: '3', amount: 2830, date: '2026-07-08' },
+    { type: 'payment', category: 'Season Fee', season: '3', amount: 2830, date: '2026-07-09' },
+    { type: 'charge', category: 'season_fee', season: '4', amount: 3750, date: '2026-08-31' },
+    { type: 'payment', category: 'Game Fee', season: '', amount: 1500, date: '2026-09-06', notes: '' },
+    { type: 'payment', category: 'Season Fee', season: '4', amount: 2250, date: '2026-09-29' },
+    { type: 'payment', category: 'Other', season: '', amount: 500, date: '2026-09-10', notes: 'Season 4 Jersey' },
+    { type: 'payment', category: 'Penalty', season: '', amount: 500, date: '2026-09-20', notes: '' },
+    { type: 'payment', category: 'Papawis', season: '', amount: 370, date: '2026-09-21', notes: '' },
+  ];
+  const f = seasonFeeRows(tx, [3, 4]);
+  assert.equal(f[3].length, 2);
+  assert.deepEqual(f[4].filter(t => t.type === 'payment').map(t => t.amount), [1500, 2250]);
+  assert.deepEqual(f.matched.map(t => [t.amount, t.matchedSeason]), [[1500, 4]]);
+  const g = gradeSeason(f[4], { firstGame: '2026-09-13', lastRegular: '2026-10-18', lastGame: '2026-10-25', over: false }, { now });
+  assert.equal(g.owing, 0);
+  assert.notEqual(g.grade, 'owing');
+});
+
+test('still paying an unfinished season never counts toward pay first', () => {
+  assert.equal(rankCandidates([person('a', { pay: [G('chased'), G('owing')] })])[0].payFirst, false);
+  assert.equal(rankCandidates([person('b', { pay: [G('chased'), G('chased')] })])[0].payFirst, true);
+});
+
+test('under half of last season costs Group 1 only, not a mark as well', () => {
+  const [r] = rankCandidates([person('a', { playedLast: true, activeWeeks: 8, attendance: { played: 2, teamGames: 7 } })]);
+  assert.equal(r.group, 3);
+  assert.deepEqual(r.marks, []);
+});
+
+test('Discuss still shows for exempt admins', () => {
+  const rules = { ...RULES, noMarksPlayerIds: ['adm'] };
+  const [r] = rankCandidates([person('adm', { playedLast: true, conduct: { fines: 2, maxTechs: 0, dq: 0 } })], { rules });
+  assert.deepEqual(r.marks, []);
+  assert.equal(r.discuss, true);
+});
+
+test('ties go to a fixed draw per season, not the alphabet', () => {
+  const tied = ['Aaron', 'Bea', 'Carlo', 'Dino', 'Ely', 'Fritz'].map(n => person(n, { activeWeeks: 8 }));
+  const order = seed => rankCandidates(tied, { seed }).map(r => r.id).join();
+  assert.equal(order('5'), order('5'));
+  assert.equal(order('5'), tied.slice().sort((a, b) => drawKey(a.id, '5').localeCompare(drawKey(b.id, '5'))).map(r => r.id).join());
+  assert.notEqual(order('5'), order('6'));
 });
 
 test('one after-season grade is enough for pay first', () => {

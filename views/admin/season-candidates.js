@@ -130,6 +130,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
       ['Late cancellations', `${r.lateCancels} Papawis cancel${r.lateCancels === 1 ? '' : 's'} within ${RULES.lateCancelHours} hours of a run, last 12 months (admin removals included)`],
       ['Contribution', helpFact(r)],
       ...seasons.map((s, i) => payFacts(r.pay[i], s.season)),
+      r.untaggedFees.length ? ['Untagged fee payments', `${r.untaggedFees.map(t => escHtml(`${peso(t.amount)} on ${t.date} (${t.category}) → Season ${t.season}`)).join(' · ')}. Counted as the season fee; worth fixing the tag in the ledger.`] : null,
       ['Balance now', r.balance > 0 ? escHtml(peso(r.balance)) : 'Nothing owed'],
       r.payFirst ? ['Pay first', 'Late or long gaps in past seasons: pays in full before the first game, no installment plan'] : null,
     ]),
