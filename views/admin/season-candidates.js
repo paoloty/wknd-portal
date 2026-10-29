@@ -3,7 +3,7 @@
 // opening to its full record. The row menu ticks contributions (setup, refereeing, other);
 // nothing else here changes data. Temporarily under Season in the admin nav.
 import { escHtml } from '../layout.js';
-import { pageHeader, dataGrid, badge, avatar, banner, statStrip, facts } from './ui.js';
+import { pageHeader, pageTabs, dataGrid, badge, avatar, banner, statStrip, facts } from './ui.js';
 import { RULES, MARK_LABELS, PLUS_LABELS, CONTRIBUTION_KINDS } from '../../lib/season-candidates.js';
 
 const peso = n => `₱${Math.round(n).toLocaleString('en-US')}`;
@@ -30,7 +30,7 @@ function payFacts(g, season) {
 
 // data: loadSeasonCandidates() → { target, seasons, candidates }. capacity: season_roster_capacity.
 export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {}) {
-  const { target, seasons, candidates } = data;
+  const { target, seasons, candidates, ignorePayment } = data;
   const rows = candidates;
   const eligible = rows.filter(r => r.eligible);
   const count = g => eligible.filter(r => r.group === g).length;
@@ -55,6 +55,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
     noFeeHistory(r) ? badge('No fee history', 'gray') : '',
     r.isNew ? badge('New member', 'gray') : '',
     r.blockers.includes('Owes') ? badge(`Owes ${peso(r.balance)}`, 'red') : '',
+    ignorePayment && r.balance >= RULES.owingToleranceAmt ? badge(`Owes ${peso(r.balance)} · not counted`, 'gray') : '',
     r.blockers.includes('Banned') ? badge('Banned', 'red') : '',
     r.blockers.includes('No account') ? badge('No account', 'gray') : '',
   ].filter(Boolean).join('');
@@ -91,7 +92,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
   }));
 
   const grid = dataGrid({
-    id: 'candidates', baseUrl: '/admin/season/candidates', query,
+    id: 'candidates', baseUrl: '/admin/season/candidates', query, keep: ignorePayment ? { nopay: '1' } : {},
     rows, rowKey: r => r.id, noun: ['player', 'players'], perPage: 200, minimal: true,
     views: [
       { key: 'eligible', label: 'Eligible', test: r => r.eligible },
@@ -147,6 +148,11 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
   const ongoing = seasons.filter(s => !s.over).map(s => `Season ${s.season}`);
   return `<div class="aui-page">
     ${pageHeader({ eyebrow: 'Season', title: `Season ${target} candidates`, sub: 'Ranked by the draft criteria. Only admins see this page.' })}
+    ${pageTabs([
+      { label: 'All criteria', href: '/admin/season/candidates', active: !ignorePayment },
+      { label: 'Without payment', href: '/admin/season/candidates?nopay=1', active: ignorePayment },
+    ])}
+    ${ignorePayment ? banner('warn', 'Payment left out: owing doesn’t block anyone and nobody is marked pay first. Payment grades still show, for reference only.') : ''}
     ${banner('info', `Draft ranking. ${ongoing.length ? `${ongoing.join(', ')} isn't finished, so "Still paying" there isn't late yet. ` : ''}Online counts site visits from Oct 15 on (picks, comments, polls, chat, Papawis signups and app opens from the start), so website-only players may show low until January.`)}
     ${statStrip([
       { label: 'Spots', value: capacity ? String(capacity) : '—' },

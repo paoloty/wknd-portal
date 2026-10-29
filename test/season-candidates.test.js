@@ -121,6 +121,17 @@ test('approved admins get no marks but keep the must-haves', () => {
   assert.equal(b.eligible, false);
 });
 
+test('without payment: owing doesn’t block and nobody is pay first', () => {
+  const p = person('debtor', { playedLast: true, activeWeeks: 8, balance: 2000, pay: [G('after'), G('owing')] });
+  const [withPay] = rankCandidates([p]);
+  assert.equal(withPay.eligible, false);
+  const [noPay] = rankCandidates([p], { ignorePayment: true });
+  assert.equal(noPay.eligible, true);
+  assert.equal(noPay.group, 1);
+  assert.equal(noPay.payFirst, false);
+  assert.deepEqual(noPay.marks, []);
+});
+
 test('one after-season grade is enough for pay first', () => {
   assert.equal(rankCandidates([person('a', { pay: [G('after'), G('ontime')] })])[0].payFirst, true);
   assert.equal(rankCandidates([person('b', { pay: [G('chased'), G('ontime')] })])[0].payFirst, false);
