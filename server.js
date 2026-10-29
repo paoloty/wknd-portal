@@ -21823,6 +21823,8 @@ import { adminSeasonBody }     from './views/admin/season.js';
 import { adminWaitlistBody }   from './views/admin/season-waitlist.js';
 import { adminSignupDetailBody } from './views/admin/season-signup-detail.js';
 import { adminReturningBody }  from './views/admin/season-returning.js';
+import { adminSeasonCandidatesBody } from './views/admin/season-candidates.js';
+import { loadSeasonCandidates } from './lib/season-candidates.js';
 import { adminCommentsBody }   from './views/admin/season-comments.js';
 import { adminAssessmentReviewsListBody } from './views/admin/season-assessment-reviews.js';
 import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
@@ -21971,6 +21973,17 @@ app.get('/admin/season/returning', requireAuth, (req, res) => {
     title: 'Returning Players',
     currentPath: '/admin/season/returning',
     body: adminReturningBody({ prevSeason, sigSeason, players }),
+  }));
+});
+
+// Next season's candidates ranked by the draft criteria (lib/season-candidates.js). Read-only.
+app.get('/admin/season/candidates', requireAuth, (req, res) => {
+  const data = loadSeasonCandidates();
+  const capacity = Number(getSetting('season_roster_capacity', '0')) || 0;
+  res.send(renderAdminPage(req, {
+    title: `Season ${data.target} Candidates`,
+    currentPath: '/admin/season/candidates',
+    body: adminSeasonCandidatesBody({ data, capacity, query: req.query }),
   }));
 });
 

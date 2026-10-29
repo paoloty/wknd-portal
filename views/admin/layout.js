@@ -91,6 +91,7 @@ const NAV_GROUPS = [
       { href: '/admin/season',          label: 'Signups & settings', icon: 'site',      exact: true },
       { href: '/admin/season/waitlist', label: 'Waitlist',           icon: 'users' },
       { href: '/admin/season/returning', label: 'Returning',         icon: 'players' },
+      { href: '/admin/season/candidates', label: 'Candidates',       icon: 'standings' },
       { href: '/admin/season/comments', label: 'Comments',           icon: 'posts' },
       { href: '/admin/season/assessment-reviews', label: 'Assessment reviews', icon: 'coach' },
       { href: '/admin/season/teams',    label: 'Team builder',       icon: 'teams', exact: true },
