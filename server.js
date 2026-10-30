@@ -3216,6 +3216,12 @@ app.get('/linktest/sw.js', (req, res) => {
 app.get('/table', (req, res) => {
   res.set('Cache-Control', 'no-cache').sendFile(path.join(__dirname, 'public/table/index.html'));
 });
+// Table mode in the app (Paolo, 2026-10-30): a tablet signed into the app opens Me → Scoring →
+// Table display; the app's service worker keeps the screen, so it works with no internet after
+// one visit. Same page and script as /table.
+app.get('/app/table', requireApp, (req, res) => {
+  res.set('Cache-Control', 'no-cache').sendFile(path.join(__dirname, 'public/table/index.html'));
+});
 app.get('/table/sw.js', (req, res) => {
   res.set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/table' }).type('application/javascript').sendFile(path.join(__dirname, 'public/table/sw.js'));
 });

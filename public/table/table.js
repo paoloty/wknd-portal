@@ -14,7 +14,10 @@ const IDLE_MS = 20000;
 
 // ── Offline copy ──
 const offNote = $('[data-offline-note]');
-if ('serviceWorker' in navigator) {
+// In the app (/app/table, table mode) the app keeps the screen; /table keeps its own copy.
+if (/^\/app\//.test(location.pathname)) document.querySelectorAll('[data-app-only]').forEach(el => { el.hidden = false; });
+if (/^\/app\//.test(location.pathname)) offNote.textContent = 'Table mode in the app: works with no internet once it has opened here with signal.';
+else if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/table/sw.js', { scope: '/table' })
     .then(() => navigator.serviceWorker.ready)
     .then(() => caches.open('wknd-table').then(c => c.match('/table')))

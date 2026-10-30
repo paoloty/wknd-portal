@@ -18,6 +18,7 @@ export const icons = {
   home: svg('<path d="M4 10.5 12 4l8 6.5V20h-5.5v-5.5h-5V20H4z"/>'),
   team: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>'),
   me: svg('<path d="M4 20h16M7 17V10M12 17V5M17 17v-5"/>'),
+  tablet: svg('<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M10.5 18h3"/>'),
   ball: svg('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5v17M6 5.8c2.6 3.4 2.6 9 0 12.4M18 5.8c-2.6 3.4-2.6 9 0 12.4"/>'),
   bell: svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'),
   more: svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>'),

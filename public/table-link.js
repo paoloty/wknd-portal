@@ -17,10 +17,43 @@ export function loadVendor() {
   })));
 }
 
-// ── Codes: an offer or answer, squeezed, as text for a QR code ──
-// WK1 + O (offer) | A (answer) + Z (deflated) | R (raw) + base64url.
+// ── Codes: an offer or answer, as text for a QR code ──
+// WK2 (2026-10-30, Paolo: a tablet's front camera couldn't read the long code): only what the two
+// devices need to find each other: the ICE name and password, the security fingerprint, the
+// DTLS role and the hotspot addresses (IPv4, UDP). About 100 characters instead of 545, a small
+// QR any camera reads. The other side rebuilds a standard data-channel description from it.
+// WK1 (the whole description, deflated) stays as the fallback when there's no plain IPv4 address.
 const bytesOf = stream => new Response(stream).arrayBuffer().then(b => new Uint8Array(b));
+const b64u = bytes => { let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64u = s => { let b64 = s.replace(/-/g, '+').replace(/_/g, '/'); while (b64.length % 4) b64 += '='; const bin = atob(b64), b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return b; };
+const SETUPS = ['actpass', 'active', 'passive'];
+function packShort(sdp) {
+  const line = k => { const m = new RegExp('^a=' + k + ':(.*)$', 'm').exec(sdp); return m ? m[1].trim() : ''; };
+  const ufrag = line('ice-ufrag'), pwd = line('ice-pwd'), fp = /^sha-256 ([0-9A-Fa-f:]{95})$/.exec(line('fingerprint')), setup = SETUPS.indexOf(line('setup')), mid = line('mid');
+  const cands = [...sdp.matchAll(/^a=candidate:\S+ 1 udp \d+ (\d{1,3}(?:\.\d{1,3}){3}) (\d+) typ host/gim)].map(m => ({ ip: m[1].split('.').map(Number), port: Number(m[2]) }))
+    .filter(c => c.ip.every(n => n <= 255) && c.port > 0 && c.port < 65536).slice(0, 4);
+  if (!ufrag || !pwd || ufrag.length > 64 || pwd.length > 64 || !fp || setup < 0 || mid !== '0' || !cands.length) return null;
+  const enc = new TextEncoder(), u = enc.encode(ufrag), p = enc.encode(pwd);
+  const out = [1, setup, u.length, ...u, p.length, ...p, ...fp[1].split(':').map(h => parseInt(h, 16)), cands.length];
+  for (const c of cands) out.push(...c.ip, c.port >> 8, c.port & 255);
+  return b64u(Uint8Array.from(out));
+}
+function unpackShort(s) {
+  const b = unb64u(s), dec = new TextDecoder();
+  let i = 0; const take = n => { const x = b.slice(i, i + n); i += n; if (x.length !== n) throw new Error('short code'); return x; };
+  if (take(1)[0] !== 1) throw new Error('unknown code');
+  const setup = SETUPS[take(1)[0]];
+  const ufrag = dec.decode(take(take(1)[0])), pwd = dec.decode(take(take(1)[0]));
+  const fp = [...take(32)].map(n => n.toString(16).padStart(2, '0').toUpperCase()).join(':');
+  const n = take(1)[0], cands = [];
+  for (let k = 0; k < n; k++) { const ip = [...take(4)].join('.'), pb = take(2); cands.push(`a=candidate:${k + 1} 1 udp ${2122260223 - k} ${ip} ${(pb[0] << 8) | pb[1]} typ host generation 0`); }
+  return ['v=0', 'o=- 4611731400430051336 2 IN IP4 127.0.0.1', 's=-', 't=0 0', 'a=group:BUNDLE 0', 'a=msid-semantic: WMS',
+    'm=application 9 UDP/DTLS/SCTP webrtc-datachannel', 'c=IN IP4 0.0.0.0', ...cands,
+    `a=ice-ufrag:${ufrag}`, `a=ice-pwd:${pwd}`, 'a=ice-options:trickle', `a=fingerprint:sha-256 ${fp}`, `a=setup:${setup}`,
+    'a=mid:0', 'a=sctp-port:5000', 'a=max-message-size:262144', ''].join('\r\n');
+}
 export function pack(kind, sdp) {
+  try { const s = packShort(sdp); if (s) return Promise.resolve('WK2' + kind + s); } catch (e) { /* the long code below */ }
   // TCP addresses never carry this link (it's UDP over the hotspot): left out, the code is
   // smaller and scans more easily off a phone screen.
   sdp = sdp.split('\r\n').filter(l => !(/^a=candidate:/.test(l) && / tcp /i.test(l))).join('\r\n');
@@ -34,6 +67,8 @@ export function pack(kind, sdp) {
   });
 }
 export function unpack(text) {
+  const short = /^WK2([OA])([A-Za-z0-9_-]+)$/.exec(String(text).trim());
+  if (short) { try { return Promise.resolve({ kind: short[1], sdp: unpackShort(short[2]) }); } catch (e) { return Promise.resolve(null); } }
   const m = /^WK1([OA])([ZR])([A-Za-z0-9_-]+)$/.exec(String(text).trim());
   if (!m) return Promise.resolve(null);
   let b64 = m[3].replace(/-/g, '+').replace(/_/g, '/'); while (b64.length % 4) b64 += '=';
@@ -45,7 +80,7 @@ export function unpack(text) {
 }
 // The code as an SVG in box (a quiet edge of 4 squares round it: readers need it).
 export function drawQr(box, text) {
-  const q = window.qrcode(0, 'L'); q.addData(text, 'Byte'); q.make();
+  const q = window.qrcode(0, text.length < 200 ? 'M' : 'L'); q.addData(text, 'Byte'); q.make();
   box.innerHTML = q.createSvgTag(4, 16);
   box.dataset.code = text; // what the code says (it's on screen anyway), for checks and tests
   const svg = box.querySelector('svg');
@@ -84,7 +119,7 @@ export function scan(video, onText) {
           const q = window.jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
           return q ? q.data : null;
         });
-      read.then(text => { busy = false; if (text && on && /^WK1/.test(text)) { on = false; onText(text); } });
+      read.then(text => { busy = false; if (text && on && /^WK[12]/.test(text)) { on = false; onText(text); } });
     }
     setTimeout(tick, 120);
   };
