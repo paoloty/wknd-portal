@@ -10860,3 +10860,9 @@ html.ppop-lock { overflow: hidden; }
 .pcd-sheet__lines b { font: 600 16px/1 var(--font-num); text-align: right; }
 .pcd-sheet__btn { display: flex; align-items: center; justify-content: center; min-height: 48px; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); font-size: 15px; font-weight: 600; text-decoration: none; }
 @media (min-width: 700px) { .pcd-sheet { align-items: center; } .pcd-sheet__in { border-radius: 22px; } }
+
+/* The box score's top 3 (views/game.js boxSection). */
+.gd-pcards { margin: 0 0 14px; }
+.gd-pcards .pcd-row { margin: 0; padding: 0 0 4px; }
+.gd-pcards { --muted: var(--text-muted); --font-num: 'Saira Condensed', 'Arial Narrow', sans-serif; --r-card: var(--radius-lg); --card-bg: var(--surface); --shadow: 0 0 #0000; --card-hi: 0 0 #0000; }
+.bs-table tr[data-pcard], .gd-box tr[data-pcard] { cursor: pointer; }

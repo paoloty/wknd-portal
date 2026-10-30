@@ -32,10 +32,13 @@
   document.addEventListener('click', function (e) {
     var el = e.target.closest && e.target.closest('[data-pcard], [data-pcard-close], .pcd-sheet');
     if (!el) return;
+    // See profile: the sheet goes as the link opens (the app swaps the screen without a page load).
+    if (e.target.closest('.pcd-sheet a[href]')) { setTimeout(close, 0); return; }
     if (el.hasAttribute('data-pcard-close') || (el.classList.contains('pcd-sheet') && e.target === el)) { e.preventDefault(); return close(); }
     if (el.hasAttribute('data-pcard')) {
       // A link inside the row (a name that goes to the profile) still works.
-      if (e.target.closest('a[href]') && !e.target.closest('a[href]').hasAttribute('data-pcard')) return;
+      // (So does the app box score name that opens the profile.)
+      if (e.target.closest('a[href], [data-pid]') && !e.target.closest('a[href], [data-pid]').hasAttribute('data-pcard')) return;
       e.preventDefault();
       open(el.getAttribute('data-pcard'), el);
     }

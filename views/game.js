@@ -22,6 +22,7 @@ import { duelCard, duelScale, previewDuelCards } from './duel.js';
 import { formChart, formChartOf } from './form-check.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
+import { topThreeCards, playerCardTemplates } from './player-cards.js';
 
 
 function youtubeEmbedUrl(url) {
@@ -416,7 +417,7 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = [], teamT
     const qpMs = Number(p.fg4m_miss || 0);
     const ftm  = Number(p.ftm);
     const ftMs = Number(p.ft_miss);
-    return `<tr>
+    return `<tr data-pcard="${escHtml(String(p.player_id || ''))}">
       <td class="bs-name">${playerLink(p.player_id, p.name || '')}</td>
       <td class="bs-stat">${fgm + fgMs ? fgm : '–'}</td>
       <td class="bs-stat">${fgm + fgMs ? fgm + fgMs : '–'}</td>
@@ -2179,7 +2180,7 @@ function formTiles(game, A, B, usual) {
 }
 
 // Box score, then team stats under it: both in the main column, the rail stays one stack.
-function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '', usual = null) {
+function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '', usual = null, cards = []) {
   if (!stats.length) return '';
   const { byTeam, dnpByTeam, winner, teamTurnovers } = buildBoxScoreData(game, stats, dnpPlayers);
   const na = String(game.team_a_name).toUpperCase(), nb = String(game.team_b_name).toUpperCase();
@@ -2197,7 +2198,9 @@ function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '', usual = null
           <button type="button" class="${first === 'b' ? 'is-on' : ''}" aria-pressed="${first === 'b'}" data-gd-box-btn="b">${dot(nb, 8)}<span class="pill-label">${escHtml(nb)} · ${n0(game.team_b_score)}</span></button>
         </span>
       </div>
+      ${cards.length ? `<div class="gd-pcards">${topThreeCards(cards, { firstLabel: 'Player of the Game' })}</div>` : ''}
       <div class="card gd-box">${panel('a', na)}${panel('b', nb)}</div>
+      ${cards.length ? `<p class="gd-sd">Tap a player for their card.</p>${playerCardTemplates(cards)}` : ''}
     </section>
     <section id="team-stats" aria-labelledby="ts-h">
       <div class="section-header gd-sh gd-sh--row"><h2 id="ts-h">Team stats</h2>${usual ? '<span class="gd-sh__note">vs their usual against each other</span>' : ''}</div>
@@ -2589,7 +2592,7 @@ ${scripts}`;
       ${hasBox ? wonBlock(d.won) : '<p class="gd-empty card">Full box scores will be available once stats are imported.</p>'}
       ${flowCard(game, d.flow)}
       ${performersSection(game, d.dc, d.verdict, d.potgPlayerId, d.commentsEnabled ? sayButton(mentionable) : undefined, secPanel('perf'), d.watch, d.duelHist)}
-      ${boxSection(game, d.stats, d.dnpPlayers, A, B, secPanel('stats'), d.usual)}
+      ${boxSection(game, d.stats, d.dnpPlayers, A, B, secPanel('stats'), d.usual, d.boxCards || [])}
       ${plays}
       ${series}
       ${talk}

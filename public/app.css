@@ -2760,3 +2760,8 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .pcd-sheet__lines b { font: 600 16px/1 var(--font-num); text-align: right; }
 .pcd-sheet__btn { display: flex; align-items: center; justify-content: center; min-height: 48px; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); font-size: 15px; font-weight: 600; text-decoration: none; }
 @media (min-width: 700px) { .pcd-sheet { align-items: center; } .pcd-sheet__in { border-radius: 22px; } }
+
+/* The app box score's top 3 (views/app/game.js boxCard). */
+.gr-pcards { margin: 0 0 12px; }
+.gr-pcards .pcd-row { margin: 0 -14px; padding: 0 14px 4px; }
+.gr-tb tbody tr[data-pcard] { cursor: pointer; }

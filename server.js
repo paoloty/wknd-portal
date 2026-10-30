@@ -2892,6 +2892,34 @@ function potgIdsFor(game, stats) {
   return ok ? [main, co] : [main];
 }
 
+// The box score's player cards (views/player-cards.js; Paolo, 2026-10-30): the Player of the Game
+// first, then the best by the box score's rating from either team, and a card for everyone who
+// played (a tap on their row). app: the app's profile links.
+function boxCardPeople(game, stats, { app = false } = {}) {
+  if (!stats.length) return [];
+  const teams = getAllTeams();
+  const potg = potgIdsFor(game, stats);
+  const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const n = (s, k) => Number(s[k]) || 0;
+  const rated = stats.map(s => ({ s, r: gameScore(s) })).sort((x, y) => (y.s.player_id === potg[0]) - (x.s.player_id === potg[0]) || y.r - x.r || n(y.s, 'pts') - n(x.s, 'pts'));
+  return rated.map(({ s, r }) => {
+    const raw = String(byId[s.player_id]?.name || s.name || ''), name = displayPlayerName(raw);
+    const fgm = n(s, 'fg2m') + n(s, 'fg3m') + n(s, 'fg4m'), fga = fgm + n(s, 'fg2m_miss') + n(s, 'fg3m_miss') + n(s, 'fg4m_miss');
+    const extra = n(s, 'blk') > n(s, 'stl') ? ['BLK', n(s, 'blk')] : ['STL', n(s, 'stl')];
+    const team = teams.find(t => t.id === s.team_id);
+    return {
+      key: s.player_id, name, first: raw.includes(',') ? raw.split(',').slice(1).join(',').trim() : undefined, last: raw.includes(',') ? raw.split(',')[0].trim() : undefined,
+      number: String(byId[s.player_id]?.number ?? ''), photo: playerPhotoUrl(s.player_id, 160), ini: initials(name),
+      ring: teamColorById(teams, s.team_id), team: team ? titleCase(team.name) : '',
+      note: s.player_id === potg[0] ? 'Player of the Game' : potg[1] === s.player_id ? 'Co-Player of the Game' : '',
+      stats: [['PTS', n(s, 'pts')], ['REB', n(s, 'reb')], ['AST', n(s, 'ast')], extra],
+      lines: [['FG', `${fgm}-${fga}`], ['3PT', `${n(s, 'fg3m')}-${n(s, 'fg3m') + n(s, 'fg3m_miss')}`], ['FT', `${n(s, 'ftm')}-${n(s, 'ftm') + n(s, 'ft_miss')}`],
+        ['STL · BLK · TO', `${n(s, 'stl')} · ${n(s, 'blk')} · ${n(s, 'turnover')}`], ['Rating', String(Math.round(r * 10) / 10)]],
+      href: app ? `/app/players/${encodeURIComponent(s.player_id)}` : `/players/${encodeURIComponent(s.player_id)}`,
+    };
+  });
+}
+
 // A player's POTG writeup for a game: the main one, or the co-POTG's own.
 function potgWriteupFor(game, playerId) {
   return playerId && playerId === game.co_potg_player_id ? (game.co_potg_writeup || '') : (game.potg_writeup || '');
@@ -6974,7 +7002,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     a, b, media: gameMedia(g), final: isPlayedGame(g),
     // The hero's chips carry the kind of game and the day; the court goes under it.
     kicker: gameKicker(g), when: manilaDayLabel(gameYmd(g.date)), meta: court ? `📍 ${court}` : '',
-    recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, thread, meId: me.playerId,
+    recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, thread, meId: me.playerId, cards: boxCardPeople(g, stats, { app: true }),
     myTeamId: mine?.team_id || '', full: appGameRecap(g, stats, me),
     shareHref: mine ? `/app/games/${encodeURIComponent(g.id)}/share?from=${back.tab}` : '',
     review: reviewCard,
@@ -12873,7 +12901,7 @@ app.get('/games/:ref', (req, res) => {
     currentPath: req.path,
     metaTags: buildGameOgTags(req, game, court),
     body: gamePage({
-      ...common, state: 'final', stats, dnpPlayers, potgPlayerId, coPotg: potgIds.length > 1, quarterScores,
+      ...common, state: 'final', stats, dnpPlayers, potgPlayerId, coPotg: potgIds.length > 1, quarterScores, boxCards: boxCardPeople(game, stats),
       flow, plays, won, dc, verdict, called, upNext, upNextLabel, myGame, usual, watch, series, storyline,
       shareLocked: shareCardsLocked(req),
       duelHist: dc ? Object.fromEntries([dc.a, dc.b].map(s => [s.player_id, meetingPoints(game, sorted, s.player_id)])) : {},
