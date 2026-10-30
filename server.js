@@ -3210,6 +3210,15 @@ app.get('/linktest', (req, res) => {
 app.get('/linktest/sw.js', (req, res) => {
   res.set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/linktest' }).type('application/javascript').sendFile(path.join(__dirname, 'public/linktest/sw.js'));
 });
+// The table display (public/table/, 2026-10-30): a tablet at the scorer's table mirrors the
+// scorer's phone over the phone's hotspot. No sign-in; works offline after one visit (its own
+// service worker, scoped to /table, like the link test).
+app.get('/table', (req, res) => {
+  res.set('Cache-Control', 'no-cache').sendFile(path.join(__dirname, 'public/table/index.html'));
+});
+app.get('/table/sw.js', (req, res) => {
+  res.set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/table' }).type('application/javascript').sendFile(path.join(__dirname, 'public/table/sw.js'));
+});
 
 // Everything else in public/: a week in the browser cache. Font files never change under
 // the same name (they're Google's content-hashed filenames), so those get a year.
@@ -6481,6 +6490,13 @@ app.get('/app/vendor/webauthn.js', (req, res) => {
 // iPhone (Android has a built-in reader). Served from node_modules like the passkey script.
 const LINKTEST_VENDOR = Object.fromEntries([['qrcode.js', 'qrcode-generator/qrcode.js'], ['jsqr.js', 'jsqr/dist/jsQR.js']]
   .map(([name, file]) => { try { return [name, readFileSync(path.join(__dirname, 'node_modules', file), 'utf8')]; } catch { return [name, '']; } }));
+// The same QR maker and reader for the table display (public/table-link.js) and the scorer's
+// Table display pairing.
+app.get('/table/vendor/:file', (req, res) => {
+  const src = LINKTEST_VENDOR[req.params.file];
+  if (!src) return res.status(404).end();
+  res.type('application/javascript').set('Cache-Control', 'public, max-age=86400').send(src);
+});
 app.get('/linktest/vendor/:file', (req, res) => {
   const src = LINKTEST_VENDOR[req.params.file];
   if (!src) return res.status(404).end();

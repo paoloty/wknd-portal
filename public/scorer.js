@@ -829,7 +829,7 @@ export async function mount(el) {
     download();
   }
   const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ...(basic() ? [] : [['follow', followOn() ? 'Follow-up questions: on (tap to turn off)' : 'Follow-up questions: off (tap to turn on)']]), ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : []),
-    ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game of this run…']] : []), ...(pw ? [['pw-finish', 'Finish the run…']] : []), ['table', 'Table display (tablet)…']], k => {
+    ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game of this run…']] : []), ...(pw ? [['pw-finish', 'Finish the run…']] : []), ['table', tblOn() ? 'Table display: linked ✓' : 'Table display (tablet)…']], k => {
     if (k === 'send') return sendMyPlays();
     if (k === 'pw-games') return menu('Which game?', games().filter(n => setupFor(n)).map(n => [String(n), `Game ${n}${n === ui.game ? ' · on screen' : ''}`]), v => goGame(Number(v)));
     if (k === 'pw-finish') { location.href = pw.finish; return; }
@@ -1306,6 +1306,7 @@ export async function mount(el) {
     if (swipe || (slide && slide.live)) { (swipe || slide).pending = true; return; }
     const keep = ['.sc-sheet__b', '.sc-dock__b'].map(sel => { const n = root.querySelector(sel); return n ? [sel, n.scrollTop] : null; }).filter(Boolean);
     paintNow();
+    tableSend();
     fitNames();
     for (const [sel, top] of keep) { const n = root.querySelector(sel); if (n) n.scrollTop = top; }
     tidyAnswers();
@@ -1428,6 +1429,102 @@ export async function mount(el) {
     if (off) return confirm('Which final score?', `The plays add up to ${G.score.a}–${G.score.b}; the final score says ${off.a}–${off.b}. Saving the box score uses the one you pick`, 'up', `Use ${G.score.a}–${G.score.b}`, () => send('plays'), `Keep ${off.a}–${off.b}`, () => send('typed'));
     confirm('Save the box score?', `${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ' now'}; the POTG and recap come next`, 'up', 'Save it', () => send(''));
   }
+  // ── Table display (2026-10-30): the tablet at the table (/table, public/table/) mirrors this
+  // phone over a direct link on the phone's hotspot (public/table-link.js, the link test's
+  // approach). ••• → Table display: scan the tablet's code, then hold this phone's code up to
+  // the tablet. From then on every change goes to the tablet (and every 2 s, for the clock).
+  const tbl = { ch: null, pc: null, box: null, stream: null, stop: null, t: null, at: 0 };
+  const tblOn = () => !!(tbl.ch && tbl.ch.readyState === 'open');
+  function tableClose() {
+    if (tbl.stop) tbl.stop();
+    if (tbl.L && tbl.stream) tbl.L.stopCamera(tbl.stream);
+    tbl.stream = null; tbl.stop = null;
+    if (tbl.box) { tbl.box.remove(); tbl.box = null; }
+  }
+  function tableOpen() {
+    ui.ask = null; paint();
+    tableClose();
+    const box = document.createElement('div');
+    box.className = 'sc-tbl';
+    box.innerHTML = `<div class="sc-tbl__in" role="dialog" aria-modal="true" aria-label="Table display">
+      <div class="sc-tbl__h"><b>Table display</b><button type="button" class="sc-x" data-tbl-close aria-label="Close">${CLOSE}</button></div>
+      <p class="sc-tbl__s" data-tbl-s>${tblOn() ? 'The tablet is linked. To pair another one, scan its code.' : `On the tablet, join this phone’s hotspot, open <b>${esc(location.host)}/table</b> and tap Show the code. Then scan it here.`}</p>
+      <video playsinline muted autoplay class="sc-tbl__v" hidden></video>
+      <div class="sc-tbl__qr" data-tbl-qr hidden></div>
+      <button type="button" class="sc-over__btn" data-tbl-go>Scan the tablet’s code</button>
+    </div>`;
+    el.appendChild(box); tbl.box = box;
+    box.addEventListener('click', e => {
+      if (e.target.closest('[data-tbl-close]') || e.target === box) return tableClose();
+      if (e.target.closest('[data-tbl-go]')) tableScan();
+    });
+  }
+  async function tableScan() {
+    const box = tbl.box; if (!box) return;
+    const say = t => { const s = box.querySelector('[data-tbl-s]'); if (s) s.innerHTML = t; };
+    const go = box.querySelector('[data-tbl-go]'), video = box.querySelector('video');
+    try {
+      tbl.L = tbl.L || await import('/table-link.js');
+      await tbl.L.loadVendor();
+      go.hidden = true; video.hidden = false;
+      say('Point the camera at the tablet’s code, about a forearm away.');
+      tbl.stream = await tbl.L.camera(video);
+      tbl.stop = tbl.L.scan(video, async text => {
+        try {
+          say('Got it. Making this phone’s code…');
+          // The camera stays on while the answer is made: this phone's real address goes in it.
+          const r = await tbl.L.phoneAnswer(text, ch => {
+            ch.onopen = () => {
+              if (tbl.ch && tbl.ch !== ch) { try { tbl.ch.close(); } catch (x) {} }
+              if (tbl.pc && tbl.pc !== r.pc) { try { tbl.pc.close(); } catch (x) {} }
+              tbl.ch = ch; tbl.pc = r.pc; tableClose();
+              ui.tip = 'Tablet linked: it shows the score and the clock. Players on it shows the cards.'; tableSend(true); paint();
+            };
+            ch.onclose = () => { if (tbl.ch === ch) { tbl.ch = null; ui.tip = 'The tablet’s link closed. ••• → Table display pairs it again.'; paint(); } };
+            ch.onmessage = () => { tbl.at = Date.now(); };
+          });
+          if (tbl.L && tbl.stream) tbl.L.stopCamera(tbl.stream, video);
+          tbl.stream = null; video.hidden = true;
+          const qr = box.querySelector('[data-tbl-qr]'); tbl.L.drawQr(qr, r.code); qr.hidden = false;
+          say('Now hold this up to the tablet’s camera.');
+        } catch (e) { say(esc(e.message || 'That code didn’t work. Try again.')); go.hidden = false; }
+      });
+    } catch (e) {
+      say(e && e.name === 'NotAllowedError' ? 'The camera is needed to read the tablet’s code. Allow it and try again.' : esc((e && e.message) || 'Something went wrong.'));
+      go.hidden = false; video.hidden = true;
+    }
+  }
+  // What the tablet shows (public/table/table.js got()).
+  const LINE_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'pf', 'fg2m', 'fg2m_miss', 'fg3m', 'fg3m_miss', 'fg4m', 'fg4m_miss', 'ftm', 'ft_miss'];
+  let prevCache = { n: -1, v: [] };
+  function tableState() {
+    clockNow();
+    const lastRow = G.rows.filter(r => r.type !== 'setup').pop();
+    if (pw && prevCache.n !== list().length) {
+      prevCache = { n: list().length, v: games().filter(n => n < ui.game && setupFor(n)).map(n => { const g = foldGame(list().filter(e => !e.late && gameOf(e) === n), papawisRules(B.rules, setupFor(n))); return { n, a: g.score.a, b: g.score.b }; }) };
+    }
+    return {
+      t: 's', at: Date.now(), kind: pw ? 'papawis' : 'league', basic: basic(),
+      title: pw ? `Papawis · Game ${ui.game}` : `${team.a.name} vs ${team.b.name}`,
+      period: G.period, final: !!G.final, clock: { secs: ui.secs, running: !!ui.running },
+      last: lastRow ? `${playText(lastRow).replace(/<[^>]+>/g, '')}${scores(lastRow) ? ` · ${lastRow.score.a}–${lastRow.score.b}` : ''}` : '',
+      prev: pw ? prevCache.v : [],
+      teams: ['a', 'b'].map(t => ({
+        name: team[t].name, color: team[t].color, score: G.score[t],
+        fouls: rules.penaltyAt > 0 ? G.teamFouls[t] : null, penaltyAt: rules.penaltyAt, penalty: !!G.penalty[t],
+        toLeft: G.timeouts.left[t], toAllow: G.timeouts.allowance,
+        players: team[t].players.filter(p => !G.dnp.includes(p.id)).map(p => ({ id: p.id, name: p.name, short: p.short, number: p.number || '', line: G.players[p.id] ? Object.fromEntries(LINE_KEYS.map(k => [k, G.players[p.id][k] || 0])) : null })),
+      })),
+    };
+  }
+  function tableSend(now = false) {
+    if (!tblOn()) return;
+    clearTimeout(tbl.t);
+    const go = () => { try { tbl.ch.send(JSON.stringify(tableState())); } catch (e) {} };
+    if (now) go(); else tbl.t = setTimeout(go, 200);
+  }
+  setInterval(() => tableSend(true), 2000);
+
   // ── Papawis: the setup before each game, and moving between the run's games ──
   // A new game starts set up like the last one: same stats and minutes, sides as they
   // finished (moves included), the same people not here. The first game: the run's defaults

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0a0e16">
+<title>Table display · WKND</title>
+<!-- The table display (2026-10-30, mockups claude.ai/artifact/QyYMf51jSBCFrSK3ddi1ss rows "Table
+     tablet"): a tablet at the scorer's table shows the score, the clock and, when someone taps
+     Players, the player cards. It mirrors the scorer's phone over a direct link on the phone's
+     hotspot (public/table-link.js), no internet needed. No sign-in. public/table/table.js;
+     works offline after one visit (sw.js). -->
+<link rel="stylesheet" href="/fonts/fonts.css">
+<style>
+  :root { --bg: #0a0e16; --surface: #10141d; --surface-2: #161c29; --border: rgba(255,255,255,0.06); --hair: rgba(255,255,255,0.08); --text: #e7eaf0; --muted: #8a93a4; --amber: #f59332; --ok: #34d399; --loss: #f87171;
+    --silver: #c7d0da; --bronze: #c9854f; --team-white: #d7dce5; --team-black: #6b7486; --shirt-edge: rgba(255,255,255,0.4);
+    --num: 'Saira Condensed', 'Arial Narrow', sans-serif; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.35 -apple-system, BlinkMacSystemFont, Roboto, 'Segoe UI', system-ui, sans-serif; -webkit-text-size-adjust: 100%; overflow: hidden; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  [hidden] { display: none !important; }
+  .num { font-family: var(--num); }
+  .lbl { font-family: var(--num); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 20px; padding: calc(24px + env(safe-area-inset-top)) 40px calc(24px + env(safe-area-inset-bottom)); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 22px; border-radius: 14px; background: var(--amber); color: #111; font-size: 17px; font-weight: 600; text-decoration: none; }
+  .btn--ghost { background: var(--surface-2); color: var(--text); }
+  .pill { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--surface-2); font-size: 14px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+  .dot--wait { background: var(--amber); } .dot--err { background: var(--loss); }
+  /* Pairing */
+  .pair { align-items: center; justify-content: center; text-align: center; }
+  .pair h1 { margin: 0; font-size: 30px; font-weight: 600; }
+  .pair p { margin: 0; color: var(--muted); max-width: 640px; }
+  .pair__row { display: flex; gap: 24px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .qr { background: #fff; padding: 14px; border-radius: 16px; width: min(46vh, 420px); }
+  .qr svg { display: block; width: 100%; height: auto; }
+  video { width: min(46vh, 420px); aspect-ratio: 1; object-fit: cover; border-radius: 16px; background: #000; }
+  .steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; color: var(--muted); text-align: left; }
+  .steps b { color: var(--text); }
+  .note { font-size: 14px; color: var(--muted); }
+  /* Scoreboard */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .top .lbl { font-size: 20px; }
+  .top .lbl b { color: var(--text); font-weight: 600; }
+  .sb { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 30%) minmax(0, 1fr); align-items: center; gap: 24px; }
+  .side { display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 0; }
+  .side__n { display: flex; align-items: center; gap: 14px; font: 600 clamp(28px, 4.2vw, 48px)/1 var(--num); letter-spacing: .14em; text-transform: uppercase; max-width: 100%; }
+  .side__n span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tdot { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 2px var(--shirt-edge); }
+  .score { font: 800 clamp(120px, 26vw, 340px)/.82 var(--num); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .marks { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 42px; }
+  .pips { display: flex; align-items: center; gap: 8px; }
+  .pips i { width: 34px; height: 12px; border-radius: 6px; background: var(--surface-2); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
+  .pips i.on { background: var(--text); box-shadow: none; } .pips i.next { background: transparent; box-shadow: inset 0 0 0 2px var(--loss); } .pips i.pen { background: var(--loss); box-shadow: none; }
+  .pips b { font: 600 18px/1 var(--num); letter-spacing: .1em; color: var(--loss); margin-left: 6px; }
+  .tos { display: flex; gap: 10px; }
+  .tos i { width: 18px; height: 18px; border-radius: 50%; box-sizing: border-box; border: 3px solid #5b6475; }
+  .tos i.on { background: var(--text); border: 0; }
+  .mid { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .per { display: inline-flex; align-items: center; height: 56px; padding: 0 28px; border-radius: 999px; background: var(--surface-2); font: 700 36px/1 var(--num); letter-spacing: .06em; }
+  .clock { font: 800 clamp(80px, 12vw, 150px)/.9 var(--num); font-variant-numeric: tabular-nums; }
+  .run { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--muted); }
+  .strip { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 20px; padding: 10px 10px 10px 22px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); }
+  .strip__last { font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .strip__last b { font-weight: 600; }
+  .strip__prev { font-size: 18px; color: var(--muted); white-space: nowrap; }
+  .strip__prev b { font: 700 22px/1 var(--num); color: var(--text); }
+  .banner { padding: 12px 16px; border-radius: 14px; background: rgba(245,147,50,.14); color: var(--amber); font-weight: 600; }
+  .banner--err { background: rgba(248,113,113,.14); color: var(--loss); }
+  /* Players */
+  .mini { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 20px; padding: 10px 10px 10px 22px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); }
+  .mini__s { display: flex; align-items: center; gap: 16px; }
+  .mini__s b { font: 800 40px/1 var(--num); }
+  .mini__s span { font: 600 22px/1 var(--num); color: var(--muted); }
+  .mini .btn { justify-self: end; }
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .card { position: relative; display: flex; flex-direction: column; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; text-align: left; }
+  .card--1 { box-shadow: inset 0 0 0 2px var(--amber); border-color: transparent; }
+  .rank { position: absolute; top: 14px; left: 14px; z-index: 1; display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 999px; background: var(--amber); color: #111; font: 700 14px/1 var(--num); letter-spacing: .08em; }
+  .rank--2 { background: rgba(199,208,218,.16); color: var(--silver); } .rank--3 { background: rgba(201,133,79,.16); color: var(--bronze); }
+  .ghost { position: absolute; right: -6px; top: -20px; font: 800 170px/1 var(--num); color: rgba(231,234,240,.06); pointer-events: none; }
+  .card__top { position: relative; display: flex; align-items: center; gap: 16px; padding: 52px 20px 18px; }
+  .av { flex: none; width: 76px; height: 76px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface-2); box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--c); font: 700 26px/1 var(--num); }
+  .who { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .who small { font-size: 17px; color: var(--muted); }
+  .who b { font: 700 34px/1 var(--num); letter-spacing: .02em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who em { font-style: normal; font-size: 14px; color: var(--muted); }
+  .line { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); border-top: 1px solid var(--border); }
+  .line span { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 0; }
+  .line b { font: 700 40px/1 var(--num); }
+  .line small { font: 600 13px/1 var(--num); letter-spacing: .08em; color: var(--muted); }
+  .teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; min-height: 0; overflow-y: auto; }
+  .team__h { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 16px; font-weight: 600; }
+  .team__h .tdot { width: 12px; height: 12px; }
+  .team__h small { font-weight: 400; color: var(--muted); }
+  .chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .chip { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); font-size: 16px; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; }
+  .chip i { font: 700 18px/1 var(--num); font-style: normal; color: var(--muted); min-width: 20px; }
+  .chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .chip em { margin-left: auto; font: 700 20px/1 var(--num); font-style: normal; }
+  /* One player's card */
+  .big { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; }
+  .big__card { position: relative; display: flex; flex-direction: column; border-radius: 22px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; }
+  .big__card .ghost { font-size: 300px; top: -40px; right: 10px; color: rgba(231,234,240,.05); }
+  .big__top { position: relative; flex: 1; display: flex; align-items: center; gap: 28px; padding: 32px 36px; }
+  .big__top .av { width: 150px; height: 150px; font-size: 52px; box-shadow: 0 0 0 4px var(--surface), 0 0 0 8px var(--c); }
+  .big__top .who small { font-size: 24px; }
+  .big__top .who b { font-size: 76px; line-height: .95; }
+  .big__top .who em { font-size: 18px; }
+  .big .line b { font-size: 56px; }
+  .big .line small { font-size: 14px; }
+  .side-list { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; }
+  .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+  .seg button { display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border-radius: 10px; font-size: 16px; font-weight: 600; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+  .seg .tdot { width: 12px; height: 12px; }
+  .row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; padding: 0 14px; border-radius: 12px; font-size: 16px; font-weight: 600; text-align: left; }
+  .row i { font: 700 18px/1 var(--num); font-style: normal; color: var(--muted); }
+  .row em { font: 700 20px/1 var(--num); font-style: normal; color: var(--muted); }
+  .row[aria-current="true"] { background: rgba(245,147,50,.12); box-shadow: inset 0 0 0 2px var(--amber); }
+  .row[aria-current="true"] em { color: var(--text); }
+  @media (max-width: 900px) { .screen { padding-left: 20px; padding-right: 20px; } .cards { grid-template-columns: 1fr; } .big { grid-template-columns: 1fr; } .chips { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<!-- Pair with the scorer's phone -->
+<section class="screen pair" data-screen="pair">
+  <h1>Table display</h1>
+  <p>Shows the score and the clock from the scorer's phone, with no internet, over the phone's hotspot. Join the phone's hotspot first.</p>
+  <ol class="steps">
+    <li><b>1.</b> Tap <b>Show the code</b> here and allow the camera.</li>
+    <li><b>2.</b> On the scorer's phone: <b>•••</b> → <b>Table display</b>, and point it at the code.</li>
+    <li><b>3.</b> Hold the phone's code up to this tablet's camera.</li>
+  </ol>
+  <div class="pair__row" data-pair-row hidden>
+    <div class="qr" data-qr></div>
+    <video playsinline muted autoplay data-video></video>
+  </div>
+  <div class="pill"><span class="dot dot--wait" data-pair-dot></span><span data-pair-status>Not paired</span></div>
+  <button type="button" class="btn" data-act="pair">Show the code</button>
+  <p class="note" data-offline-note>Offline copy: checking…</p>
+</section>
+
+<!-- The scoreboard -->
+<section class="screen" data-screen="board" hidden>
+  <div class="top"><span class="lbl" data-title></span><span class="pill"><span class="dot" data-link-dot></span><span data-link>Linked</span></span></div>
+  <div class="banner" data-lost hidden></div>
+  <div class="sb">
+    <div class="side" data-side="a"></div>
+    <div class="mid"><span class="per" data-per>Q1</span><b class="clock" data-clock>10:00</b><span class="run" data-run></span></div>
+    <div class="side" data-side="b"></div>
+  </div>
+  <div class="strip"><span class="strip__last" data-last></span><span class="strip__prev" data-prev></span><button type="button" class="btn btn--ghost" data-act="players">Players ›</button></div>
+</section>
+
+<!-- Players: the top 3 and everyone -->
+<section class="screen" data-screen="players" hidden>
+  <div class="mini" data-mini></div>
+  <div class="lbl" style="font-size:16px" data-top-label>Top 3 so far</div>
+  <div class="cards" data-cards></div>
+  <div class="teams" data-teams></div>
+</section>
+
+<!-- One player's card -->
+<section class="screen" data-screen="card" hidden>
+  <div class="mini" data-mini2></div>
+  <div class="big"><div class="big__card" data-big></div><aside class="side-list" data-list></aside></div>
+</section>
+
+<script type="module" src="/table/table.js"></script>
+</body>
+</html>

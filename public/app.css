@@ -2765,3 +2765,15 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .gr-pcards { margin: 0 0 12px; }
 .gr-pcards .pcd-row { margin: 0 -14px; padding: 0 14px 4px; }
 .gr-tb tbody tr[data-pcard] { cursor: pointer; }
+
+/* Table display pairing (public/scorer.js tableOpen): scan the tablet's code, show this phone's. */
+.sc-tbl { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(5,7,11,.6); }
+.sc-tbl__in { width: 100%; max-width: 480px; max-height: 92dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 12px 16px calc(20px + var(--safe-b)); border-radius: 22px 22px 0 0; background: var(--surface); border-top: 1px solid var(--hair); }
+.sc-tbl__h { display: flex; align-items: center; justify-content: space-between; font-size: 15px; }
+.sc-tbl__h b { font-weight: 600; }
+.sc-tbl__s { margin: 0; font-size: 14px; color: var(--muted); }
+.sc-tbl__s b { color: var(--text); font-weight: 600; }
+.sc-tbl__v { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-in); background: #000; }
+.sc-tbl__qr { align-self: center; width: min(100%, 360px); padding: 12px; border-radius: 14px; background: #fff; }
+.sc-tbl__qr svg { display: block; width: 100%; height: auto; }
+@media (min-width: 700px) { .sc-tbl { align-items: center; } .sc-tbl__in { border-radius: 22px; } }
