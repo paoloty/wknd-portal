@@ -161,6 +161,42 @@ export const SCORER_GUIDE = [
     ],
   },
   {
+    slug: 'papawis', title: 'Scoring Papawis', blocks: [
+      ['p', 'Papawis uses the same scorer, Light against Dark. Anyone in the run can score it: on the run’s day, its card on the Papawis tab has <b>Start scoring</b>. One phone scores the whole run, every game of it.'],
+      ['steps', [
+        '<b>Set up the game.</b> Before each game: <i>Basic</i> or <i>Full</i> stats, the quarter length, how many quarters, and who’s here. Tap a name if they didn’t come; the ⇄ beside it moves them to the other side.',
+        '<b>Start Game 1.</b> The clock starts on the first play, or tap ▶.',
+        '<b>Score.</b> <i>Basic</i>: tap a player, then FT, 2PT or 3PT for a make, or REB or AST. Misses aren’t logged and nothing asks a follow-up question. <i>Full</i>: everything works like a league game.',
+        '<b>Someone switches sides?</b> Hold their tile → <i>Move to Light</i> (or Dark). Their points so far stay with the old side; from then on they count for the new one. The team’s name menu has <i>Move someone to Light…</i> too, and <i>A late arrival…</i> for someone you marked not here.',
+        '<b>Game over</b>, then <i>Start Game 2</i>. It’s set up like the last game: same minutes, sides as they finished. Change anything that’s different and start.',
+        '<b>Done playing?</b> Tap <i>Finish the run</i> (it needs signal). Keep or discard each game, check the Player of the Day, and save.',
+      ]],
+      ['dl', [
+        ['No timeouts or penalty', 'Papawis has neither, so the scoreboard shows no timeout dots or team-foul pips.'],
+        ['Another game of this run', 'The ••• menu switches back to an earlier game to fix it.'],
+        ['Finish the run', 'Each game has Edit (opens it here) and Discard (left out of everything). The Player of the Day is the best box-score rating over the games you keep; pick someone else if they ran the show. Only an admin or whoever started scoring the run finishes it.'],
+      ]],
+      ['tip', 'Good to know', 'The results go on the run’s page with the box score and the top 3 as player cards. Papawis stats count in Papawis careers, separate from league totals.'],
+    ],
+  },
+  {
+    slug: 'table', title: 'The table display', blocks: [
+      ['p', 'A tablet at the table can show the score and the clock from your phone, with no internet, over your phone’s hotspot. Coaches and players tap <i>Players</i> on it for the cards.'],
+      ['steps', [
+        '<b>Turn on your hotspot.</b> On an iPhone keep mobile data on, even with no signal, or the hotspot turns off. Join it on the tablet.',
+        '<b>On the tablet,</b> open <i>/table</i> on the WKND site (once with internet beforehand, so it works offline) and tap <i>Show the code</i>.',
+        '<b>On your phone:</b> ••• → <i>Table display</i> → <i>Scan the tablet’s code</i>, and point it at the tablet.',
+        '<b>Hold your phone’s code</b> up to the tablet’s camera. When it says <i>Tablet linked</i>, you’re done.',
+      ]],
+      ['dl', [
+        ['On the tablet', 'The score, quarter and clock (it keeps running between updates), team fouls and timeouts for league games, the last play.'],
+        ['Players', 'Only when someone taps it: the top 3 so far as cards, everyone’s points, any player’s card. It goes back to the score by itself after 20 seconds.'],
+        ['Link lost', 'The tablet says so and keeps the clock running. ••• → Table display pairs it again.'],
+      ]],
+      ['tip', 'Good to know', 'Keep both screens on. A phone that locks stops sending until it’s back.'],
+    ],
+  },
+  {
     slug: 'fix', title: 'Fixing mistakes', blocks: [
       ['p', 'Mistakes happen in a fast game. Most take one tap to fix, and nothing is ever lost: a fix is saved as a new play.'],
       ['img', 'fix.jpg', 'The last play, with Undo and Fix.'],
