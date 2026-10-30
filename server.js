@@ -7354,7 +7354,7 @@ app.get('/app/score', requireApp, (req, res) => {
   // Papawis runs (Scorers): today's and the coming week's open runs, so a scorer can open one
   // early with signal (it then works offline at the court), and today's not yet finished.
   {
-    for (const r of pwScorableRuns(me.playerId)) {
+    for (const r of pwScorableRuns(me.playerId, pwIsAdmin(req))) {
       const sg = getScoreGame(pwScoreId(r.id)), h = sg?.settings?.holder;
       const busy = h && h.playerId !== me.playerId && Date.now() - h.at < PW_HOLD_QUIET ? h.name : '';
       games.push({ id: pwScoreId(r.id), title: `Papawis · ${r.title || 'run'}`, when: [pwDay(r.date), formatTimeRange(r.start_time, r.end_time) || r.time_label || '', busy ? `${busy} is scoring` : ''].filter(Boolean).join(' · '), status: sg?.status, full: null, href: `/app/score/${encodeURIComponent(pwScoreId(r.id))}` });
@@ -8154,9 +8154,10 @@ function pwPeople(run, events = getScoreEvents(pwScoreId(run.id), 'live')) {
 }
 const pwIsAdmin = req => isAdminWithSection(req, 'papawis') || isAdminWithSection(req, 'games-stats');
 // The runs a Papawis scorer can open from Games to score: today's and the coming week's open
-// runs (opened early with signal, they work offline at the court), not yet finished.
-function pwScorableRuns(playerId) {
-  if (getSetting('papawis_enabled', '0') !== '1' || !playerId || !getPlayerById(playerId)?.is_pw_scorer) return [];
+// runs (opened early with signal, they work offline at the court), not yet finished. Papawis
+// admins (admin = true) see them too: they can score a run without the switch (pwScoreAccess).
+function pwScorableRuns(playerId, admin = false) {
+  if (getSetting('papawis_enabled', '0') !== '1' || !playerId || !(admin || getPlayerById(playerId)?.is_pw_scorer)) return [];
   return getPapawisGames().filter(g => (g.status === 'open' || g.status === 'completed') && pwDaysUntil(g.date) >= 0 && pwDaysUntil(g.date) <= 7 && !getPapawisScored(g.id))
     .sort((x, y) => `${x.date} ${x.start_time}`.localeCompare(`${y.date} ${y.start_time}`));
 }
