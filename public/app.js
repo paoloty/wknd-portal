@@ -1275,6 +1275,66 @@
     setTimeout(function () { q.focus(); }, 300);
   }
 
+  // Pick players (Scorers, views/app/admin-scorers.js, 2026-10-30): search everyone on the page's
+  // list (data-adm-people), pick up to data-max (data-ids start picked), then send
+  // { [data-field]: ids } (or the one id when max is 1) to data-url. data-skip leaves out who
+  // already is one (game / pw). With nothing typed it shows the picked and the game scorers.
+  var pickCheck = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17 19 7"/></svg>';
+  function admPick(btn) {
+    var people = []; try { people = JSON.parse(($('[data-adm-people]') || {}).textContent || '[]'); } catch (x) {}
+    var max = Number(btn.getAttribute('data-max')) || 1, field = btn.getAttribute('data-field') || 'player_id', skip = btn.getAttribute('data-skip');
+    var picked = []; try { picked = JSON.parse(btn.getAttribute('data-ids') || '[]'); } catch (x) {}
+    var start = picked.join(','), note = btn.getAttribute('data-note');
+    if (skip) people = people.filter(function (p) { return !p[skip]; });
+    var face = function (p) { return '<span class="avatar-wrap"><span class="avatar" style="--ring:' + admEsc(p.color || 'var(--subtle)') + '">' + admEsc(p.ini) + (p.photo ? '<img src="' + admEsc(p.photo) + '" alt="" onerror="this.remove()">' : '') + '</span></span>'; };
+    var el = admSheet(btn.getAttribute('data-title') || 'Pick', '<div class="adm-add">' +
+      '<input class="adm-input" type="search" placeholder="Type a name" autocomplete="off" autocapitalize="words" enterkeyhint="search" aria-label="Search players" data-adm-q>' +
+      (note ? '<p class="adm-help">' + admEsc(note) + '</p>' : '') +
+      '<div class="group adm-pick">' + people.map(function (p) {
+        var tag = [p.team, field === 'scorers' && p.game ? 'Game scorer' : ''].filter(Boolean).join(' · ');
+        return '<button type="button" class="cell adm-pick__row" data-id="' + admEsc(p.id) + '" data-q="' + admEsc(p.name.toLowerCase()) + '"' + (field === 'scorers' && p.game ? ' data-top' : '') + ' aria-pressed="false" hidden>' +
+          face(p) + '<span class="cell__t">' + admEsc(p.name) + '<small>' + admEsc(tag || ' ') + '</small></span><span class="adm-pick__on">' + pickCheck + '</span></button>';
+      }).join('') + '</div>' +
+      '<p class="msg msg--err" role="alert" data-adm-msg hidden></p>' +
+      '<button type="button" class="btn" data-adm-go disabled>' + (max > 1 ? 'Save' : 'Add') + '</button></div>');
+    var q = $('[data-adm-q]', el), go = $('[data-adm-go]', el), msg = $('[data-adm-msg]', el), rows = $$('.adm-pick__row', el);
+    var paint = function () {
+      var v = q.value.trim().toLowerCase(), shown = 0;
+      rows.forEach(function (r) {
+        var id = r.getAttribute('data-id'), on = picked.indexOf(id) >= 0;
+        r.classList.toggle('is-on', on); r.setAttribute('aria-pressed', on ? 'true' : 'false');
+        var match = v ? r.getAttribute('data-q').indexOf(v) >= 0 && shown < 30 : r.hasAttribute('data-top');
+        if (match && !on) shown++;
+        r.hidden = !on && !match;
+      });
+      // Something to send: a change (Save), or someone picked (Add).
+      go.disabled = max > 1 ? picked.join(',') === start : !picked.length;
+    };
+    q.addEventListener('input', paint);
+    rows.forEach(function (r) {
+      r.addEventListener('click', function () {
+        var id = r.getAttribute('data-id'), i = picked.indexOf(id);
+        msg.hidden = true;
+        if (i >= 0) picked.splice(i, 1);
+        else if (max === 1) picked = [id];
+        else if (picked.length >= max) { msg.textContent = max + ' at most. Tap one to take them off first.'; msg.hidden = false; return; }
+        else picked.push(id);
+        paint();
+      });
+    });
+    go.addEventListener('click', function () {
+      if (go.disabled || admBusy) return;
+      if (!navigator.onLine) { msg.textContent = 'You\'re offline. Nothing was sent.'; msg.hidden = false; return; }
+      var body = {}; body[field] = max > 1 ? picked : picked[0];
+      admBusy = true; go.disabled = true; go.classList.add('is-busy');
+      admSend(btn.getAttribute('data-url'), body).then(function () {
+        admBusy = false; closeSheet(); toast(btn.getAttribute('data-done') || 'Saved'); refreshScreen(true);
+      }, function (e) { admBusy = false; go.disabled = false; go.classList.remove('is-busy'); msg.textContent = e.message; msg.hidden = false; });
+    });
+    paint();
+    if (!picked.length) setTimeout(function () { q.focus(); }, 300);
+  }
+
   // The amounts on an open run's Money tab: the same sums as the site's calculator
   // (public/admin-papawis.js): court and referee by the hour, rounded to ₱10, split across the
   // confirmed players; a minimum per player wins when set. The final price follows until
@@ -1374,6 +1434,7 @@
         return;
       }
       if ((b = t.closest('[data-adm-add]'))) { var tpl = $('[data-adm-add-tpl]'); if (tpl) admAdd(tpl); return; }
+      if ((b = t.closest('[data-adm-pick]'))) { admPick(b); return; }
       if ((b = t.closest('[data-adm-cover-btn]'))) {
         var box = b.closest('[data-adm-cover]'), input = $('[data-adm-cover-input]', box);
         if (!box.hasAttribute('data-has-cover')) { input.click(); return; }

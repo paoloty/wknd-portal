@@ -67,6 +67,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/admin/papawis',          label: 'Runs',     icon: 'papawis', exact: true },
       { href: '/admin/papawis/courts',   label: 'Courts',   icon: 'site' },
+      { href: '/admin/papawis/scorers',  label: 'Scorers',  icon: 'players' },
       { href: '/admin/papawis/activity', label: 'Activity', icon: 'activity' },
       { href: '/admin/papawis-summary', hidden: true },
     ],

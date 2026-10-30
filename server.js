@@ -6150,7 +6150,7 @@ import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
 import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince } from './lib/portal-db.js';
-import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
+import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
@@ -6166,6 +6166,7 @@ import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/a
 import { appPapawisFinishPage } from './views/app/papawis-score.js';
 import { papawisResultsPage, papawisResultsBody } from './views/papawis-results.js';
 import { appAdminPapawisPage, papawisMessengerText } from './views/app/admin-papawis.js';
+import { appAdminScorersPage } from './views/app/admin-scorers.js';
 import { appFinishGamePage } from './views/app/finish.js';
 import { appSettlePage } from './views/app/settle.js';
 import { appRatePage } from './views/app/rate.js';
@@ -7339,9 +7340,8 @@ app.get('/app/score', requireApp, (req, res) => {
     });
   // Papawis runs (Scorers): today's and the coming week's open runs, so a scorer can open one
   // early with signal (it then works offline at the court), and today's not yet finished.
-  if (getSetting('papawis_enabled', '0') === '1' && getPlayerById(me.playerId)?.is_scorer) {
-    for (const r of getPapawisGames().filter(g => (g.status === 'open' || g.status === 'completed') && pwDaysUntil(g.date) >= 0 && pwDaysUntil(g.date) <= 7 && !getPapawisScored(g.id))
-      .sort((x, y) => `${x.date} ${x.start_time}`.localeCompare(`${y.date} ${y.start_time}`))) {
+  {
+    for (const r of pwScorableRuns(me.playerId)) {
       const sg = getScoreGame(pwScoreId(r.id)), h = sg?.settings?.holder;
       const busy = h && h.playerId !== me.playerId && Date.now() - h.at < PW_HOLD_QUIET ? h.name : '';
       games.push({ id: pwScoreId(r.id), title: `Papawis · ${r.title || 'run'}`, when: [pwDay(r.date), formatTimeRange(r.start_time, r.end_time) || r.time_label || '', busy ? `${busy} is scoring` : ''].filter(Boolean).join(' · '), status: sg?.status, full: null, href: `/app/score/${encodeURIComponent(pwScoreId(r.id))}` });
@@ -7352,7 +7352,7 @@ app.get('/app/score', requireApp, (req, res) => {
 // ── Scoring menu (Me → Scoring, 2026-10-27): games to score, a practice game, How to score ──
 // For scorers, anyone picked for a game, and admins (who still need the Scorer switch to score
 // live: sendScorer). mockup claude.ai/artifact/QMXxzqVm3HHpJKzWmTPWYQ
-const scoringMenuFor = playerId => !!playerId && (!!getPlayerById(playerId)?.is_scorer || isGameAdminPlayer(playerId) || getScorerGameIds(playerId).length > 0);
+const scoringMenuFor = playerId => !!playerId && (!!getPlayerById(playerId)?.is_scorer || !!getPlayerById(playerId)?.is_pw_scorer || isGameAdminPlayer(playerId) || getScorerGameIds(playerId).length > 0);
 function requireScoringMenu(req, res, next) {
   if (!scoringMenuFor(req.session?.playerPlayerId)) return res.redirect('/app/me');
   next();
@@ -8092,7 +8092,7 @@ app.post('/admin/games/:id/scoring/fix', requireAuth, express.json(), (req, res)
 // quarters, who's on which side, who isn't here, guests added at the court). One session for the
 // whole run is what keeps New game working offline at the court. Papawis rules (Paolo): no
 // timeouts, no penalty, no foul-outs, a game can end tied (extra time only if there's time).
-// Players switch sides with `move` plays. Scored by Scorers only (the Scorer switch), one phone
+// Players switch sides with `move` plays. Scored by Papawis scorers only (players.is_pw_scorer), one phone
 // at a time (settings.holder; /api/score/:id/hold). Finish the run (/app/papawis/:id/finish):
 // keep or discard each game, the Player of the Day, Save: papawis_scored + papawis_stat_lines
 // (lib/portal-db.js), a bell for the Player of the Day. Fable audit fixes 2026-10-30.
@@ -8140,13 +8140,21 @@ function pwPeople(run, events = getScoreEvents(pwScoreId(run.id), 'live')) {
   return who;
 }
 const pwIsAdmin = req => isAdminWithSection(req, 'papawis') || isAdminWithSection(req, 'games-stats');
-// Who may score a run: Scorers (the Scorer switch; Paolo, 2026-10-30: assigned scorers only).
+// The runs a Papawis scorer can open from Games to score: today's and the coming week's open
+// runs (opened early with signal, they work offline at the court), not yet finished.
+function pwScorableRuns(playerId) {
+  if (getSetting('papawis_enabled', '0') !== '1' || !playerId || !getPlayerById(playerId)?.is_pw_scorer) return [];
+  return getPapawisGames().filter(g => (g.status === 'open' || g.status === 'completed') && pwDaysUntil(g.date) >= 0 && pwDaysUntil(g.date) <= 7 && !getPapawisScored(g.id))
+    .sort((x, y) => `${x.date} ${x.start_time}`.localeCompare(`${y.date} ${y.start_time}`));
+}
+// Who may score a run: Papawis scorers (their own switch, players.is_pw_scorer; Paolo,
+// 2026-10-30: assigned scorers only, kept apart from game scorers).
 // Papawis and games admins may open it too, to fix a game from Finish the run.
 function pwScoreAccess(req, run) {
   if (!run) return null;
   if (pwIsAdmin(req)) return 'admin';
   const pid = req.session?.playerPlayerId;
-  return pid && getPlayerById(pid)?.is_scorer ? 'scorer' : null;
+  return pid && getPlayerById(pid)?.is_pw_scorer ? 'scorer' : null;
 }
 // Who may finish the run (keep or discard games, the Player of the Day, Save): admins, and
 // anyone who scored a play in it.
@@ -8183,7 +8191,7 @@ function pwScoreBundle(run) {
 function pwScoreLink(req, run) {
   if (!run || pwDaysUntil(run.date) !== 0) return null;
   const pid = req.session?.playerPlayerId;
-  if (!pid || !getPlayerById(pid)?.is_scorer) return getPapawisScored(run.id) ? { results: `/app/papawis/${encodeURIComponent(run.id)}` } : null;
+  if (!pid || !getPlayerById(pid)?.is_pw_scorer) return getPapawisScored(run.id) ? { results: `/app/papawis/${encodeURIComponent(run.id)}` } : null;
   const sg = getScoreGame(pwScoreId(run.id));
   const h = sg?.settings?.holder;
   const busy = h && h.playerId !== pid && Date.now() - h.at < PW_HOLD_QUIET ? h.name : '';
@@ -8193,14 +8201,14 @@ function sendPapawisScorer(req, res, back) {
   const run = pwRunOfScore(req.params.id);
   const say = (code, msg) => res.status(code).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: `<div class="empty" style="margin-top:40px">${escHtml(msg)}</div>` }));
   if (!run) return say(404, 'This run isn’t on the list.');
-  if (!pwScoreAccess(req, run)) return say(403, 'Papawis runs are scored by Scorers. An admin turns on your Scorer switch in Admin → Scorers.');
+  if (!pwScoreAccess(req, run)) return say(403, 'Papawis runs are scored by Papawis scorers. An admin adds you in Papawis → Scorers.');
   res.set('Cache-Control', 'private, no-store');
   sendApp(res, { title: `Scoring · ${run.title || 'Papawis'} · WKND`, bare: true, body: appScorerPage({ bundle: pwScoreBundle(run), back }) });
 }
 function pwScoreEventsGet(req, res) {
   const run = pwRunOfScore(req.params.id);
   if (!run) return res.status(404).json({ error: 'Run not found.' });
-  if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'Papawis runs are scored by Scorers.' });
+  if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'Papawis runs are scored by Papawis scorers.' });
   const id = pwScoreId(run.id), sg = getScoreGame(id);
   res.set('Cache-Control', 'private, no-store');
   res.json({ status: sg?.status || 'setup', events: sg ? scoreEventsWithBy(id, 'live') : [] });
@@ -8210,7 +8218,7 @@ function pwScoreEventsPost(req, res) {
   if (!run) return res.status(404).json({ error: 'Run not found.' });
   if (!req.session?.playerPlayerId && !req.session?.isAdmin) return res.status(401).json({ error: 'Sign in again.' });
   if (req.session?.impersonating) return res.status(403).json({ error: 'Viewing as a player: nothing was saved.' });
-  if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'Papawis runs are scored by Scorers.' });
+  if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'Papawis runs are scored by Papawis scorers.' });
   const id = pwScoreId(run.id);
   const raw = Array.isArray(req.body?.events) ? req.body.events.slice(0, 2000) : [];
   // Who a play may name: anyone the run's games know (today's list, earlier setups, their
@@ -8242,11 +8250,47 @@ function pwScoreEventsPost(req, res) {
 // over once Paul's phone has been quiet for 2 minutes. Admins can take over any time. With no
 // signal nothing is checked: the phone scores and sends later.
 const PW_HOLD_QUIET = 2 * 60 * 1000;
+// ── Table display online (2026-10-30, Paolo: an iPhone's own hotspot drops the direct link, so
+// "an online toggle in the tablet just in case there is internet"): the scorer's phone posts what
+// the tablet shows (public/scorer.js tableState) when it changes and every 20 s; a tablet in
+// Online mode (public/table/table.js) follows the game over /ws/table/:id. Kept in memory only:
+// after a restart the tablet waits for the phone's next post.
+const tableLive = new Map(); // score id -> { state, at }
+const tableRooms = new Map(); // score id -> Set<WebSocket>
+const TABLE_FRESH = 30 * 60 * 1000;
+function tableCanPost(req, id) {
+  if (req.session?.impersonating) return false;
+  if (isPwScoreId(id)) { const run = pwRunOfScore(id); return !!(run && pwScoreAccess(req, run)); }
+  const game = getGameById(id);
+  return !!(game && (req.session?.playerPlayerId || req.session?.isAdmin) && scoreAccess(req, game.id));
+}
+app.post('/api/score/:id/table', express.json({ limit: '256kb' }), (req, res) => {
+  const id = req.params.id;
+  if (!tableCanPost(req, id)) return res.status(403).json({ error: 'You aren’t a scorer for this game.' });
+  const s = req.body?.state;
+  if (!s || s.t !== 's' || !Array.isArray(s.teams) || s.teams.length !== 2) return res.status(400).json({ error: 'No scoreboard.' });
+  tableLive.set(id, { state: s, at: Date.now() });
+  const room = tableRooms.get(id), msg = JSON.stringify({ ...s, age: 0 });
+  for (const ws of room || []) if (ws.readyState === ws.OPEN) ws.send(msg);
+  res.json({ ok: true, tablets: room ? room.size : 0 });
+});
+// The games a tablet can follow: the ones a scorer's phone posted in the last 30 minutes.
+app.get('/api/table/live', (req, res) => {
+  if (!req.session?.playerPlayerId && !req.session?.isAdmin) return res.status(401).json({ error: 'Sign in first.' });
+  res.set('Cache-Control', 'private, no-store');
+  const now = Date.now();
+  for (const [id, t] of tableLive) if (now - t.at > TABLE_FRESH) tableLive.delete(id);
+  res.json({ games: [...tableLive].sort((x, y) => y[1].at - x[1].at).map(([id, t]) => ({
+    id, title: String(t.state.title || '').slice(0, 120), final: !!t.state.final,
+    teams: t.state.teams.map(x => ({ name: String(x.name || '').slice(0, 40), color: String(x.color || '').slice(0, 40), score: Number(x.score) || 0 })),
+  })) });
+});
+
 app.post('/api/score/:id/hold', express.json(), (req, res) => {
   const run = pwRunOfScore(req.params.id);
   if (!run) return res.status(404).json({ error: 'Run not found.' });
   const access = pwScoreAccess(req, run);
-  if (!access) return res.status(403).json({ error: 'Papawis runs are scored by Scorers.' });
+  if (!access) return res.status(403).json({ error: 'Papawis runs are scored by Papawis scorers.' });
   if (req.session?.impersonating) return res.status(403).json({ error: 'Viewing as a player.' });
   const b = req.body || {}, device = String(b.device || '').slice(0, 64);
   if (!device) return res.status(400).json({ error: 'No device.' });
@@ -9173,9 +9217,12 @@ app.get('/app/me', requireApp, (req, res) => {
   const open = appOpenPicks(me);
   if (open.length) todos.unshift({ icon: 'picks', title: open.length === 1 ? '1 game to pick' : `${open.length} games to pick`, sub: 'Who wins?', pill: 'Pick', href: '/app/picks', solid: true });
   // Picked by an admin to score a game (the scorer: /app/score).
-  const toScore = scorableGameIds(me.playerId).length;
-  if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: getPlayerById(me.playerId)?.is_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
-  const scoring = scoringMenuFor(me.playerId) ? { games: toScore } : null;
+  const toScore = scorableGameIds(me.playerId).length + pwScorableRuns(me.playerId).length;
+  const meP = getPlayerById(me.playerId);
+  if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: meP?.is_scorer || meP?.is_pw_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
+  // Admins who pick scorers (games or Papawis) get the Scoring menu with its Scorers screen.
+  const scorersAdmin = appScorersAdmin(req);
+  const scoring = scoringMenuFor(me.playerId) || scorersAdmin ? { games: toScore, admin: scorersAdmin } : null;
   sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
@@ -9584,6 +9631,39 @@ app.get('/app/papawis', requireApp, (req, res) => {
 // site's own /admin/papawis routes, so there's no second copy of a rule here. Not while
 // viewing as a player.
 const appPapawisAdmin = req => !!req.session?.isAdmin && !req.session.impersonating && isAdminWithSection(req, 'papawis');
+// Scorers in the app (Me → Scoring → Scorers, 2026-10-30, Paolo: "as an admin lets make the
+// scorer assignment available in the app"): who scores the coming games, the game scorers and
+// the Papawis scorers, each part for admins with its section. Every change posts to the site's
+// own admin routes (public/app.js admPick), so the two can't drift apart.
+function appScorersAdmin(req) {
+  if (!req.session?.isAdmin || req.session.impersonating) return null;
+  const games = isAdminWithSection(req, 'games-stats'), papawis = isAdminWithSection(req, 'papawis');
+  return games || papawis ? { games, papawis } : null;
+}
+app.get('/app/admin/scorers', requireApp, (req, res) => {
+  const can = appScorersAdmin(req);
+  if (!can) return res.redirect('/app/me');
+  const me = appMe(req), teams = getAllTeams(), today = manilaTodayStr();
+  const gameIds = new Set(getScorerPlayerIds()), pwIds = new Set(getPwScorerPlayerIds());
+  const people = getAllPlayers().filter(p => p.status !== 'inactive' && !p.banned_at).map(p => {
+    const name = displayPlayerName(p.name || '');
+    return { id: p.id, name, ini: name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(), team: teams.find(t => t.id === p.team_id)?.name || '',
+      color: p.team_id ? teamColorById(teams, p.team_id) : '', photo: playerPhotoUrl(p.id, 96), game: gameIds.has(p.id), pw: pwIds.has(p.id) };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+  const nameOf = Object.fromEntries(people.map(p => [p.id, p.name]));
+  // The coming league games (not played yet, not published): their picked scorers.
+  const games = can.games ? getAllGames().filter(g => !gameFinalSet(g) && gameYmd(g.date) >= today && getScoreGame(g.id)?.status !== 'published')
+    .sort((x, y) => String(x.date).localeCompare(String(y.date))).slice(0, 12).map(g => {
+      const sg = getScoreGame(g.id), picked = getScorers(g.id).map(s => s.player_id);
+      return { id: g.id, title: scoreGameTitle(g), when: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), on: !!sg, live: sg?.status === 'live',
+        picked: picked.map(id => ({ id, name: nameOf[id] || 'Someone' })) };
+    }) : [];
+  const list = ids => people.filter(p => ids.has(p.id));
+  sendTab(res, me, { title: 'Scorers · WKND', tab: 'me', body: appAdminScorersPage({
+    can, games, people, gameScorers: can.games ? list(gameIds) : [], pwScorers: can.papawis ? list(pwIds) : [],
+    papawisOn: getSetting('papawis_enabled', '0') === '1', back: { href: '/app/me', label: 'Me' },
+  }) });
+});
 const pwSignupName = s => (s.guest_name ? s.guest_name : displayPlayerName(s.player_name));
 // What needs the admin on a run: deposits to confirm, the announcement, late team emails,
 // and who still owes after the game.
@@ -12532,23 +12612,35 @@ app.post('/admin/players/:id/premium-cards', requireSuperAdmin, express.json(), 
 });
 // Admin → Game Day → Scorers (views/admin/scorers.js, 2026-10-27): the scorers on one page, what
 // they've scored (live plays they sent), and every practice game (practice_log).
-app.get('/admin/scorers', requireAuth, (req, res) => {
+// kind 'game' (players.is_scorer, league games) or 'papawis' (players.is_pw_scorer, runs; kept
+// apart 2026-10-30). Also the app's Scorers screen (/app/admin/scorers).
+function scorersAdminData(kind) {
+  const pw = kind === 'papawis';
   const teams = getAllTeams(), players = getAllPlayers();
   const byId = Object.fromEntries(players.map(p => [p.id, p]));
   const teamOf = p => teams.find(t => t.id === p?.team_id);
-  const scored = Object.fromEntries(portalDb.prepare("SELECT author_id, COUNT(DISTINCT game_id) AS n, MAX(created_at) AS last FROM score_events WHERE pass = 'live' AND author_id IS NOT NULL GROUP BY author_id").all().map(r => [r.author_id, r]));
-  const lastGame = id => { const r = portalDb.prepare("SELECT game_id FROM score_events WHERE pass = 'live' AND author_id = ? ORDER BY created_at DESC LIMIT 1").get(id); const g = r && getGameById(r.game_id); return g ? scoreGameTitle(g) : ''; };
-  const practice = getPracticeLog(300).map(r => ({ ...r, name: displayPlayerName(byId[r.player_id]?.name || ''), color: teamColorById(teams, byId[r.player_id]?.team_id) }));
+  const which = pw ? "game_id LIKE 'pw\\_%' ESCAPE '\\'" : "game_id NOT LIKE 'pw\\_%' ESCAPE '\\'";
+  const scored = Object.fromEntries(portalDb.prepare(`SELECT author_id, COUNT(DISTINCT game_id) AS n, MAX(created_at) AS last FROM score_events WHERE pass = 'live' AND author_id IS NOT NULL AND ${which} GROUP BY author_id`).all().map(r => [r.author_id, r]));
+  const lastGame = id => {
+    const r = portalDb.prepare(`SELECT game_id FROM score_events WHERE pass = 'live' AND author_id = ? AND ${which} ORDER BY created_at DESC LIMIT 1`).get(id);
+    if (!r) return '';
+    if (pw) { const run = pwRunOfScore(r.game_id); return run ? `Papawis · ${run.title || pwDay(run.date)}` : ''; }
+    const g = getGameById(r.game_id); return g ? scoreGameTitle(g) : '';
+  };
+  const practice = pw ? [] : getPracticeLog(300).map(r => ({ ...r, name: displayPlayerName(byId[r.player_id]?.name || ''), color: teamColorById(teams, byId[r.player_id]?.team_id) }));
   const prBy = {}; for (const r of practice) { const x = prBy[r.player_id] || (prBy[r.player_id] = { n: 0, last: 0 }); x.n++; x.last = Math.max(x.last, r.started_at); }
-  // getAllPlayers doesn't carry is_scorer: the scorer list comes from its own query.
-  const scorerIds = new Set(getScorerPlayerIds());
+  // getAllPlayers doesn't carry the switches: the scorer list comes from its own query.
+  const scorerIds = new Set(pw ? getPwScorerPlayerIds() : getScorerPlayerIds());
   const scorers = players.filter(p => scorerIds.has(p.id)).map(p => ({
     id: p.id, name: displayPlayerName(p.name || ''), team: teamOf(p)?.name || '', color: teamColorById(teams, p.team_id), admin: isGameAdminPlayer(p.id),
     games: scored[p.id]?.n || 0, lastAt: scored[p.id]?.last || 0, lastGame: scored[p.id] ? lastGame(p.id) : '', practices: prBy[p.id]?.n || 0, lastPractice: prBy[p.id]?.last || 0,
   }));
   const candidates = players.filter(p => !scorerIds.has(p.id) && p.status !== 'inactive').map(p => ({ id: p.id, name: displayPlayerName(p.name || ''), color: teamColorById(teams, p.team_id), meta: [teamOf(p)?.name, isGameAdminPlayer(p.id) ? 'Admin' : ''].filter(Boolean).join(' · ') }))
     .sort((x, y) => x.name.localeCompare(y.name));
-  res.send(renderAdminPage(req, { title: 'Scorers', currentPath: '/admin/scorers', body: adminScorersBody({ scorers, candidates, practice, query: req.query }) }));
+  return { kind, scorers, candidates, practice };
+}
+app.get('/admin/scorers', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, { title: 'Scorers', currentPath: '/admin/scorers', body: adminScorersBody({ ...scorersAdminData('game'), query: req.query }) }));
 });
 app.post('/admin/scorers/add', requireAuth, express.json(), (req, res) => {
   const raw = req.body?.player_id;
@@ -12556,6 +12648,25 @@ app.post('/admin/scorers/add', requireAuth, express.json(), (req, res) => {
   if (!player) return res.status(400).json({ error: 'Pick a player.' });
   setPlayerScorer(player.id, true);
   res.json({ ok: true, message: `${displayPlayerName(player.name || '')} is a scorer.` });
+});
+// Papawis → Scorers (2026-10-30): the same page for players.is_pw_scorer.
+app.get('/admin/papawis/scorers', requireAuth, (req, res) => {
+  res.send(renderAdminPage(req, { title: 'Papawis scorers', currentPath: '/admin/papawis/scorers', body: adminScorersBody({ ...scorersAdminData('papawis'), query: req.query }) }));
+});
+app.post('/admin/papawis/scorers/add', requireAuth, express.json(), (req, res) => {
+  const raw = req.body?.player_id;
+  const player = getPlayerWithTeam(Array.isArray(raw) ? raw[0] : String(raw || ''));
+  if (!player) return res.status(400).json({ error: 'Pick a player.' });
+  setPlayerPwScorer(player.id, true);
+  res.json({ ok: true, message: `${displayPlayerName(player.name || '')} is a Papawis scorer.` });
+});
+// The switch on and off ({ on }): the player page's toggle and the Remove buttons.
+app.post('/admin/papawis/scorers/:id', requireAuth, express.json(), (req, res) => {
+  const player = getPlayerWithTeam(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+  const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1 || req.body?.on === '1';
+  setPlayerPwScorer(player.id, on);
+  res.json({ ok: true, message: on ? `${displayPlayerName(player.name || '')} is a Papawis scorer.` : `${displayPlayerName(player.name || '')} is no longer a Papawis scorer.` });
 });
 app.post('/admin/players/:id/papawis-probation', requireAuth, express.json(), (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
@@ -27370,6 +27481,24 @@ server.on('upgrade', (req, socket, head) => {
       ws.on('close', () => {
         const room = liveRooms.get(gameId);
         if (room) { room.delete(ws); if (!room.size) liveRooms.delete(gameId); }
+      });
+    });
+    return;
+  }
+
+  // A tablet following a game online (/api/score/:id/table): the last scoreboard at once, with
+  // how old it is (the tablet's clock catches up), then every new one. Receive-only.
+  const tableMatch = pathname.match(/^\/ws\/table\/([^/]+)$/);
+  if (tableMatch) {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const id = decodeURIComponent(tableMatch[1]);
+      if (!tableRooms.has(id)) tableRooms.set(id, new Set());
+      tableRooms.get(id).add(ws);
+      const t = tableLive.get(id);
+      if (t) ws.send(JSON.stringify({ ...t.state, age: Date.now() - t.at }));
+      ws.on('close', () => {
+        const room = tableRooms.get(id);
+        if (room) { room.delete(ws); if (!room.size) tableRooms.delete(id); }
       });
     });
     return;

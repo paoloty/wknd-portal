@@ -4,7 +4,7 @@
 // message never freezes it), team fouls and timeouts (league games; Papawis has neither), the
 // last play. Players (only when someone taps it, Paolo): the top 3 by the box score's rating as
 // cards, everyone's points, then any player's card. Back to the score by itself after 20 s.
-import { loadVendor, drawQr, camera, stopCamera, scan, tabletOffer, tabletAnswer } from '/table-link.js';
+import { loadVendor, drawQr, camera, stopCamera, scan, tabletOffer, tabletAnswer, addrsOf } from '/table-link.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,13 +29,20 @@ else if ('serviceWorker' in navigator) {
 let pc = null, ch = null, stream = null, stopScan = null, S = null, recvAt = 0, lastMsg = 0, closed = false;
 let facing = 'user';
 const status = (text, tone = 'wait') => { $('[data-pair-status]').textContent = text; $('[data-pair-dot]').className = `dot dot--${tone}`; };
-async function pair() {
-  // Start clean: the last link, its camera and its reader go first (Fable audit 2026-10-30).
+// Everything off: the direct link, its camera and reader (Fable audit 2026-10-30), and following online.
+function stopAll() {
   if (stopScan) stopScan();
   stopCamera(stream, $('[data-video]')); stream = null;
   if (ch) { ch.onclose = null; try { ch.close(); } catch (e) {} }
   if (pc) { try { pc.close(); } catch (e) {} }
   pc = null; ch = null; closed = false;
+  followId = null; clearTimeout(wsRetry);
+  if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} ws = null; }
+  $('[data-online]').hidden = true;
+  S = null; view = 'board';
+}
+async function pair() {
+  stopAll(); mode = 'direct';
   show('pair');
   status('Getting the code ready…');
   try {
@@ -53,7 +60,14 @@ async function pair() {
     $('[data-pair-row]').hidden = false;
     $('[data-act="pair"]').textContent = 'Start over';
     status('Waiting for the phone’s code…');
-    const read = () => { stopScan = scan(video, text => tabletAnswer(pc, text).then(() => status('Connecting…'), e => { status(e.message, 'err'); read(); })); };
+    // Connecting shows both sides' addresses, and gives up after 20 s with them (Paolo's first
+    // real test, 2026-10-30, stuck on Connecting with nothing to go on).
+    const where = () => `Tablet ${addrsOf(pc.localDescription && pc.localDescription.sdp).join(', ') || 'no address'} · Phone ${addrsOf(pc.remoteDescription && pc.remoteDescription.sdp).join(', ') || 'no address'}`;
+    const read = () => { stopScan = scan(video, text => tabletAnswer(pc, text).then(() => {
+      status(`Connecting… ${where()}`);
+      const mine = pc;
+      setTimeout(() => { if (pc === mine && !(ch && ch.readyState === 'open')) status(`Couldn’t connect (${pc.iceConnectionState}). Is the tablet on the phone’s hotspot? ${where()}`, 'err'); }, 20000);
+    }, e => { status(e.message, 'err'); read(); })); };
     read();
   } catch (e) {
     status(e.name === 'NotAllowedError' ? 'The camera is needed to read the phone’s code. Allow it and try again.' : `Something went wrong: ${e.message}`, 'err');
@@ -78,7 +92,42 @@ function linkDown(text) {
 }
 let lock = null;
 function wake() { if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(l => { lock = l; }, () => {}); }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && ch && ch.readyState === 'open') wake(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && ((ch && ch.readyState === 'open') || followId)) wake(); });
+
+// ── Online (2026-10-30, Paolo: an iPhone's own hotspot drops the direct link): when there's
+// internet, follow the game through the server instead (server.js /api/table/live and
+// /ws/table/:id; the scorer's phone posts the same scoreboard there). No codes to scan.
+let mode = 'direct', ws = null, followId = null, wsRetry = null;
+async function online() {
+  stopAll(); mode = 'online';
+  show('pair');
+  $('[data-pair-row]').hidden = true; $('[data-act="flip"]').hidden = true;
+  $('[data-act="pair"]').textContent = 'Show the code';
+  const box = $('[data-online]'); box.hidden = false; box.innerHTML = '';
+  status('Looking for games being scored…');
+  let d;
+  try {
+    const r = await fetch('/api/table/live', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    if (r.status === 401) return status('Sign in first: open table mode from the app (Me → Scoring → Table display).', 'err');
+    d = await r.json();
+  } catch (e) { return status('No internet here. Use Show the code (the tablet’s hotspot) instead.', 'err'); }
+  if (mode !== 'online') return;
+  box.innerHTML = d.games.map(g => `<button type="button" class="game" data-follow="${esc(g.id)}">
+      <span class="lbl">${esc(g.title)}${g.final ? ' · Final' : ''}</span>
+      <span class="game__s"><span class="tdot" style="--c:${esc(g.teams[0].color)}"></span><b class="num">${g.teams[0].score}</b><span>–</span><b class="num">${g.teams[1].score}</b><span class="tdot" style="--c:${esc(g.teams[1].color)}"></span></span>
+    </button>`).join('') + '<button type="button" class="btn btn--ghost" data-act="online">Refresh</button>';
+  status(d.games.length ? 'Tap the game to show' : 'No game is being scored right now. Once the scorer’s phone has started (with signal), tap Refresh.', d.games.length ? 'ok' : 'wait');
+}
+function follow(id) {
+  if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} }
+  followId = id; closed = false;
+  if (!S) status('Waiting for the scorer’s phone…');
+  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/table/${encodeURIComponent(id)}`);
+  ws.onopen = () => wake();
+  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } got(m); };
+  // Signal comes and goes at courts: keep trying, the board stays up meanwhile.
+  ws.onclose = () => { if (followId !== id) return; clearTimeout(wsRetry); wsRetry = setTimeout(() => { if (followId === id) follow(id); }, 3000); };
+}
 
 // ── What the phone sends ──
 // { t: 's', kind: 'league'|'papawis', title, period, final, clock: { secs, running }, last,
@@ -87,8 +136,9 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function got(m) {
   if (m.t !== 's') return;
   const first = !S;
-  S = m; recvAt = performance.now(); lastMsg = recvAt;
-  try { ch.send(JSON.stringify({ t: 'ack', at: m.at })); } catch (e) {}
+  // age: how long the server had it (online), so the clock catches up.
+  S = m; lastMsg = performance.now(); recvAt = lastMsg - Math.max(0, Number(m.age) || 0);
+  if (ch) { try { ch.send(JSON.stringify({ t: 'ack', at: m.at })); } catch (e) {} }
   if (first) { show('board'); loop(); }
   paint();
 }
@@ -174,10 +224,13 @@ function loop() {
     if (S && view === 'board' && !S.final) $('[data-clock]').textContent = fmt(clockNow());
     if (S && view !== 'board') { const left = Math.ceil((IDLE_MS - (Date.now() - touched)) / 1000); if (left <= 0) { view = 'board'; paint(); } else document.querySelectorAll('[data-act="board"]').forEach(b => { b.textContent = `Back to the score · ${left} s`; }); }
     const quiet = performance.now() - lastMsg;
-    if (!closed) {
+    // Online, the phone only sends changes (and every 20 s), so quiet is normal up to ~45 s.
+    const net = mode === 'online', wsUp = !!(ws && ws.readyState === 1);
+    if (S && !closed) {
       const b = $('[data-lost]');
-      if (quiet > 3000) { b.hidden = false; b.className = 'banner'; b.textContent = `No word from the phone for ${Math.round(quiet / 1000)} s. The clock keeps running from the last update.`; $('[data-link]').textContent = 'Waiting for the phone'; $('[data-link-dot]').className = 'dot dot--wait'; }
-      else { b.hidden = true; $('[data-link]').textContent = 'Linked to the scorer'; $('[data-link-dot]').className = 'dot'; }
+      if (net && !wsUp) { b.hidden = false; b.className = 'banner'; b.textContent = 'No internet on this tablet. Trying again… The clock keeps running from the last update.'; $('[data-link]').textContent = 'Reconnecting'; $('[data-link-dot]').className = 'dot dot--wait'; }
+      else if (quiet > (net ? 45000 : 3000)) { b.hidden = false; b.className = 'banner'; b.textContent = `No word from the phone for ${Math.round(quiet / 1000)} s. The clock keeps running from the last update.`; $('[data-link]').textContent = 'Waiting for the phone'; $('[data-link-dot]').className = 'dot dot--wait'; }
+      else { b.hidden = true; $('[data-link]').textContent = net ? 'Online' : 'Linked to the scorer'; $('[data-link-dot]').className = 'dot'; }
     }
     requestAnimationFrame(tick);
   };
@@ -189,6 +242,13 @@ document.addEventListener('click', e => {
   touched = Date.now();
   const act = b.getAttribute('data-act');
   if (act === 'pair') return pair();
+  if (act === 'online') return online();
+  if (act === 'home') {
+    if (!confirm('Stop showing this game?')) return;
+    stopAll(); show('pair'); status('Not paired');
+    $('[data-pair-row]').hidden = true; $('[data-act="flip"]').hidden = true; $('[data-act="pair"]').textContent = 'Show the code';
+    return;
+  }
   if (act === 'flip') {
     // The other camera, keeping the code on screen and the link being made.
     facing = facing === 'user' ? 'environment' : 'user';
@@ -197,6 +257,7 @@ document.addEventListener('click', e => {
     camera(video, facing).then(s => { stream = s; video.classList.toggle('is-front', facing === 'user'); }, () => {});
     return;
   }
+  if (b.hasAttribute('data-follow')) return follow(b.getAttribute('data-follow'));
   if (act === 'players') { view = 'players'; return paint(); }
   if (act === 'board') { view = 'board'; return paint(); }
   if (b.hasAttribute('data-team')) { cardTeam = Number(b.getAttribute('data-team')) || 0; return paint(); }

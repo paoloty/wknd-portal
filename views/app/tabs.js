@@ -61,6 +61,7 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
     <a class="cell" href="/app/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice game<small>Real teams, only on this phone</small></span>${chev}</a>
     <a class="cell" href="/app/table" data-reload><span class="ico">${icons.tablet}</span><span class="cell__t">Table display<small>Turn this tablet into the scoreboard</small></span>${chev}</a>
     <a class="cell" href="/app/help/scoring"><span class="ico">${icons.book}</span><span class="cell__t">How to score<small>The guide, with pictures</small></span>${chev}</a>
+    ${scoring.admin ? `<a class="cell" href="/app/admin/scorers"><span class="ico">${icons.user}</span><span class="cell__t">Scorers<small>Admin: who scores ${scoring.admin.games && scoring.admin.papawis ? 'games and Papawis' : scoring.admin.games ? 'the games' : 'Papawis'}</small></span>${chev}</a>` : ''}
   </div>` : ''}
   <div class="sec">${esc(season.label)}</div>
   <div class="tiles" style="margin-top:0">

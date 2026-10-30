@@ -13,25 +13,30 @@ const mins = ms => { const m = Math.round(ms / 60000); return m < 1 ? 'under a m
 // scorers: [{ id, name, team, color, admin, games, lastGame, lastAt, practices, lastPractice }]
 // candidates: players who aren't scorers yet, for the Add picker: [{ id, name, color, meta }]
 // practice: practice_log rows with name / color: [{ …row, name, color }]
-export function adminScorersBody({ scorers = [], candidates = [], practice = [], query = {} }) {
-  const add = `<form class="aui-panel aui-stack" data-json-action="/admin/scorers/add" data-then="/admin/scorers" data-done="Scorer added.">
+// kind: 'game' (Game Day → Scorers, players.is_scorer) or 'papawis' (Papawis → Scorers,
+// players.is_pw_scorer; 2026-10-30, kept apart: one doesn't make you the other).
+export function adminScorersBody({ kind = 'game', scorers = [], candidates = [], practice = [], query = {} }) {
+  const pw = kind === 'papawis', base = pw ? '/admin/papawis/scorers' : '/admin/scorers';
+  const offUrl = s => (pw ? `/admin/papawis/scorers/${attr(s.id)}` : `/admin/players/${attr(s.id)}/scorer`);
+  const add = `<form class="aui-panel aui-stack" data-json-action="${base}/add" data-then="${base}" data-done="Scorer added.">
       ${playerPicker({ name: 'player_id', label: 'Player', options: candidates, multiple: false, placeholder: 'Type a player’s name' })}
       <div>${button('Add', { kind: 'primary', type: 'submit' })}</div>
     </form>`;
   const grid = dataGrid({
-    id: 'scorers', baseUrl: '/admin/scorers', query, minimal: true,
+    id: 'scorers', baseUrl: base, query, minimal: true,
     rows: scorers, rowKey: s => s.id, noun: ['scorer', 'scorers'], perPage: 50,
     search: { placeholder: 'Search scorers', text: s => `${s.name} ${s.team}` },
     defaultSort: 'name',
     columns: [
       { key: 'name', label: 'Scorer', primary: true, sort: s => s.name.toLowerCase(), cell: s => `<span class="aui-who">${avatar(s.name, s.color, { size: 26, playerId: s.id })}<a class="aui-cell__title" href="/admin/players/${attr(s.id)}">${escHtml(s.name)}</a>${s.admin ? ` ${badge('Admin')}` : ''}</span>` },
       { key: 'team', label: 'Team', sort: s => s.team, cell: s => escHtml(s.team || '–') },
-      { key: 'games', label: 'Games scored', num: true, sort: s => s.games, cell: s => String(s.games) },
+      { key: 'games', label: pw ? 'Runs scored' : 'Games scored', num: true, sort: s => s.games, cell: s => String(s.games) },
       { key: 'last', label: 'Last scored', sort: s => s.lastAt || 0, cell: s => (s.lastGame ? `${escHtml(s.lastGame)} <span class="aui-muted">· ${escHtml(fmtDay(s.lastAt))}</span>` : '<span class="aui-muted">Not yet</span>') },
       { key: 'practice', label: 'Practice', sort: s => s.practices, cell: s => (s.practices ? `${s.practices} game${s.practices === 1 ? '' : 's'} <span class="aui-muted">· ${escHtml(fmtDay(s.lastPractice))}</span>` : '<span class="aui-muted">Not yet</span>') },
-      { key: 'act', label: '', bare: true, cell: s => button('Remove', { kind: 'ghost', size: 'sm', attrs: `data-post-json="/admin/players/${attr(s.id)}/scorer" data-body="${attr(JSON.stringify({ on: false }))}" data-then="/admin/scorers" data-done="${attr(s.name)} is no longer a scorer." data-confirm data-confirm-title="Remove ${attr(s.name)} as a scorer?" data-confirm-body="They can still score the games they're picked for." data-confirm-send="Remove"` }) },
+      { key: 'act', label: '', bare: true, cell: s => button('Remove', { kind: 'ghost', size: 'sm', attrs: `data-post-json="${offUrl(s)}" data-body="${attr(JSON.stringify({ on: false }))}" data-then="${base}" data-done="${attr(s.name)} is no longer a ${pw ? 'Papawis ' : ''}scorer." data-confirm data-confirm-title="Remove ${attr(s.name)} as a ${pw ? 'Papawis ' : ''}scorer?" data-confirm-body="${pw ? 'They can no longer score Papawis runs.' : 'They can still score the games they’re picked for.'}" data-confirm-send="Remove"` }) },
     ],
-    empty: { title: 'No scorers yet', sub: 'Add a player above. Scorers can score any game with scoring turned on.' },
+    empty: pw ? { title: 'No Papawis scorers yet', sub: 'Add a player above. Papawis scorers can score any Papawis run from the app.' }
+      : { title: 'No scorers yet', sub: 'Add a player above. Scorers can score any game with scoring turned on.' },
   });
   const now = Date.now();
   const log = practice.length ? dataGrid({
@@ -46,8 +51,13 @@ export function adminScorersBody({ scorers = [], candidates = [], practice = [],
       { key: 'when', label: 'When', num: true, sort: p => p.started_at, cell: p => `${escHtml(fmtTime(p.started_at))} <span class="aui-muted">· ${escHtml(mins(p.updated_at - p.started_at))}</span>` },
     ],
   }) : emptyState({ title: 'No practice games yet', sub: 'Scorers find Practice game under Me → Scoring in the app. Each one shows up here.' });
+  if (pw) return `<div class="aui-page">
+    ${pageHeader({ eyebrow: 'Papawis', title: 'Scorers', sub: 'Players who can score any Papawis run from the app, one phone at a time. Separate from game scorers (Game Day → Scorers): a game scorer isn’t a Papawis scorer unless added here too.' })}
+    ${section({ title: 'Add a Papawis scorer', bodyHtml: add })}
+    ${section({ title: 'Papawis scorers', note: `· ${scorers.length}`, bodyHtml: grid })}
+  </div>`;
   return `<div class="aui-page">
-    ${pageHeader({ eyebrow: 'Game Day', title: 'Scorers', sub: 'Players who can score any game with scoring turned on. Admins are added like anyone else; reviewing and finishing a game stay admin jobs and don’t need this.' })}
+    ${pageHeader({ eyebrow: 'Game Day', title: 'Scorers', sub: 'Players who can score any league game with scoring turned on. Papawis scorers are set apart, under Papawis → Scorers. Admins are added like anyone else; reviewing and finishing a game stay admin jobs and don’t need this.' })}
     ${section({ title: 'Add a scorer', bodyHtml: add })}
     ${section({ title: 'Scorers', note: `· ${scorers.length}`, bodyHtml: grid })}
     ${section({ title: 'Practice games', note: `· ${practice.length}`, bodyHtml: log })}

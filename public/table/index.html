@@ -40,6 +40,13 @@
   .steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; color: var(--muted); text-align: left; }
   .steps b { color: var(--text); }
   .note { font-size: 14px; color: var(--muted); }
+  .pair p b { color: var(--text); font-weight: 600; }
+  .games { display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: min(560px, 100%); }
+  .game { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; padding: 0 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); text-align: left; }
+  .game .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .game__s { display: flex; align-items: center; gap: 10px; font-size: 18px; color: var(--muted); }
+  .game__s b { font-size: 30px; font-weight: 700; color: var(--text); }
+  .game__s .tdot { width: 14px; height: 14px; }
   /* Scoreboard */
   .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .top .lbl { font-size: 20px; }
@@ -128,7 +135,7 @@
 <!-- Pair with the scorer's phone -->
 <section class="screen pair" data-screen="pair">
   <h1>Table display</h1>
-  <p>Shows the score and the clock from the scorer's phone, with no internet, over the phone's hotspot. Join the phone's hotspot first.</p>
+  <p>Shows the score and the clock from the scorer's phone. <b>With internet:</b> tap Follow online. <b>No internet:</b> turn on this tablet's hotspot, join it from the scorer's phone, then pair with codes.</p>
   <ol class="steps">
     <li><b>1.</b> Tap <b>Show the code</b> here and allow the camera.</li>
     <li><b>2.</b> On the scorer's phone: <b>•••</b> → <b>Table display</b>, and point it at the code.</li>
@@ -138,15 +145,16 @@
     <div class="qr" data-qr></div>
     <video playsinline muted autoplay data-video></video>
   </div>
+  <div class="games" data-online hidden></div>
   <div class="pill"><span class="dot dot--wait" data-pair-dot></span><span data-pair-status>Not paired</span></div>
-  <div class="pair__row"><button type="button" class="btn" data-act="pair">Show the code</button><button type="button" class="btn btn--ghost" data-act="flip" hidden>Use the other camera</button></div>
+  <div class="pair__row"><button type="button" class="btn" data-act="pair">Show the code</button><button type="button" class="btn btn--ghost" data-act="flip" hidden>Use the other camera</button><button type="button" class="btn btn--ghost" data-act="online">Follow online</button></div>
   <p class="note" data-offline-note>Offline copy: checking…</p>
   <a class="btn btn--ghost" href="/app/me" data-app-only hidden>Leave table mode</a>
 </section>
 
 <!-- The scoreboard -->
 <section class="screen" data-screen="board" hidden>
-  <div class="top"><span class="lbl" data-title></span><span class="pill"><span class="dot" data-link-dot></span><span data-link>Linked</span></span></div>
+  <div class="top"><span class="lbl" data-title></span><button type="button" class="pill" data-act="home" aria-label="Link status: tap to stop showing this game"><span class="dot" data-link-dot></span><span data-link>Linked</span></button></div>
   <div class="banner" data-lost hidden></div>
   <div class="sb">
     <div class="side" data-side="a"></div>

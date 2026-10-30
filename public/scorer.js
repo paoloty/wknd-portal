@@ -1476,7 +1476,7 @@ export async function mount(el) {
     box.className = 'sc-tbl';
     box.innerHTML = `<div class="sc-tbl__in" role="dialog" aria-modal="true" aria-label="Table display">
       <div class="sc-tbl__h"><b>Table display</b><button type="button" class="sc-x" data-tbl-close aria-label="Close">${CLOSE}</button></div>
-      <p class="sc-tbl__s" data-tbl-s>${tblOn() ? 'The tablet is linked. To pair another one, scan its code.' : `On the tablet, join this phone’s hotspot, open <b>${esc(location.host)}/table</b> and tap Show the code. Then scan it here.`}</p>
+      <p class="sc-tbl__s" data-tbl-s>${tblOn() ? 'The tablet is linked. To pair another one, scan its code.' : `<b>With internet:</b> nothing to pair. On the tablet (Me → Scoring → Table display), tap Follow online and pick this game.<br><b>No internet:</b> turn on the tablet’s hotspot and join it from this phone. On the tablet tap Show the code, then scan it here.`}</p>
       <video playsinline muted autoplay class="sc-tbl__v" hidden></video>
       <div class="sc-tbl__qr" data-tbl-qr hidden></div>
       <button type="button" class="sc-over__btn" data-tbl-go>Scan the tablet’s code</button>
@@ -1514,7 +1514,9 @@ export async function mount(el) {
           if (tbl.L && tbl.stream) tbl.L.stopCamera(tbl.stream, video);
           tbl.stream = null; video.hidden = true;
           const qr = box.querySelector('[data-tbl-qr]'); tbl.L.drawQr(qr, r.code); qr.hidden = false;
-          say('Now hold this up to the tablet’s camera.');
+          const where = `This phone: ${esc(tbl.L.addrsOf(r.pc.localDescription.sdp).join(', ') || 'no address')} · Tablet: ${esc(tbl.L.addrsOf(r.pc.remoteDescription.sdp).join(', ') || 'no address')}`;
+          say(`Now hold this up to the tablet’s camera.<br><small>${where}</small>`);
+          r.pc.addEventListener('iceconnectionstatechange', () => { if (r.pc.iceConnectionState === 'failed' && tbl.box) say(`Couldn’t connect to the tablet. Is it on this phone’s hotspot?<br><small>${where}</small>`); });
         } catch (e) { say(esc(e.message || 'That code didn’t work. Try again.')); go.hidden = false; }
       });
     } catch (e) {
@@ -1545,7 +1547,23 @@ export async function mount(el) {
       })),
     };
   }
+  // Online too (2026-10-30, Paolo: an iPhone's own hotspot drops the direct link): the same state
+  // goes to the server for a tablet following online (server.js /api/score/:id/table), when it
+  // changes and every 20 s. Not for practice or video reviews, and stops if the server says no.
+  const tblNet = { key: '', at: 0, busy: false, off: !!practice || video, api: api.replace(/\/events(\?.*)?$/, '/table') };
+  function tablePost() {
+    if (tblNet.off || tblNet.busy || !navigator.onLine) return;
+    const s = tableState();
+    // The running clock isn't a change (the tablet runs its own); starting, stopping or setting it is.
+    const key = JSON.stringify({ ...s, at: 0, clock: s.clock.running ? { running: true } : s.clock });
+    if (key === tblNet.key && Date.now() - tblNet.at < 20000) return;
+    tblNet.busy = true; tblNet.key = key; tblNet.at = Date.now();
+    fetch(tblNet.api, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: s }) })
+      .then(r => { if (r.status === 403 || r.status === 404) tblNet.off = true; else if (!r.ok) tblNet.key = ''; }, () => { tblNet.key = ''; })
+      .then(() => { tblNet.busy = false; });
+  }
   function tableSend(now = false) {
+    tablePost();
     if (!tblOn()) return;
     clearTimeout(tbl.t);
     const go = () => { try { tbl.ch.send(JSON.stringify(tableState())); } catch (e) {} };

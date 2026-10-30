@@ -162,7 +162,7 @@ export const SCORER_GUIDE = [
   },
   {
     slug: 'papawis', title: 'Scoring Papawis', blocks: [
-      ['p', 'Papawis uses the same scorer, Light against Dark. Scorers score it: on the run’s day, its card on the Papawis tab has <b>Start scoring</b>. One phone scores at a time, every game of the run.'],
+      ['p', 'Papawis uses the same scorer, Light against Dark. Papawis scorers score it (an admin adds them: it’s separate from scoring league games). On the run’s day, its card on the Papawis tab has <b>Start scoring</b>. One phone scores at a time, every game of the run.'],
       ['steps', [
         '<b>Set up the game.</b> Before each game: <i>Basic</i> or <i>Full</i> stats, the quarter length, how many quarters, and who’s here. Tap a name if they didn’t come; the ⇄ beside it moves them to the other side. A guest who isn’t on the list: type their name and tap <i>+ Light</i> or <i>+ Dark</i>.',
         '<b>Start Game 1.</b> The clock starts on the first play, or tap ▶.',
@@ -184,10 +184,12 @@ export const SCORER_GUIDE = [
   },
   {
     slug: 'table', title: 'The table display', blocks: [
-      ['p', 'A tablet at the table can show the score and the clock from your phone, with no internet, over your phone’s hotspot. Coaches and players tap <i>Players</i> on it for the cards.'],
+      ['p', 'A tablet at the table can show the score and the clock from your phone. Coaches and players tap <i>Players</i> on it for the cards. On the tablet, open the app: Me → Scoring → <i>Table display</i> (once with internet beforehand, so it works offline).'],
+      ['p', '<b>With internet</b> (the tablet on your hotspot is fine): tap <i>Follow online</i> on the tablet and pick your game. Nothing to pair: just keep scoring.'],
+      ['p', '<b>No internet:</b> the two link directly. Your phone’s own hotspot drops the link after a few seconds, so use the <b>tablet’s</b> hotspot (or any other phone’s, or a pocket Wi‑Fi):'],
       ['steps', [
-        '<b>Turn on your hotspot.</b> On an iPhone keep mobile data on, even with no signal, or the hotspot turns off. Join it on the tablet.',
-        '<b>On the tablet,</b> open <i>/table</i> on the WKND site (once with internet beforehand, so it works offline) and tap <i>Show the code</i>.',
+        '<b>Turn on the tablet’s hotspot</b> and join it from your phone.',
+        '<b>On the tablet,</b> tap <i>Show the code</i>.',
         '<b>On your phone:</b> ••• → <i>Table display</i> → <i>Scan the tablet’s code</i>, and point it at the tablet.',
         '<b>Hold your phone’s code</b> up to the tablet’s camera. When it says <i>Tablet linked</i>, you’re done.',
       ]],

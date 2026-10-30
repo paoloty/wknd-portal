@@ -27,26 +27,52 @@ const bytesOf = stream => new Response(stream).arrayBuffer().then(b => new Uint8
 const b64u = bytes => { let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const unb64u = s => { let b64 = s.replace(/-/g, '+').replace(/_/g, '/'); while (b64.length % 4) b64 += '='; const bin = atob(b64), b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return b; };
 const SETUPS = ['actpass', 'active', 'passive'];
+// IPv6 as 16 bytes ('::' expanded), or null. Hotspots often only connect over IPv6 (Paolo's first
+// real test, 2026-10-30: the IPv4-only short code stuck on Connecting).
+function v6bytes(ip) {
+  if (ip.includes('%') || ip.includes('.')) return null;
+  const [l, r = null] = ip.split('::'), hl = l ? l.split(':') : [], hr = r ? r.split(':') : [];
+  if (r === null ? hl.length !== 8 : hl.length + hr.length > 7) return null;
+  const hs = [...hl, ...Array(8 - hl.length - hr.length).fill('0'), ...hr];
+  if (!hs.every(h => /^[0-9a-f]{1,4}$/i.test(h))) return null;
+  return hs.flatMap(h => { const n = parseInt(h, 16); return [n >> 8, n & 255]; });
+}
+// The network addresses in a description (for the "can't connect" note).
+export function addrsOf(sdp) {
+  return [...new Set([...String(sdp || '').matchAll(/^a=candidate:\S+ 1 udp \d+ (\S+) \d+ typ (\w+)/gim)].map(m => m[1] + (m[2] === 'host' ? '' : ` (${m[2]})`)))];
+}
 function packShort(sdp) {
   const line = k => { const m = new RegExp('^a=' + k + ':(.*)$', 'm').exec(sdp); return m ? m[1].trim() : ''; };
   const ufrag = line('ice-ufrag'), pwd = line('ice-pwd'), fp = /^sha-256 ([0-9A-Fa-f:]{95})$/.exec(line('fingerprint')), setup = SETUPS.indexOf(line('setup')), mid = line('mid');
-  const cands = [...sdp.matchAll(/^a=candidate:\S+ 1 udp \d+ (\d{1,3}(?:\.\d{1,3}){3}) (\d+) typ host/gim)].map(m => ({ ip: m[1].split('.').map(Number), port: Number(m[2]) }))
-    .filter(c => c.ip.every(n => n <= 255) && c.port > 0 && c.port < 65536).slice(0, 4);
+  const all = [...sdp.matchAll(/^a=candidate:\S+ 1 udp \d+ (\S+) (\d+) typ host/gim)].map(m => {
+    const port = Number(m[2]), v4 = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(m[1]) ? m[1].split('.').map(Number) : null;
+    if (v4) return v4.every(n => n <= 255) ? { ip: v4, port } : null;
+    const v6 = v6bytes(m[1]); return v6 ? { ip: v6, port } : null;
+  }).filter(c => c && c.port > 0 && c.port < 65536);
+  // IPv4 first, then IPv6; six at most keeps the code small.
+  const cands = [...all.filter(c => c.ip.length === 4), ...all.filter(c => c.ip.length === 16)].slice(0, 6);
   if (!ufrag || !pwd || ufrag.length > 64 || pwd.length > 64 || !fp || setup < 0 || mid !== '0' || !cands.length) return null;
   const enc = new TextEncoder(), u = enc.encode(ufrag), p = enc.encode(pwd);
-  const out = [1, setup, u.length, ...u, p.length, ...p, ...fp[1].split(':').map(h => parseInt(h, 16)), cands.length];
-  for (const c of cands) out.push(...c.ip, c.port >> 8, c.port & 255);
+  const out = [2, setup, u.length, ...u, p.length, ...p, ...fp[1].split(':').map(h => parseInt(h, 16)), cands.length];
+  for (const c of cands) out.push(c.ip.length, ...c.ip, c.port >> 8, c.port & 255);
   return b64u(Uint8Array.from(out));
 }
 function unpackShort(s) {
   const b = unb64u(s), dec = new TextDecoder();
   let i = 0; const take = n => { const x = b.slice(i, i + n); i += n; if (x.length !== n) throw new Error('short code'); return x; };
-  if (take(1)[0] !== 1) throw new Error('unknown code');
+  const ver = take(1)[0]; // 1: IPv4 only (the first short codes), 2: each address says its length
+  if (ver !== 1 && ver !== 2) throw new Error('unknown code');
   const setup = SETUPS[take(1)[0]];
   const ufrag = dec.decode(take(take(1)[0])), pwd = dec.decode(take(take(1)[0]));
   const fp = [...take(32)].map(n => n.toString(16).padStart(2, '0').toUpperCase()).join(':');
   const n = take(1)[0], cands = [];
-  for (let k = 0; k < n; k++) { const ip = [...take(4)].join('.'), pb = take(2); cands.push(`a=candidate:${k + 1} 1 udp ${2122260223 - k} ${ip} ${(pb[0] << 8) | pb[1]} typ host generation 0`); }
+  for (let k = 0; k < n; k++) {
+    const len = ver === 1 ? 4 : take(1)[0];
+    if (len !== 4 && len !== 16) throw new Error('short code');
+    const raw = [...take(len)], pb = take(2);
+    const ip = len === 4 ? raw.join('.') : Array.from({ length: 8 }, (_, j) => ((raw[2 * j] << 8) | raw[2 * j + 1]).toString(16)).join(':');
+    cands.push(`a=candidate:${k + 1} 1 udp ${2122260223 - k} ${ip} ${(pb[0] << 8) | pb[1]} typ host generation 0`);
+  }
   return ['v=0', 'o=- 4611731400430051336 2 IN IP4 127.0.0.1', 's=-', 't=0 0', 'a=group:BUNDLE 0', 'a=msid-semantic: WMS',
     'm=application 9 UDP/DTLS/SCTP webrtc-datachannel', 'c=IN IP4 0.0.0.0', ...cands,
     `a=ice-ufrag:${ufrag}`, `a=ice-pwd:${pwd}`, 'a=ice-options:trickle', `a=fingerprint:sha-256 ${fp}`, `a=setup:${setup}`,
