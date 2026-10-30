@@ -7331,6 +7331,16 @@ app.get('/app/score', requireApp, (req, res) => {
       const full = inNow.length >= 2 && !inNow.some(x => x.playerId === me.playerId) ? inNow.map(x => x.name) : null;
       return { id: g.id, title: scoreGameTitle(g), when: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), status: getScoreGame(g.id)?.status, full, href: `/app/score/${encodeURIComponent(g.id)}` };
     });
+  // Papawis runs (Scorers): today's and the coming week's open runs, so a scorer can open one
+  // early with signal (it then works offline at the court), and today's not yet finished.
+  if (getSetting('papawis_enabled', '0') === '1' && getPlayerById(me.playerId)?.is_scorer) {
+    for (const r of getPapawisGames().filter(g => (g.status === 'open' || g.status === 'completed') && pwDaysUntil(g.date) >= 0 && pwDaysUntil(g.date) <= 7 && !getPapawisScored(g.id))
+      .sort((x, y) => `${x.date} ${x.start_time}`.localeCompare(`${y.date} ${y.start_time}`))) {
+      const sg = getScoreGame(pwScoreId(r.id)), h = sg?.settings?.holder;
+      const busy = h && h.playerId !== me.playerId && Date.now() - h.at < PW_HOLD_QUIET ? h.name : '';
+      games.push({ id: pwScoreId(r.id), title: `Papawis · ${r.title || 'run'}`, when: [pwDay(r.date), formatTimeRange(r.start_time, r.end_time) || r.time_label || '', busy ? `${busy} is scoring` : ''].filter(Boolean).join(' · '), status: sg?.status, full: null, href: `/app/score/${encodeURIComponent(pwScoreId(r.id))}` });
+    }
+  }
   sendTab(res, me, { title: 'Games to score · WKND', tab: 'me', body: appScorerListPage({ games, back: { href: '/app/me', label: 'Me' } }) });
 });
 // ── Scoring menu (Me → Scoring, 2026-10-27): games to score, a practice game, How to score ──
