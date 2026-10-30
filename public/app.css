@@ -1551,11 +1551,15 @@ html.tk-lock { overflow: hidden; }
 /* The game screen's Start scoring button (views/app/feed.js) */
 .sc-start { margin: 0 16px 12px; }
 .sc-start .foot-note { margin: 6px 0 0; }
+.sc-start .btn[disabled] { opacity: 1; background: var(--surface-2); color: var(--muted); box-shadow: inset 0 0 0 1px var(--hair); }
 .sc-nav .navbar__title { font-size: 15px; }
 .sc-body { flex: 1; min-height: 0; display: flex; }
 /* Before the board draws: a spinner in the middle of the screen; if it fails, the message stacked */
 .sc-loading { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding-bottom: 15vh; color: var(--muted); font-size: 14px; }
 .sc-loading .ptr__spin { width: 24px; height: 24px; border-top-color: var(--amber); animation: spin .8s linear infinite; }
+.sc-wait { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 0 31px 15vh; text-align: center; }
+.sc-wait b { font-size: 15px; font-weight: 600; }
+.sc-wait p { margin: 0; max-width: 320px; font-size: 14px; color: var(--muted); }
 .sc-fail { flex: 1; display: flex; flex-direction: column; padding-top: 12px; }
 .sc-fail .foot-note { margin: 10px 16px; }
 .sc-fail__btn { margin: 0 16px; }

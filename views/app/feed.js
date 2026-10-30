@@ -342,7 +342,7 @@ export function appLiveParts(l, { meId = '', myTeamId = '', extras = null } = {}
 // made); preview: server.js appPreview.
 // thread: appThreadData (server.js) — the game's comments, the same thread as the site's
 // pre-game talk; null while it's live (the live chat is the talk then) or comments are off.
-export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', live = null, reviewLive = false, review = null, chat = null, thread = null }) {
+export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b, pick, preview: p, lastHref, scoreHref = '', scoreOpens = 0, scoreOpensLabel = '', live = null, reviewLive = false, review = null, chat = null, thread = null }) {
   const w = (p.watch || []).filter(Boolean);
   // The section bar (the finished game's, sticky, lights the section in view), once there are
   // three or more sections below the top. Live: the live screen's own sections (the cards it
@@ -357,7 +357,12 @@ export function appGamePreviewPage({ back, title, kicker, meta, court = '', a, b
   return `${navbar(back, title)}
   ${reviewLive ? '<div class="msg msg--warn review-live">Review, watched live. Only admins see this, and it isn’t in the feed. Switch it off on the game’s Scoring tab.</div>' : ''}
   ${reviewCard(review)}
-  ${scoreHref && !reviewLive ? `<div class="sc-start"><a class="btn" href="${esc(scoreHref)}">${icons.play}<span>Start scoring</span></a><p class="foot-note">You’re a scorer for this game. It works with no signal once it’s open.</p></div>` : ''}
+  ${scoreHref && !reviewLive ? (scoreOpens > Date.now()
+    // Locked until 2 hours before tip-off (Paolo, 2026-10-30). public/app.js initScoreStart
+    // turns it on at that time (on the phone's clock, so a kept copy does too) and keeps the
+    // scorer on the phone meanwhile, so it opens with no signal at the court.
+    ? `<div class="sc-start" data-sc-opens="${scoreOpens}" data-sc-href="${esc(scoreHref)}" data-sc-go="${esc(`${icons.play}<span>Start scoring</span>`)}"><button type="button" class="btn" disabled>${icons.clock}<span>${esc(scoreOpensLabel)}</span></button><p class="foot-note">You’re a scorer for this game. Scoring opens 2 hours before tip-off, and works with no signal.</p></div>`
+    : `<div class="sc-start"><a class="btn" href="${esc(scoreHref)}">${icons.play}<span>Start scoring</span></a><p class="foot-note">You’re a scorer for this game. It works with no signal once it’s open.</p></div>`) : ''}
   ${live ? `<div data-live-src="${esc(live.src)}" data-live-ws="${esc(live.ws)}">${live.parts ? `<div data-live="hero">${live.parts.hero}</div>${bar}<div data-live="body">${live.parts.body}</div>` : ''}</div>` : ''}
   ${live?.parts ? '' : pick ? `<div class="pv-pick">${pickCard(pick)}</div>${court ? `<p class="foot-note" style="margin-top:-4px;margin-bottom:12px">At ${esc(court)}</p>` : ''}` : `<section class="fc glow game-hero">
     <div class="fc__top"><span class="kick">Preview · ${esc(kicker)}</span></div>

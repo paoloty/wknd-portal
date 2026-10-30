@@ -122,6 +122,17 @@ export async function mount(el) {
   const root = el.querySelector('[data-sc-root]');
   const pill = el.querySelector('[data-sc-sync]');
   const api = el.getAttribute('data-api');
+  // Not open yet (2 hours before tip-off, server.js scoreOpensAt; Paolo, 2026-10-30): a holding
+  // screen that opens by itself on time, on this phone's clock, so a copy kept for no signal
+  // opens too.
+  if (B.opensAt && Date.now() < B.opensAt) {
+    const when = new Date(B.opensAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+    root.innerHTML = `<div class="sc-wait" role="status"><b>Scoring opens ${when}</b><p>That’s 2 hours before tip-off. This game is now saved on your phone: it opens here by itself then, even with no signal.</p></div>`;
+    if (pill) pill.textContent = '';
+    el._scDrawn = true; el._sc = false;
+    setTimeout(() => { if (document.contains(el)) mount(el); }, Math.min(B.opensAt - Date.now() + 500, 2147483000));
+    return;
+  }
   const gid = B.game.id;
   let rules = B.rules;
   const team = { a: B.a, b: B.b };

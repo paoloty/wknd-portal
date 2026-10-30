@@ -8662,6 +8662,8 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-scorer b { color: var(--text); font-weight: 700; }
 .gd-scorer__go { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border-radius: 999px; background: var(--amber); color: #111; font-size: 14px; font-weight: 700; line-height: 1; white-space: nowrap; }
 .gd-scorer__go:hover { filter: brightness(1.05); }
+.gd-scorer__go--off { background: var(--surface-2); color: var(--text-muted); box-shadow: inset 0 0 0 1px var(--border); font-weight: 600; }
+.gd-scorer__go--off:hover { filter: none; }
 @media (max-width: 600px) { .gd-scorer { flex-direction: column; align-items: stretch; } }
 /* Live score (views/game.js liveHero / liveBody, public/live-score.js) */
 .gd-chip--dot { display: inline-flex; align-items: center; gap: 6px; }

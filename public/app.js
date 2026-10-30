@@ -745,6 +745,7 @@
     initVideos();
     initPapawis();
     initAdminPapawis();
+    initScoreStart();
     initFinish();
     initPush();
     initSettle();
@@ -1273,6 +1274,28 @@
         }, function (e) { admBusy = false; go.disabled = false; go.classList.remove('is-busy'); msg.textContent = e.message; msg.hidden = false; });
     });
     setTimeout(function () { q.focus(); }, 300);
+  }
+
+  // A locked Start scoring (views/app/feed.js, 2026-10-30: opens 2 hours before tip-off). It
+  // turns into the link at that time on the phone's own clock (a kept copy of the screen too),
+  // and meanwhile the scorer screen is fetched once so the app keeps it for no signal.
+  function initScoreStart() {
+    $$('[data-sc-opens]').forEach(function (box) {
+      if (box._scOpens) return;
+      box._scOpens = true;
+      var at = Number(box.getAttribute('data-sc-opens')) || 0, href = box.getAttribute('data-sc-href');
+      var check = function () {
+        if (!document.contains(box)) return;
+        var left = at - Date.now();
+        if (left > 0) { setTimeout(check, Math.min(left + 500, 60000)); return; }
+        var a = document.createElement('a');
+        a.className = 'btn'; a.href = href; a.innerHTML = box.getAttribute('data-sc-go');
+        box.replaceChild(a, $('button', box));
+        var note = $('.foot-note', box); if (note) note.textContent = 'You’re a scorer for this game. It works with no signal once it’s open.';
+      };
+      check();
+      if (navigator.onLine && at > Date.now()) fetch(href, { credentials: 'same-origin', headers: { 'X-App-Nav': '1' } }).catch(function () {});
+    });
   }
 
   // Pick players (Scorers, views/app/admin-scorers.js, 2026-10-30): search everyone on the page's

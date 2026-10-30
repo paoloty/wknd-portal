@@ -2532,7 +2532,10 @@ export function gamePage(d) {
   ${d.reviewLive ? '<div class="card gd-scorer gd-review-live"><span><b>Review, watched live.</b> Only admins see this page, and it isn’t in the feed, the ticker or the homepage. Switch it off on the game’s Scoring tab.</span></div>' : ''}
   <p class="gd-crumb"><a href="/games">Games</a><span>›</span><span>Season ${escHtml(String(game.season))} · ${escHtml(tc(game.team_a_name))} vs ${escHtml(tc(game.team_b_name))}</span></p>
   ${lp ? `<div data-live="hero">${lp.hero}</div>` : upcomingHero(v)}
-  ${d.scoreHref ? `<div class="card gd-scorer"><span><b>You’re scoring this game.</b> ${/^\/app\//.test(d.scoreHref) ? 'On your phone it works with no signal once it’s opened.' : 'Open it here on a laptop or tablet.'}</span><a class="gd-scorer__go" href="${escHtml(d.scoreHref)}">${lp ? 'Open the scorer' : 'Start scoring'}</a></div>` : ''}
+  ${d.scoreHref ? (d.scoreOpens > Date.now()
+    // Locked until 2 hours before tip-off (server.js scoreOpensAt, 2026-10-30).
+    ? `<div class="card gd-scorer"><span><b>You’re scoring this game.</b> Scoring opens 2 hours before tip-off.</span><span class="gd-scorer__go gd-scorer__go--off">${escHtml(d.scoreOpensLabel || 'Not open yet')}</span></div>`
+    : `<div class="card gd-scorer"><span><b>You’re scoring this game.</b> ${/^\/app\//.test(d.scoreHref) ? 'On your phone it works with no signal once it’s opened.' : 'Open it here on a laptop or tablet.'}</span><a class="gd-scorer__go" href="${escHtml(d.scoreHref)}">${lp ? 'Open the scorer' : 'Start scoring'}</a></div>`) : ''}
   ${sectionNav(items)}
   <div class="gd-cols">
     <div class="gd-cols__main">

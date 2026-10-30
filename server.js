@@ -7141,6 +7141,16 @@ function hasFourPointLine(game) {
   if (!c) return true;
   try { return (JSON.parse(c.info_json || '{}').features || []).includes('four_point'); } catch { return true; }
 }
+// Live scoring opens 2 hours before tip-off (Paolo, 2026-10-30: the Start scoring button showed
+// 8 days early); a game with no tip-off time opens at the start of its day. Manila time.
+const SCORE_OPENS_BEFORE = 2 * 60 * 60 * 1000;
+function scoreOpensAt(game) {
+  const y = gameYmd(game?.date);
+  if (!y) return 0;
+  return /^\d{2}:\d{2}$/.test(String(game.tip_time || '')) ? Date.parse(`${y}T${game.tip_time}:00+08:00`) - SCORE_OPENS_BEFORE : Date.parse(`${y}T00:00:00+08:00`);
+}
+// "Opens Sun 5:30 AM" for a locked Start scoring button.
+const scoreOpensLabel = ms => `Opens ${new Date(ms).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' })}`;
 function scoreBundle(game, pass = 'live') {
   const sg = getScoreGame(game.id) || { status: 'setup', settings: {} };
   const teams = getAllTeams();
@@ -7154,6 +7164,9 @@ function scoreBundle(game, pass = 'live') {
   });
   return {
     game: { id: game.id, date: gameYmd(game.date), tip: game.tip_time || '', type: game.game_type || 'regular' },
+    // Live scoring waits until then (the scorer holds itself, on the phone's clock, so a copy
+    // kept for no signal still opens on time). Never for a re-track or a review.
+    opensAt: pass === 'live' && sg.status !== 'live' && !sg.settings.review && !sg.settings.reviewOnly ? scoreOpensAt(game) : 0,
     fourPoint: hasFourPointLine(game),
     status: sg.status, rules: { ...SCORE_RULES, waves: game.game_type === 'playoff' ? 'off' : 'first half', ...(sg.settings.rules || {}) },
     a: side(game.team_a_id, game.team_a_name), b: side(game.team_b_id, game.team_b_name),
@@ -7376,7 +7389,7 @@ app.get('/app/practice/play', requireApp, requireScoringMenu, (req, res) => {
   const id = /^[a-z0-9]{8,32}$/.test(String(req.query.id || '')) ? String(req.query.id) : randomBytes(8).toString('hex');
   const fake = { id: 'practice', date: manilaTodayStr(), team_a_id: ta.id, team_b_id: tb.id, team_a_name: ta.name, team_b_name: tb.name, game_type: 'regular', court_id: null, tip_time: '' };
   const base = scoreBundle(fake, 'live');
-  const bundle = { ...base, status: 'live', events: [], rules: { ...base.rules, periodMin: q },
+  const bundle = { ...base, opensAt: 0, status: 'live', events: [], rules: { ...base.rules, periodMin: q },
     practice: { id, log: `/api/practice/${id}`, teams: [ta.name, tb.name] }, over: { finish: 'practice', back: '/app/practice', review: false } };
   res.set('Cache-Control', 'private, no-store');
   sendApp(res, { title: `Practice · ${ta.name} vs ${tb.name} · WKND`, bare: true, body: appScorerPage({ bundle, back: { href: '/app/practice', label: 'Practice' } }) });
@@ -8866,6 +8879,9 @@ function appGamePreview(req, res, me, back, g, reviewView = false) {
     lastHref: preview.last ? `/app/games/${encodeURIComponent(preview.last.id)}?from=${back.tab}` : '',
     // The game's scorers (and admins) start scoring from here once scoring is on.
     scoreHref: (getScoreGame(g.id) ? getScoreGame(g.id).status !== 'published' && scoreAccess(req, g.id) : scoreAccess(req, g.id) === 'admin') ? `/app/score/${encodeURIComponent(g.id)}` : '',
+    // Start scoring stays off until 2 hours before tip-off (scoreOpensAt); not once it's live.
+    scoreOpens: getScoreGame(g.id)?.status === 'live' ? 0 : scoreOpensAt(g),
+    scoreOpensLabel: scoreOpensLabel(scoreOpensAt(g)),
     live: live || reviewView || liveArmed(g) ? { src: `/app/games/${encodeURIComponent(g.id)}${reviewView ? '?review=live' : ''}`, ws: `/ws/games/${encodeURIComponent(g.id)}/live`, parts: live ? appLiveParts(live, { meId: me.playerId, myTeamId: appMyTeamId(me, g), extras: liveExtrasFor(g, me.playerId, xPass) }) : null } : null,
     reviewLive: reviewView,
     // Watching a review live: its Review card too (Continue the review when it's yours), without
@@ -13064,6 +13080,7 @@ app.get('/games/:ref', (req, res) => {
       currentPath: req.path,
       metaTags: buildGameOgTags(req, game, court),
       body: gamePage({ ...common, state: 'upcoming', picks, live, extras: live ? liveExtrasFor(game, currentPlayerId || '', xPass) : null, liveArmed: reviewView || liveArmed(game), liveVer: CSS_VER, scoreHref: scoreHrefFor(req, game.id),
+        scoreOpens: getScoreGame(game.id)?.status === 'live' ? 0 : scoreOpensAt(game), scoreOpensLabel: scoreOpensLabel(scoreOpensAt(game)),
         chat: live && !live.ended && !reviewView && liveChatOn() ? liveChatData(game, req) : null,
         ...(reviewView ? { reviewLive: true, liveSrc: `/games/${encodeURIComponent(gameSlug(game))}?review=live` } : {}) }),
     }));
