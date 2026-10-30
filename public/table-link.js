@@ -54,8 +54,10 @@ export function drawQr(box, text) {
 }
 
 // ── Camera and reading codes ──
-export function camera(video) {
-  return navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }).then(s => {
+// facing: 'environment' (the back camera: the phone pointed at the tablet) or 'user' (the front
+// camera: the tablet, with the phone held up to its screen).
+export function camera(video, facing = 'environment') {
+  return navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }).then(s => {
     video.srcObject = s;
     return video.play().catch(() => {}).then(() => s);
   });

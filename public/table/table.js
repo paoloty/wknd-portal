@@ -24,6 +24,7 @@ if ('serviceWorker' in navigator) {
 
 // ── Pairing ──
 let pc = null, ch = null, stream = null, stopScan = null, S = null, recvAt = 0, lastMsg = 0, closed = false;
+let facing = 'user';
 const status = (text, tone = 'wait') => { $('[data-pair-status]').textContent = text; $('[data-pair-dot]').className = `dot dot--${tone}`; };
 async function pair() {
   // Start clean: the last link, its camera and its reader go first (Fable audit 2026-10-30).
@@ -37,7 +38,11 @@ async function pair() {
   try {
     await loadVendor();
     const video = $('[data-video]');
-    stream = await camera(video); // camera first: the tablet's real address goes in the code
+    // Camera first: the tablet's real address goes in the code. The front camera, since the phone
+    // is held up to the tablet's screen; "Use the other camera" switches.
+    stream = await camera(video, facing);
+    video.classList.toggle('is-front', facing === 'user');
+    $('[data-act="flip"]').hidden = false;
     const o = await tabletOffer();
     pc = o.pc; ch = o.ch; wire(ch);
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') linkDown('Couldn’t connect. Both on the phone’s hotspot? Pair again.'); };
@@ -181,6 +186,14 @@ document.addEventListener('click', e => {
   touched = Date.now();
   const act = b.getAttribute('data-act');
   if (act === 'pair') return pair();
+  if (act === 'flip') {
+    // The other camera, keeping the code on screen and the link being made.
+    facing = facing === 'user' ? 'environment' : 'user';
+    const video = $('[data-video]');
+    stopCamera(stream, video);
+    camera(video, facing).then(s => { stream = s; video.classList.toggle('is-front', facing === 'user'); }, () => {});
+    return;
+  }
   if (act === 'players') { view = 'players'; return paint(); }
   if (act === 'board') { view = 'board'; return paint(); }
   if (b.hasAttribute('data-team')) { cardTeam = Number(b.getAttribute('data-team')) || 0; return paint(); }

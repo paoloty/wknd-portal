@@ -35,6 +35,7 @@
   .pair__row { display: flex; gap: 24px; align-items: center; justify-content: center; flex-wrap: wrap; }
   .qr { background: #fff; padding: 14px; border-radius: 16px; width: min(46vh, 420px); }
   .qr svg { display: block; width: 100%; height: auto; }
+  video.is-front { transform: scaleX(-1); }
   video { width: min(46vh, 420px); aspect-ratio: 1; object-fit: cover; border-radius: 16px; background: #000; }
   .steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; color: var(--muted); text-align: left; }
   .steps b { color: var(--text); }
@@ -138,7 +139,7 @@
     <video playsinline muted autoplay data-video></video>
   </div>
   <div class="pill"><span class="dot dot--wait" data-pair-dot></span><span data-pair-status>Not paired</span></div>
-  <button type="button" class="btn" data-act="pair">Show the code</button>
+  <div class="pair__row"><button type="button" class="btn" data-act="pair">Show the code</button><button type="button" class="btn btn--ghost" data-act="flip" hidden>Use the other camera</button></div>
   <p class="note" data-offline-note>Offline copy: checking…</p>
 </section>
 
