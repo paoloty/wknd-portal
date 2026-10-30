@@ -20,7 +20,9 @@
 //   to      { kind? }                    team_to { kind? }  (no player)
 //   foul    { kind: personal|shooting|offensive|technical|unsportsmanlike|disqualifying, fts? }
 //   team_tech { kind: coach|bench }     timeout (team)      stoppage { kind? }
-//   period_end { period, final? }  (final: the game is over, no next period)
+//   period_end { period, final?, next? }  (final: the game is over, no next period; next: the
+//                   period that follows when it isn't simply the next one: Papawis extra time
+//                   after a short game, OT1 after Q2)
 //   sub     { in, out, batch? }  (batch: several made at once, undone together)   lineup { ids }
 //   dnp     { on }  (player didn't play: a late or absent player; any stat of theirs later
 //                   clears it, so a late arrival who plays counts as played)
@@ -36,7 +38,7 @@ export const DEFAULT_RULES = {
   otMin: 5,
   timeouts: { firstHalf: 2, secondHalf: 3, overtime: 1 }, // unused ones don't carry over
   penaltyAt: 5,           // a team's 5th foul in a period and every one after gives free throws (0: none, Papawis)
-  foulOut: 5,
+  foulOut: 5,             // 0: nobody fouls out (Papawis)
   ejectAt: 2,             // technicals + unsportsmanlike, counted together
   waves: 'first half',    // 'first half' | 'whole game' | 'off' (playoffs: off)
 };
@@ -134,7 +136,7 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
       // A coach or bench technical is the coach's, not a team foul (FIBA; Fable audit 2026-10-26).
       case 'team_tech': break;
       case 'timeout': bucket(timeoutsUsed, timeoutWindow(per))[t]++; break;
-      case 'period_end': if (e.final) final = true; else periodIdx = Math.max(periodIdx, periodIndex(e.period) + 1); break;
+      case 'period_end': if (e.final) final = true; else periodIdx = Math.max(periodIdx, e.next ? periodIndex(e.next) : periodIndex(e.period) + 1); break;
       case 'dnp': if (e.on === false) dnp.delete(p); else if (p) dnp.add(p); break;
       // A sub: who comes on counts as active now; who goes off drops to the back and sits.
       case 'sub':
@@ -162,7 +164,7 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
   const flags = {};
   for (const [id, L] of Object.entries(players)) {
     const ejected = L.tech + L.unsp >= r.ejectAt || L.dq > 0;
-    const fouledOut = L.pf >= r.foulOut;
+    const fouledOut = r.foulOut > 0 && L.pf >= r.foulOut;
     if (ejected || fouledOut) flags[id] = ejected ? 'ejected' : 'fouled out';
   }
   return {

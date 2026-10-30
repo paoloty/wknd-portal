@@ -6,7 +6,7 @@
 // Script (public/app.js initGameRecap): data-gr-jump, data-gr-more, data-gr-team, data-gr-sort.
 import { esc, appAvatar } from './layout.js';
 import { pickOption } from './picks.js';
-import { topThreeCards, playerCardTemplates } from '../player-cards.js';
+import { playerCardTemplates } from '../player-cards.js';
 
 const signed = d => `${d > 0 ? '+' : d < 0 ? '−' : '±'}${Math.abs(d).toFixed(1)}`;
 const dot = c => `<span class="dot" style="--c:${esc(c)}"></span>`;
@@ -198,7 +198,7 @@ export function boxCard(teams, meId, myTeamId, dnp, cards = []) {
     return `<div class="gr-bx" data-gr-panel="${i}"${i === on ? '' : ' hidden'}>
       <div class="gr-bx__scroll"><table class="gr-tb" data-gr-table>
         <thead><tr><th scope="col">Player</th>${cols.map((c, j) => `<th scope="col"><button type="button" data-gr-sort="${j}"${c[2] ? ' data-low' : ''}${j ? '' : ' class="is-on"'} aria-label="Sort by ${c[0]}">${c[0]}</button></th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r => `<tr${r.playerId === meId ? ' class="is-me"' : ''}${r.playerId && cards.length ? ` data-pcard="${esc(r.playerId)}"` : ''}><th scope="row"><span class="gr-tb__no">${esc(r.number)}</span><span class="gr-tb__nm"${r.playerId ? ` data-pid="${esc(r.playerId)}"` : ''}>${esc(r.name)}</span>${r.playerId === meId ? '<small>you</small>' : ''}</th>${cols.map((c, j) => {
+        <tbody>${rows.map(r => `<tr${r.playerId === meId ? ' class="is-me"' : ''}${r.playerId && cards.length ? ` data-pcard="${esc(r.playerId)}" tabindex="0"` : ''}><th scope="row"><span class="gr-tb__no">${esc(r.number)}</span><span class="gr-tb__nm"${r.playerId ? ` data-pid="${esc(r.playerId)}"` : ''}>${esc(r.name)}</span>${r.playerId === meId ? '<small>you</small>' : ''}</th>${cols.map((c, j) => {
           const v = c[1](r);
           return `<td data-v="${v}" class="${[!c[2] && v > 0 && v === max[j] ? 'is-hi' : '', j ? '' : 'is-on'].filter(Boolean).join(' ')}">${c[3] ? c[3](r) : v}</td>`;
         }).join('')}</tr>`).join('')}</tbody>
@@ -211,7 +211,6 @@ export function boxCard(teams, meId, myTeamId, dnp, cards = []) {
     </div>`;
   };
   return `<section class="fc gr" id="gr-box">${head('Box score', `Swipe for shooting${arrow}`)}
-    ${cards.length ? `<div class="gr-pcards">${topThreeCards(cards, { firstLabel: 'Player of the Game' })}</div>` : ''}
     ${teams.length > 1 ? `<div class="gr-seg" role="group" aria-label="Team">${teams.map((t, i) => `<button type="button" data-gr-team="${i}" aria-pressed="${i === on}">${dot(t.color)}${esc(t.name)} ${t.score}</button>`).join('')}</div>` : ''}
     ${teams.map(panel).join('')}
     <p class="gr-note gr-note--foot">Tap a column to sort${cards.length ? ', a player for their card' : ''}.</p>

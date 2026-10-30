@@ -162,19 +162,22 @@ export const SCORER_GUIDE = [
   },
   {
     slug: 'papawis', title: 'Scoring Papawis', blocks: [
-      ['p', 'Papawis uses the same scorer, Light against Dark. Anyone in the run can score it: on the run’s day, its card on the Papawis tab has <b>Start scoring</b>. One phone scores the whole run, every game of it.'],
+      ['p', 'Papawis uses the same scorer, Light against Dark. Scorers score it: on the run’s day, its card on the Papawis tab has <b>Start scoring</b>. One phone scores at a time, every game of the run.'],
       ['steps', [
-        '<b>Set up the game.</b> Before each game: <i>Basic</i> or <i>Full</i> stats, the quarter length, how many quarters, and who’s here. Tap a name if they didn’t come; the ⇄ beside it moves them to the other side.',
+        '<b>Set up the game.</b> Before each game: <i>Basic</i> or <i>Full</i> stats, the quarter length, how many quarters, and who’s here. Tap a name if they didn’t come; the ⇄ beside it moves them to the other side. A guest who isn’t on the list: type their name and tap <i>+ Light</i> or <i>+ Dark</i>.',
         '<b>Start Game 1.</b> The clock starts on the first play, or tap ▶.',
         '<b>Score.</b> <i>Basic</i>: tap a player, then FT, 2PT or 3PT for a make, or REB or AST. Misses aren’t logged and nothing asks a follow-up question. <i>Full</i>: everything works like a league game.',
         '<b>Someone switches sides?</b> Hold their tile → <i>Move to Light</i> (or Dark). Their points so far stay with the old side; from then on they count for the new one. The team’s name menu has <i>Move someone to Light…</i> too, and <i>A late arrival…</i> for someone you marked not here.',
+        '<b>End the last quarter</b> with End beside the clock: <i>Game over</i> (a tie is fine), <i>Extra time</i> if there’s still time, or <i>Not yet</i>.',
         '<b>Game over</b>, then <i>Start Game 2</i>. It’s set up like the last game: same minutes, sides as they finished. Change anything that’s different and start.',
-        '<b>Done playing?</b> Tap <i>Finish the run</i> (it needs signal). Keep or discard each game, check the Player of the Day, and save.',
+        '<b>Done playing?</b> Tap <i>Finish the run</i> once every play is sent (it needs signal). Keep or discard each game, check the Player of the Day, and save.',
       ]],
       ['dl', [
-        ['No timeouts or penalty', 'Papawis has neither, so the scoreboard shows no timeout dots or team-foul pips.'],
+        ['No timeouts, penalty or foul-outs', 'Papawis has none of them, so the scoreboard shows no timeout dots or team-foul pips, and nobody fouls out.'],
+        ['Someone else is scoring', 'Opening a run another scorer has shows who. Between games you can <i>Take over</i> once their phone has sent every play; mid-game, <i>Ask</i> them and they get <i>Let you score</i> or <i>Keep it</i>. If their phone goes quiet for 2 minutes, any scorer can take over.'],
+        ['Guests', 'A guest’s stats stay with the run under their name and count in nobody’s career. Tell an admin, so they’re added to the run and charged.'],
         ['Another game of this run', 'The ••• menu switches back to an earlier game to fix it.'],
-        ['Finish the run', 'Each game has Edit (opens it here) and Discard (left out of everything). The Player of the Day is the best box-score rating over the games you keep; pick someone else if they ran the show. Only an admin or whoever started scoring the run finishes it.'],
+        ['Finish the run', 'Each game has Edit (opens it here) and Discard (left out of everything). The Player of the Day is the best rating over the games you keep (points, rebounds and assists when a game was Basic); pick someone else if they ran the show. Anyone who scored the run, or an admin, finishes it.'],
       ]],
       ['tip', 'Good to know', 'The results go on the run’s page with the box score and the top 3 as player cards. Papawis stats count in Papawis careers, separate from league totals.'],
     ],

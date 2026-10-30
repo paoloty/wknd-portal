@@ -416,6 +416,7 @@ function pastCard(g, signups, { isLoggedIn, hidden }) {
         <span class="pwx-btnrow">
           ${isLoggedIn ? `<button class="pwx-sbtn" type="button" data-pwx-act="see-all" data-game="${escHtml(g.id)}">${ICON.list}${lbl(cta)}</button>` : `<a class="pwx-sbtn" href="/login?next=/papawis&amp;ref=papawis">${ICON.list}${lbl(cta)}</a>`}
           <button class="pwx-sbtn" type="button" data-pwx-act="share" data-url="/papawis#pw-game-${escHtml(g.id)}" data-title="${escHtml(g.title || 'Papawis')}">${ICON.share}${lbl('Share')}</button>
+          ${g.scored ? `<a class="pwx-sbtn" href="/papawis/${encodeURIComponent(g.id)}/results">${ICON.list}${lbl('Results')}</a>` : ''}
         </span>
       </div>
     </article>`;

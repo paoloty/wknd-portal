@@ -183,3 +183,10 @@ test('penaltyAt 0 (Papawis): never in the penalty', () => {
   assert.equal(g.penaltyNext.a, false);
   assert.equal(g.timeouts.allowance, 0);
 });
+
+test('Papawis: foulOut 0 never fouls out; extra time can follow Q2', () => {
+  const fouls = Array.from({ length: 6 }, () => P('foul', { player: 'x' }));
+  assert.deepEqual(foldGame(fouls, { foulOut: 0 }).flags, {});
+  const g = foldGame([P('period_end', { period: 'Q1' }), P('period_end', { period: 'Q2', next: 'OT1' })], { periods: 2 });
+  assert.equal(g.period, 'OT1');
+});

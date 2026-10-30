@@ -43,6 +43,13 @@
       open(el.getAttribute('data-pcard'), el);
     }
   });
+  // A row (not a button) opens with Enter or Space from the keyboard too.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var el = e.target.closest && e.target.closest('[data-pcard]');
+    if (!el || el.tagName === 'BUTTON' || e.target.closest('a[href], [data-pid]')) return;
+    e.preventDefault(); open(el.getAttribute('data-pcard'), el);
+  });
   // The app swaps screens without a page load: a sheet left open goes with the old screen.
   window.addEventListener('popstate', close);
   document.addEventListener('wknd:screen', close);

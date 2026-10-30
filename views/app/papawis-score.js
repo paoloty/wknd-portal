@@ -15,7 +15,7 @@ export function appPapawisFinishPage({ back, missing = '', d = null }) {
   if (missing || !d) return `${nav}<div class="empty">${esc(missing || 'Nothing to finish.')}</div>`;
   const kept = d.games.filter(g => !g.discarded);
   const game = g => `<div class="card pwf-game${g.discarded ? ' is-off' : ''}">
-      <div class="pwf-game__h"><span class="kick">Game ${g.n} · ${g.periods} × ${g.periodMin} min · ${g.stats === 'full' ? 'Full' : 'Basic'}</span><small>${g.plays} plays${g.moves ? ` · ${g.moves} move${g.moves === 1 ? '' : 's'}` : ''}${g.final ? '' : ' · not ended'}</small></div>
+      <div class="pwf-game__h"><span class="kick">Game ${g.n} · ${g.periods} × ${g.periodMin} min · ${g.stats === 'full' ? 'Full' : 'Basic'}</span><small>${g.plays} play${g.plays === 1 ? '' : 's'}${g.moves ? ` · ${g.moves} move${g.moves === 1 ? '' : 's'}` : ''}${g.final ? '' : ' · not ended'}</small></div>
       <div class="pwf-game__s"><span class="pw-shirt pw-shirt--light" aria-hidden="true"></span>Light <b class="num">${g.a}</b><span aria-hidden="true">–</span><b class="num">${g.b}</b> Dark <span class="pw-shirt pw-shirt--dark" aria-hidden="true"></span>${g.discarded ? '<span class="pwf-game__tag">Discarded</span>' : ''}</div>
       ${g.discarded ? '<p class="pwf-game__n">Left out: it won’t show on the run or count in anyone’s stats.</p>' : ''}
       <div class="pwf-game__b">
@@ -32,12 +32,13 @@ export function appPapawisFinishPage({ back, missing = '', d = null }) {
     </label>`;
   return `${nav}
   <p class="foot-note pwf-intro">${esc(d.title)} · ${esc(d.day)}. Check each game before the stats count. Edit opens the scorer on that game. Discard leaves a game out of everything.</p>
+  ${d.walkIns && d.walkIns.length && d.admin ? `<p class="msg msg--warn pwf-walkins" role="status">Added at the court: ${esc(d.walkIns.join(', '))}. <a href="${esc(d.manage)}">Add them to the run</a> so they're charged.</p>` : ''}
   <div class="sec">Games</div>
   ${d.games.map(game).join('')}
   <form method="post" action="/app/papawis/${esc(d.id)}/finish" class="pwf-form">
     <input type="hidden" name="discard" value="${esc(d.discard)}">
     <div class="sec">Player of the Day</div>
-    ${kept.length ? `<p class="foot-note">Picked by the box score rating, ${kept.length === 1 ? 'from the one game kept' : `all ${kept.length} kept games added up`}. Change it if someone else ran the show.</p>
+    ${kept.length ? `<p class="foot-note">Picked by the rating, ${kept.length === 1 ? 'from the one game kept' : `all ${kept.length} kept games added up`}${d.basicRating ? ' (points, rebounds and assists: Basic games log no misses)' : ''}. Change it if someone else ran the show.</p>
     <div class="group">${d.cands.slice(0, 5).map(cand).join('')}</div>
     ${d.cands.length > 5 ? `<details class="pwf-more"><summary>Pick someone else</summary><div class="group">${d.cands.slice(5).map((c, i) => cand(c, i + 5)).join('')}</div></details>` : ''}
     <button type="submit" class="btn pwf-save">${d.done ? 'Save again' : 'Save the stats'}</button>

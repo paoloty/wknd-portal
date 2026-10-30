@@ -22,7 +22,7 @@ import { duelCard, duelScale, previewDuelCards } from './duel.js';
 import { formChart, formChartOf } from './form-check.js';
 import { flowChart, teamTotals, castLine, shortName } from '../lib/game-detail.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
-import { topThreeCards, playerCardTemplates } from './player-cards.js';
+import { playerCardTemplates } from './player-cards.js';
 
 
 function youtubeEmbedUrl(url) {
@@ -417,7 +417,7 @@ export function teamBoxScore(players, teamName, isWinner, dnpPlayers = [], teamT
     const qpMs = Number(p.fg4m_miss || 0);
     const ftm  = Number(p.ftm);
     const ftMs = Number(p.ft_miss);
-    return `<tr data-pcard="${escHtml(String(p.player_id || ''))}">
+    return `<tr data-pcard="${escHtml(String(p.player_id || ''))}" tabindex="0">
       <td class="bs-name">${playerLink(p.player_id, p.name || '')}</td>
       <td class="bs-stat">${fgm + fgMs ? fgm : '–'}</td>
       <td class="bs-stat">${fgm + fgMs ? fgm + fgMs : '–'}</td>
@@ -2198,7 +2198,6 @@ function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '', usual = null
           <button type="button" class="${first === 'b' ? 'is-on' : ''}" aria-pressed="${first === 'b'}" data-gd-box-btn="b">${dot(nb, 8)}<span class="pill-label">${escHtml(nb)} · ${n0(game.team_b_score)}</span></button>
         </span>
       </div>
-      ${cards.length ? `<div class="gd-pcards">${topThreeCards(cards, { firstLabel: 'Player of the Game' })}</div>` : ''}
       <div class="card gd-box">${panel('a', na)}${panel('b', nb)}</div>
       ${cards.length ? `<p class="gd-sd">Tap a player for their card.</p>${playerCardTemplates(cards)}` : ''}
     </section>

@@ -127,8 +127,18 @@ export async function mount(el) {
   const team = { a: B.a, b: B.b };
   // Papawis: everyone in the run, and the side each signed up on (a Light, b Dark).
   const pw = B.papawis || null;
-  const everyone = [...B.a.players, ...B.b.players];
+  const everyone = [...B.a.players, ...B.b.players, ...((B.papawis && B.papawis.extra) || [])];
   const homeSides = Object.fromEntries([...B.a.players.map(p => [p.id, 'a']), ...B.b.players.map(p => [p.id, 'b'])]);
+  // A guest added at the court (a setup play's guests) joins everyone, on the side picked.
+  const guestPerson = (id, name) => { const n = String(name || '').trim().slice(0, 40) || 'Guest'; return { id, name: n, short: (n.split(/s+/)[0] || n).toUpperCase(), number: '', guest: true }; };
+  const learn = e => {
+    if (!e || e.type !== 'setup') return;
+    for (const g of Array.isArray(e.guests) ? e.guests : []) {
+      if (!g || !g.id || everyone.some(p => p.id === g.id)) continue;
+      const p = guestPerson(g.id, g.name); everyone.push(p); homeSides[g.id] = g.side === 'b' ? 'b' : 'a';
+    }
+    for (const id of [...((e.sides || {}).a || []), ...((e.sides || {}).b || [])]) if (!homeSides[id]) homeSides[id] = ((e.sides || {}).a || []).includes(id) ? 'a' : 'b';
+  };
   // Team colours that vanish on one of the themes (White on light, Black on dark) use the
   // app's theme-aware team tokens.
   for (const t of ['a', 'b']) {
@@ -187,15 +197,20 @@ export async function mount(el) {
   const gameOf = (e, d = 0) => (e.game != null ? Number(e.game) || 1 : e.type === 'void' && events.has(e.target) && d < 5 ? gameOf(events.get(e.target), d + 1) : 1);
   const games = () => [...new Set(list().map(e => gameOf(e)))].sort((x, y) => x - y);
   const setupFor = n => setupOf(list().filter(e => !e.late && gameOf(e) === n));
+  // Each game keeps its own clock (Fable audit 2026-10-30: looking at Game 1 reset Game 2's).
+  ui.clocks = (pw && rec.clocks) || {};
+  if (pw) for (const e of list()) learn(e);
   {
     const asked = Number(new URLSearchParams(location.search).get('game')) || 0;
     const set = games().filter(n => setupFor(n));
     ui.game = pw ? (asked >= 1 ? asked : set.length ? set[set.length - 1] : 1) : 1;
+    const c = pw && ui.clocks[ui.game];
+    if (c) { const left = c.running ? Math.max(0, c.secs - Math.floor((Date.now() - c.at) / 1000)) : c.secs; ui.secs = left; ui.running = !!c.running && left > 0; }
   }
-  // Every new play joins the game on screen.
+  // Every new play joins the game on screen; a setup's guests join everyone.
   if (pw) {
     const put = events.set.bind(events);
-    events.set = (k, e) => { if (e && e.game == null) e.game = e.type === 'void' && events.has(e.target) ? gameOf(events.get(e.target)) : ui.game; return put(k, e); };
+    events.set = (k, e) => { if (e && e.game == null) e.game = e.type === 'void' && events.has(e.target) ? gameOf(events.get(e.target)) : ui.game; learn(e); return put(k, e); };
   }
   // Plays the server set aside as late (POST answer) stay on the phone but out of its game.
   const counted = () => list().filter(e => !e.late && (!pw || gameOf(e) === ui.game));
@@ -215,7 +230,8 @@ export async function mount(el) {
     clockNow();
     // The practice setup screen offers "Carry on" from this (public/app.js initPractice).
     if (practice && !practice.gone) pref.set('wknd-practice', JSON.stringify({ id: practice.id, a: team.a.id, b: team.b.id, an: team.a.name, bn: team.b.name, q: rules.periodMin, sa: G.score.a, sb: G.score.b, period: G.period, final: !!G.final || !!ui.published, at: Date.now() }));
-    return store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs, running: ui.running, savedAt: Date.now(), practiceId: practice ? practice.id : undefined });
+    if (pw) ui.clocks[ui.game] = { secs: ui.secs, running: ui.running, at: Date.now() };
+    return store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs, running: ui.running, savedAt: Date.now(), clocks: pw ? ui.clocks : undefined, practiceId: practice ? practice.id : undefined });
   };
   const fold = () => {
     if (!pw) return foldGame(counted(), rules, { a: team.a.players.map(p => p.id), b: team.b.players.map(p => p.id) });
@@ -349,7 +365,7 @@ export async function mount(el) {
       }
       if (blow && keepsClock()) whistle();
       else if (go && ui.whistle && !ui.running && keepsClock()) { ui.running = true; ui.whistle = false; ui.restarted = true; syncRun(); }
-      if (d.status === 'published') ui.locked = true;
+      if (d.status === 'published' && !pw) ui.locked = true;
       if (n || ui.locked) { G = fold(); await save(); paint(); }
     } catch (e) { /* no signal: the phone's copy stands */ }
   }
@@ -518,7 +534,8 @@ export async function mount(el) {
   // Foul trouble follows the quarter: fouls = the quarter (from Q2) is "watch"; more, or one
   // from fouling out, is "danger". Overtime counts as Q4.
   const quarter = () => Math.min(periodIndex(G.period), 4);
-  const trouble = pf => (!pf ? '' : pf >= rules.foulOut - 1 || pf > quarter() ? 'd' : quarter() >= 2 && pf === quarter() ? 'w' : '');
+  // No foul-outs (Papawis): no foul trouble either.
+  const trouble = pf => (!pf || !(rules.foulOut > 0) ? '' : pf >= rules.foulOut - 1 || pf > quarter() ? 'd' : quarter() >= 2 && pf === quarter() ? 'w' : '');
 
   // Both orders: with a player picked the stat goes straight in; without one the stat lights
   // up (armed) and the next player tapped gets it.
@@ -795,6 +812,15 @@ export async function mount(el) {
     const cur = G.period, next = periodName(periodIndex(cur) + 1);
     const note = pw ? (isOvertime(next) ? `${rules.otMin} min of overtime` : `${rules.periodMin} min`) : isOvertime(next) ? `${rules.otMin} min, 1 timeout each, team fouls carry on` : next === 'Q3' ? '3 timeouts each, team fouls reset' : 'Team fouls reset';
     const late = periodIndex(cur) >= rules.periods;
+    // Papawis (Paolo, 2026-10-30): a game can end tied; extra time only if there's time.
+    if (pw && late) {
+      const tied = G.score.a === G.score.b, ot = `OT${isOvertime(cur) ? Number(String(cur).slice(2)) + 1 : 1}`;
+      return menu(`End of ${cur}: ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}`, [['over', tied ? 'Game over · tied' : 'Game over'], ['extra', `Extra time · ${rules.otMin} min`], ['wait', 'Not yet']], k => {
+        if (k === 'over') { add({ type: 'period_end', period: cur, final: true }); ui.running = false; ui.whistle = false; syncRun(); ui.tip = ''; save(); return paint(); }
+        if (k === 'extra') return startNext(cur, ot);
+        return paint();
+      }, 'over');
+    }
     if (late && G.score.a !== G.score.b) {
       return confirm('Game over?', `End of ${cur}: ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}`, 'flag', 'Game over', () => {
         add({ type: 'period_end', period: cur, final: true }); ui.running = false; ui.whistle = false; syncRun(); ui.tip = ''; save(); paint();
@@ -807,7 +833,8 @@ export async function mount(el) {
   const ICONS = { flag: 'M5 21V4M5 4h11l-2 4 2 4H5', clock: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', up: 'M12 16V4M7 9l5-5 5 5M5 20h14' };
   function confirm(title, sub, icon, yes, act, no = 'Not yet', noAct = null) { ui.confirm = { title, sub, icon, yes, act, no, noAct }; ui.ask = null; ui.peek = null; paint(); }
   function startNext(cur, next) {
-    add({ type: 'period_end', period: cur });
+    // Extra time after a Papawis game shorter than four quarters: the next period is OT1, not Q3.
+    add({ type: 'period_end', period: cur, ...(periodIndex(next) !== periodIndex(cur) + 1 ? { next } : {}) });
     ui.running = false; ui.whistle = false; ui.secs = (isOvertime(next) ? rules.otMin : rules.periodMin) * 60; syncRun(); ui.tip = `${next} started.`;
     save(); paint();
   }
@@ -832,7 +859,7 @@ export async function mount(el) {
     ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game of this run…']] : []), ...(pw ? [['pw-finish', 'Finish the run…']] : []), ['table', tblOn() ? 'Table display: linked ✓' : 'Table display (tablet)…']], k => {
     if (k === 'send') return sendMyPlays();
     if (k === 'pw-games') return menu('Which game?', games().filter(n => setupFor(n)).map(n => [String(n), `Game ${n}${n === ui.game ? ' · on screen' : ''}`]), v => goGame(Number(v)));
-    if (k === 'pw-finish') { location.href = pw.finish; return; }
+    if (k === 'pw-finish') { if (unsent().length) { ui.tip = `Finish the run once every play is sent: ${unsent().length} still on this phone.`; return paint(); } location.href = pw.finish; return; }
     if (k === 'table') return tableOpen();
     if (k === 'sheet') { ui.sheet = true; return paint(); }
     if (k === 'follow') { pref.set('wknd-sc-follow', followOn() ? 'off' : 'on'); ui.tip = followOn() ? 'Follow-up questions on: Rebound?, Assisted? and the rest.' : 'Follow-up questions off. Foul-outs and free throws still ask.'; return paint(); }
@@ -1241,8 +1268,8 @@ export async function mount(el) {
     const tech = team[t].players.reduce((n, p) => n + ((G.players[p.id] || {}).tech || 0), 0);
     const outs = team[t].players.filter(p => G.flags[p.id]).length;
     return `${teamTabs('fouls')}<div class="sc-fls">${rows.map(({ p, pf, on: o }) => {
-      const tr = trouble(pf), note = G.flags[p.id] ? G.flags[p.id] : pf === rules.foulOut - 1 ? 'one more and out' : o ? '' : 'bench';
-      return `<div class="sc-fl__r"><span class="sc-fl__top"><i class="${o ? 'on' : ''}"></i><b>${esc(short(p.id))}</b><small>${esc(note)}</small><span class="num sc-fl__c ${tr}">${pf} PF</span></span><span class="sc-fl__bar"><i class="${tr === 'd' ? 'd' : ''}" style="width:${Math.min(100, (pf / rules.foulOut) * 100)}%"></i></span></div>`;
+      const tr = trouble(pf), note = G.flags[p.id] ? G.flags[p.id] : rules.foulOut > 0 && pf === rules.foulOut - 1 ? 'one more and out' : o ? '' : 'bench';
+      return `<div class="sc-fl__r"><span class="sc-fl__top"><i class="${o ? 'on' : ''}"></i><b>${esc(short(p.id))}</b><small>${esc(note)}</small><span class="num sc-fl__c ${tr}">${pf} PF</span></span><span class="sc-fl__bar"><i class="${tr === 'd' ? 'd' : ''}" style="width:${Math.min(100, (pf / (rules.foulOut > 0 ? rules.foulOut : 6)) * 100)}%"></i></span></div>`;
     }).join('') || '<p class="sc-empty">No fouls yet.</p>'}</div>
       <div class="sc-fls__sum"><span>Technicals <b>${tech}</b></span><span>Fouled out <b>${outs}</b></span></div>`;
   }
@@ -1290,7 +1317,7 @@ export async function mount(el) {
       <div class="sc-pc">
         <span class="sc-pc__avw"><span class="avatar sc-pc__av" style="--ring:${esc(team[p.team].color)}">${esc(ini)}${p.photo ? `<img src="${esc(p.photo)}" alt="" onerror="this.remove()">` : ''}</span>${potgLeader() === p.id ? '<i class="sc-pc__star" aria-label="Player of the game so far">★</i>' : ''}</span>
         <span class="sc-pc__who"><small class="num">${p.number ? `#${esc(p.number)} · ` : ''}${esc(team[p.team].name)} · ${onCourt(p.team, p.id) ? 'on court' : 'bench'}</small><b>${esc(p.name)}</b>
-          <span class="sc-pc__fouls ${tr}"${basic() ? ' hidden' : ''} role="img" aria-label="${z('pf')} of ${rules.foulOut} fouls${tr === 'd' ? ', in foul trouble' : ''}">${Array.from({ length: rules.foulOut }, (_, i) => `<i class="${i < z('pf') ? 'on' : ''}"></i>`).join('')}</span></span>
+          <span class="sc-pc__fouls ${tr}"${basic() || !(rules.foulOut > 0) ? ' hidden' : ''} role="img" aria-label="${z('pf')} of ${rules.foulOut} fouls${tr === 'd' ? ', in foul trouble' : ''}">${Array.from({ length: rules.foulOut }, (_, i) => `<i class="${i < z('pf') ? 'on' : ''}"></i>`).join('')}</span></span>
         <span class="sc-pc__pts${z('pts') ? ' pos' : ''}"><b class="num">${z('pts')}</b><small class="num">PTS</small></span>
       </div>
       ${basic() ? `<div class="sc-pop__line sc-pop__line--3">${[['REB', z('reb')], ['AST', z('ast')], ['3PT', z('fg3m')]].map(([k, v]) => `<span class="${v ? 'pos' : 'zero'}"><b class="num">${v}</b><small class="num">${k}</small></span>`).join('')}</div>`
@@ -1338,6 +1365,7 @@ export async function mount(el) {
     const btn = root.querySelector('[data-act="court-publish"]'); if (btn) btn.disabled = !!unsent().length || ui.fin.a === ui.fin.b || ui.publishing;
   });
   root.addEventListener('change', e => { if (e.target.closest && e.target.closest('[data-fin-score]')) paint(); });
+  root.addEventListener('input', e => { if (e.target.matches && e.target.matches('[data-su-guest]') && ui.draft) ui.draft.guestName = e.target.value; });
   // Turning the phone resizes the tiles: fit again from the usual size.
   window.addEventListener('resize', () => { for (const el of root.querySelectorAll('.sc-p__nm')) el.style.fontSize = ''; fitNames(); });
   // Game over: in the stat buttons' place, what happens next (Paolo, 2026-10-26: nothing did).
@@ -1477,7 +1505,7 @@ export async function mount(el) {
             ch.onopen = () => {
               if (tbl.ch && tbl.ch !== ch) { try { tbl.ch.close(); } catch (x) {} }
               if (tbl.pc && tbl.pc !== r.pc) { try { tbl.pc.close(); } catch (x) {} }
-              tbl.ch = ch; tbl.pc = r.pc; tableClose();
+              tbl.ch = ch; tbl.pc = r.pc; tableClose(); wakeOn();
               ui.tip = 'Tablet linked: it shows the score and the clock. Players on it shows the cards.'; tableSend(true); paint();
             };
             ch.onclose = () => { if (tbl.ch === ch) { tbl.ch = null; ui.tip = 'The tablet’s link closed. ••• → Table display pairs it again.'; paint(); } };
@@ -1506,7 +1534,7 @@ export async function mount(el) {
     return {
       t: 's', at: Date.now(), kind: pw ? 'papawis' : 'league', basic: basic(),
       title: pw ? `Papawis · Game ${ui.game}` : `${team.a.name} vs ${team.b.name}`,
-      period: G.period, final: !!G.final, clock: { secs: ui.secs, running: !!ui.running },
+      period: G.period, final: !!G.final, clock: { secs: ui.running && runFrom ? Math.max(0, runFrom.secs - (Date.now() - runFrom.at) / 1000) : ui.secs, running: !!ui.running },
       last: lastRow ? `${playText(lastRow).replace(/<[^>]+>/g, '')}${scores(lastRow) ? ` · ${lastRow.score.a}–${lastRow.score.b}` : ''}` : '',
       prev: pw ? prevCache.v : [],
       teams: ['a', 'b'].map(t => ({
@@ -1523,7 +1551,57 @@ export async function mount(el) {
     const go = () => { try { tbl.ch.send(JSON.stringify(tableState())); } catch (e) {} };
     if (now) go(); else tbl.t = setTimeout(go, 200);
   }
-  setInterval(() => tableSend(true), 2000);
+  const tblTimer = setInterval(() => { if (!document.contains(el)) return clearInterval(tblTimer); tableSend(true); }, 2000);
+
+  // ── Papawis: one phone scores a run at a time (server.js /api/score/:id/hold; Fable audit
+  // 2026-10-30: two phones double-counted). This phone checks in every 10 s with how many plays
+  // it still has to send and whether its game is over. Someone else holding it: this phone shows
+  // who, with Take over (between games once their plays are in, or after 2 quiet minutes) or Ask
+  // them. With no signal nothing is checked and this phone just scores.
+  const hold = { mine: true, holder: null, canTake: false, said: '', sig: '' };
+  async function holdPing(action, extra = {}) {
+    if (!pw || !pw.hold || !navigator.onLine || ui.locked) return;
+    try {
+      const r = await fetch(pw.hold, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: deviceId, action, unsent: unsent().length, over: !!G.final, ...extra }) });
+      if (!r.ok) return;
+      const d = await r.json();
+      const was = hold.mine;
+      Object.assign(hold, { mine: !!d.mine, holder: d.holder, canTake: !!d.canTake, said: d.said || '' });
+      if (!was && d.mine) { ui.tip = d.from ? `${d.from} handed the run to you. You're scoring.` : 'You’re scoring this run now.'; pull(); }
+      if (was && !d.mine) { ui.running = false; syncRun(); ui.sel = null; ui.ask = null; save(); }
+      if (d.ask && !ui.confirm) confirm(`${d.ask.name} wants to score`, 'They score from their next play. Anything still on this phone sends as usual', 'up', `Let ${d.ask.name} score`, () => holdPing('answer', { yes: true }), 'No, I’ll keep it', () => holdPing('answer', { yes: false }));
+      // Only repaint when something changed (a repaint every 10 s would drop a name being typed).
+      const sig = JSON.stringify([hold.mine, hold.holder && hold.holder.name, hold.holder && Math.floor(hold.holder.quiet / 30), hold.canTake, hold.said, !!d.ask]);
+      if (sig !== hold.sig || action) { hold.sig = sig; paint(); }
+    } catch (e) {}
+  }
+  function holdView() {
+    const h = hold.holder || { name: 'Someone', quiet: 0, unsent: 0, over: false };
+    const quiet = h.quiet >= 60 ? `quiet for ${Math.floor(h.quiet / 60)} min` : 'active now';
+    const why = hold.canTake ? (h.quiet >= 120 ? 'Their phone has gone quiet.' : h.over ? 'Their game is over and every play is in.' : '')
+      : h.unsent ? `Their phone still has ${h.unsent} play${h.unsent === 1 ? '' : 's'} to send.` : 'They’re in the middle of a game.';
+    return `<div class="su"><div class="su-card su-hold" role="status">
+      <span class="su-l">Scoring this run</span>
+      <b class="su-hold__n">${esc(h.name)} is scoring</b>
+      <p class="su-n">${esc([quiet, why].filter(Boolean).join(' · '))}</p>
+      ${hold.canTake ? '<button type="button" class="sc-over__btn" data-act="hold-take">Take over</button>' : ''}
+      ${hold.said === 'waiting' ? `<p class="su-n">Asked ${esc(h.name)}. Waiting for them to answer…</p>` : hold.said === 'no' ? `<p class="su-n">${esc(h.name)} is keeping it for now.</p>` : ''}
+      ${!hold.canTake && hold.said !== 'waiting' ? `<button type="button" class="sc-over__btn${hold.canTake ? ' sc-over__btn--ghost' : ''}" data-act="hold-ask">Ask ${esc(h.name)} to hand it over</button>` : ''}
+      <p class="su-n">Between games you can take over once their phone has sent every play. If it goes quiet for 2 minutes, any scorer can.</p>
+    </div></div>`;
+  }
+  if (pw) {
+    holdPing();
+    const ht = setInterval(() => { if (!document.contains(el)) return clearInterval(ht); holdPing(); }, 10000);
+    window.addEventListener('online', () => holdPing());
+  }
+  // Keep the screen on while scoring a run or feeding the tablet (a locked phone stops sending).
+  let lock = null;
+  const wakeOn = () => { if ((pw || tblOn()) && 'wakeLock' in navigator && !lock) navigator.wakeLock.request('screen').then(l => { lock = l; l.addEventListener('release', () => { lock = null; }); }, () => {}); };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && document.contains(el)) wakeOn(); });
+  wakeOn();
+  // The tablet pairing works offline only if its scripts are on the phone: fetch them now.
+  if (navigator.onLine && !practice) setTimeout(() => { for (const u of ['/table-link.js', '/table/vendor/qrcode.js', '/table/vendor/jsqr.js']) fetch(u, { credentials: 'same-origin' }).catch(() => {}); }, 2500);
 
   // ── Papawis: the setup before each game, and moving between the run's games ──
   // A new game starts set up like the last one: same stats and minutes, sides as they
@@ -1536,10 +1614,10 @@ export async function mount(el) {
       const Gp = foldGame(list().filter(e => !e.late && gameOf(e) === prevN), papawisRules(B.rules, st));
       const now = papawisSides(st, Gp), side = {};
       for (const p of everyone) side[p.id] = now[p.id] || homeSides[p.id];
-      return { stats: st.stats === 'full' ? 'full' : 'basic', periodMin: Number(st.periodMin) || 10, periods: Number(st.periods) || 4, side, absent: new Set(everyone.filter(p => !now[p.id]).map(p => p.id)) };
+      return { stats: st.stats === 'full' ? 'full' : 'basic', periodMin: Number(st.periodMin) || 10, periods: Number(st.periods) || 4, side, absent: new Set(everyone.filter(p => !now[p.id]).map(p => p.id)), guests: (st.guests || []).map(g => ({ ...g })), guestName: '' };
     }
     const d = pw.defaults || {};
-    return { stats: d.stats === 'full' ? 'full' : 'basic', periodMin: d.periodMin || 10, periods: d.periods || 4, side: { ...homeSides }, absent: new Set() };
+    return { stats: d.stats === 'full' ? 'full' : 'basic', periodMin: d.periodMin || 10, periods: d.periods || 4, side: { ...homeSides }, absent: new Set(), guests: [], guestName: '' };
   }
   const SWAP_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l-4 4 4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg>';
   function setupView() {
@@ -1572,6 +1650,10 @@ export async function mount(el) {
       </div>
       <div class="su-who"><span class="su-l">Who’s here</span><small>Tap a name if they didn’t come. ${SWAP_SM} moves them to the other side.</small></div>
       ${side('a')}${side('b')}
+      <div class="su-card su-guest"><label class="su-l" for="su-guest">A guest who isn’t on the list</label>
+        <input id="su-guest" type="text" maxlength="40" autocomplete="off" enterkeyhint="done" placeholder="Their name" value="${esc(d.guestName || '')}" data-su-guest>
+        <div class="su-segs su-segs--2"><button type="button" class="su-seg" data-act="su-guest" data-v="a">+ ${esc(team.a.name)}</button><button type="button" class="su-seg" data-act="su-guest" data-v="b">+ ${esc(team.b.name)}</button></div>
+        <p class="su-n">Their stats stay with this run under their name. Tell an admin, so they’re added to the run and charged.</p></div>
       <div class="su-go">
         <button type="button" class="sc-over__btn" data-act="su-start"${here('a') && here('b') ? '' : ' disabled'}>Start Game ${ui.game} · ${d.stats === 'full' ? 'Full' : 'Basic'} · ${d.periods} × ${d.periodMin} min</button>
         ${any ? `<button type="button" class="sc-over__btn sc-over__btn--ghost" data-act="su-cancel">Not now</button>` : ''}
@@ -1587,12 +1669,20 @@ export async function mount(el) {
     else if (name === 'su-q') d.periods = Math.max(1, Math.min(4, d.periods + (Number(v) || 0)));
     else if (name === 'su-here' && pid) { if (d.absent.has(pid)) d.absent.delete(pid); else d.absent.add(pid); }
     else if (name === 'su-swap' && pid) d.side[pid] = other(d.side[pid] || homeSides[pid]);
+    else if (name === 'su-guest') {
+      const box = root.querySelector('[data-su-guest]'), nm = String((box && box.value) || d.guestName || '').trim().slice(0, 40);
+      if (!nm) { ui.tip = 'Type the guest’s name first.'; return paint(); }
+      const g = { id: `x${uid().replace(/[^A-Za-z0-9]/g, '').slice(0, 12)}`, name: nm, side: v === 'b' ? 'b' : 'a' };
+      d.guests.push(g); d.guestName = '';
+      const p = guestPerson(g.id, g.name); everyone.push(p); homeSides[g.id] = g.side; byId[g.id] = { ...p, team: g.side }; d.side[g.id] = g.side;
+      ui.tip = `${nm} added to ${team[g.side].name}.`;
+    }
     else if (name === 'su-cancel') { const set = games().filter(n => setupFor(n)); ui.draft = null; return goGame(set[set.length - 1] || 1); }
     else if (name === 'su-start') {
       const sides = { a: [], b: [] };
       for (const p of everyone) if (!d.absent.has(p.id)) sides[d.side[p.id] || homeSides[p.id]].push(p.id);
       if (!sides.a.length || !sides.b.length) { ui.tip = 'Each side needs someone playing.'; return paint(); }
-      add({ type: 'setup', game: ui.game, stats: d.stats, periodMin: d.periodMin, periods: d.periods, sides, absent: [...d.absent] });
+      add({ type: 'setup', game: ui.game, stats: d.stats, periodMin: d.periodMin, periods: d.periods, sides, absent: [...d.absent].filter(id => everyone.some(p => p.id === id)), guests: d.guests.map(g => ({ id: g.id, name: g.name, side: d.side[g.id] || g.side })) });
       ui.draft = null; ui.running = false; ui.secs = rules.periodMin * 60; syncRun(); ui.tip = `Game ${ui.game} is on. The clock starts on the first play, or tap Start.`;
       Object.keys(slots).forEach(t => { slots[t] = []; });
       save();
@@ -1600,11 +1690,15 @@ export async function mount(el) {
     return paint();
   }
   function goGame(n) {
+    clockNow();
+    ui.clocks[ui.game] = { secs: ui.secs, running: ui.running, at: Date.now() };
     ui.game = n; ui.draft = null; ui.sel = null; ui.arm = null; ui.ask = null; ui.queue = []; ui.peek = null; ui.after = null; ui.redo = null;
-    ui.running = false; syncRun();
     Object.keys(slots).forEach(t => { slots[t] = []; });
     G = fold();
-    ui.secs = G.final ? 0 : rules.periodMin * 60;
+    const c = ui.clocks[n];
+    if (c) { const left = c.running ? Math.max(0, c.secs - Math.floor((Date.now() - c.at) / 1000)) : c.secs; ui.secs = left; ui.running = !!c.running && left > 0; }
+    else { ui.secs = G.final ? 0 : rules.periodMin * 60; ui.running = false; }
+    syncRun(); save();
     paint();
   }
   const nextGame = () => goGame(Math.max(ui.game, ...games()) + 1);
@@ -1615,7 +1709,7 @@ export async function mount(el) {
     return `<div class="sc-over" role="status"><div class="sc-over__h"><b>Game ${ui.game} over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>
       <p class="sc-over__s${n ? ' is-wait' : ''}">${sendLine}</p>
       <div class="sc-over__b">${later.length ? `<button type="button" class="sc-over__btn" data-act="pw-goto" data-v="${later[0]}">Back to Game ${later[0]}</button>` : `<button type="button" class="sc-over__btn" data-act="pw-next">Start Game ${ui.game + 1}</button>`}
-        <a class="sc-over__btn sc-over__btn--ghost" href="${esc(pw.finish)}">${pw.done ? 'Finish the run again' : 'Done playing · Finish the run'}</a></div>
+        ${n ? `<button type="button" class="sc-over__btn sc-over__btn--ghost" disabled>Finish the run · ${n} play${n === 1 ? '' : 's'} still sending</button>` : `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(pw.finish)}">${pw.done ? 'Finish the run again' : 'Done playing · Finish the run'}</a>`}</div>
       <p class="sc-over__n">${later.length ? '' : `Game ${ui.game + 1} starts set up like this one: same minutes, sides as they finished. `}${n ? 'Finishing the run needs signal: every play has to reach the server first.' : 'Undo the last play to reopen this game.'}</p></div>`;
   }
 
@@ -1623,6 +1717,7 @@ export async function mount(el) {
     // Papawis: a game with no setup yet shows the setup screen instead.
     const title = el.querySelector('.sc-nav .navbar__title');
     if (pw && title) title.textContent = `Game ${ui.game} · ${pw.title}`;
+    if (pw && !hold.mine) { root.innerHTML = holdView() + (ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''); ui.tip = ''; paintPill(); return; }
     if (pw && !setupFor(ui.game) && !ui.locked) { root.innerHTML = setupView() + (ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''); ui.tip = ''; paintPill(); return; }
     const quiet = a => !!a && SKIPPABLE.has(a.kind) && !followOn();
     if (quiet(ui.ask)) ui.ask = null;
@@ -1687,6 +1782,8 @@ export async function mount(el) {
     if (name === 'end') return endPeriod();
     if (name === 'move') { const id = b.getAttribute('data-pid'); ui.peek = null; return byId[id] ? movePlayer(id, other(byId[id].team)) : paint(); }
     if (name === 'pw-next') return nextGame();
+    if (name === 'hold-take') return holdPing('take');
+    if (name === 'hold-ask') return holdPing('ask');
     if (name === 'pw-goto') return goGame(Number(b.getAttribute('data-v')) || 1);
     if (/^su-/.test(name)) return setupAct(name, b);
     if (name === 'confirm-no') { const c = ui.confirm; ui.confirm = null; if (c && c.noAct) c.noAct(); return paint(); }

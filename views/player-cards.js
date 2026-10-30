@@ -22,7 +22,7 @@ export function topThreeCards(people, { firstLabel = 'Player of the Game', label
   const rank = ['', 'rank--2', 'rank--3'];
   const tag = i => (i === 0 ? firstLabel : i === 1 ? '2nd' : '3rd');
   return `${label ? `<div class="pcd-h"><span>${esc(label)}</span>${top.length > 1 ? '<small>Tap a card for more</small>' : ''}</div>` : ''}
-  <div class="pcd-row" role="list">${top.map((p, i) => `<button type="button" class="pcd${i === 0 ? ' pcd--1' : ''}" role="listitem" data-pcard="${esc(p.key)}" aria-label="${esc(tag(i))}: ${esc(p.name)}">
+  <div class="pcd-row">${top.map((p, i) => `<button type="button" class="pcd${i === 0 ? ' pcd--1' : ''}" data-pcard="${esc(p.key)}" aria-label="${esc(tag(i))}: ${esc(p.name)}. Open their card">
       <span class="pcd__rank ${rank[i]}">${esc(tag(i))}</span>
       ${p.number ? `<b class="pcd__ghost num" aria-hidden="true">${esc(p.number)}</b>` : ''}
       <span class="pcd__top">${avatar(p, 52)}<span class="pcd__who"><small>${esc(first(p))}</small><b class="num">${esc(rest(p).toUpperCase())}</b><small class="pcd__team">${esc([p.team, p.number ? `#${p.number}` : ''].filter(Boolean).join(' · '))}</small></span></span>

@@ -2777,3 +2777,12 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .sc-tbl__qr { align-self: center; width: min(100%, 360px); padding: 12px; border-radius: 14px; background: #fff; }
 .sc-tbl__qr svg { display: block; width: 100%; height: auto; }
 @media (min-width: 700px) { .sc-tbl { align-items: center; } .sc-tbl__in { border-radius: 22px; } }
+
+/* Papawis: a guest added at the court, and someone else holding the run (public/scorer.js). */
+.su-guest input { box-sizing: border-box; width: 100%; height: 44px; padding: 0 14px; border-radius: var(--r-in); border: 1px solid var(--field-border); background: var(--field); color: var(--text); font: inherit; font-size: 16px; }
+.su-guest input:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+.su-hold { gap: 10px; }
+.su-hold__n { font-size: 26px; font-weight: 600; line-height: 1.15; }
+.su-chip__mv { width: 44px; }
+.pwf-walkins { margin: 4px 16px 0; }
+.pwf-walkins a { color: inherit; font-weight: 600; }

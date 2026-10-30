@@ -115,7 +115,9 @@ function runCard(r) {
 function scoreBar(s) {
   if (!s) return '';
   if (s.results) return `<a class="pw-scorebar" href="${esc(s.results)}"><span><b>Today's results are in</b><small>Scores, box score and the Player of the Day</small></span><span class="btn btn--ghost">See results</span></a>`;
-  return `<div class="pw-scorebar"><span><b>${s.live ? 'Scoring now' : 'Score today\'s games'}</b><small>Same scorer as league games. Set the minutes and check who's here before each game.</small></span><a class="btn" href="${esc(s.href)}">${s.live ? 'Open the scorer' : 'Start scoring'}</a></div>`;
+  if (!s.href) return '';
+  // Scorers only (Paolo, 2026-10-30); one phone at a time, so it says who has it.
+  return `<div class="pw-scorebar"><span><b>${s.busy ? `${esc(s.busy)} is scoring` : s.live ? 'Scoring now' : 'Score today\'s games'}</b><small>${s.busy ? 'Open it to take over between games, or ask them to hand it over.' : 'Same scorer as league games. Set the minutes and check who\'s here before each game.'}</small></span><a class="btn${s.busy ? ' btn--ghost' : ''}" href="${esc(s.href)}">${s.live || s.busy ? 'Open the scorer' : 'Start scoring'}</a></div>`;
 }
 
 // A later run whose sign-ups aren't open yet: one line, nothing to do until they open.

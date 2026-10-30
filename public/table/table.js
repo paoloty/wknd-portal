@@ -26,7 +26,13 @@ if ('serviceWorker' in navigator) {
 let pc = null, ch = null, stream = null, stopScan = null, S = null, recvAt = 0, lastMsg = 0, closed = false;
 const status = (text, tone = 'wait') => { $('[data-pair-status]').textContent = text; $('[data-pair-dot]').className = `dot dot--${tone}`; };
 async function pair() {
-  closed = false;
+  // Start clean: the last link, its camera and its reader go first (Fable audit 2026-10-30).
+  if (stopScan) stopScan();
+  stopCamera(stream, $('[data-video]')); stream = null;
+  if (ch) { ch.onclose = null; try { ch.close(); } catch (e) {} }
+  if (pc) { try { pc.close(); } catch (e) {} }
+  pc = null; ch = null; closed = false;
+  show('pair');
   status('Getting the code ready…');
   try {
     await loadVendor();
@@ -57,7 +63,8 @@ function wire(c) {
 }
 function linkDown(text) {
   closed = true;
-  const b = $('[data-lost]'); b.textContent = text; b.className = 'banner banner--err'; b.hidden = false;
+  // The board stays up with the last score; Pair again starts over (the phone: ••• → Table display).
+  const b = $('[data-lost]'); b.innerHTML = `<span>${esc(text)}</span><button type="button" class="btn btn--ghost" data-act="pair">Pair again</button>`; b.className = 'banner banner--err'; b.hidden = false;
   $('[data-link]').textContent = 'Not linked'; $('[data-link-dot]').className = 'dot dot--err';
   if (!S) { show('pair'); status(text, 'err'); }
 }
@@ -81,6 +88,8 @@ function got(m) {
 // ── The rating (the box score's PER, lib/game-detail.js gameScore) ──
 const rating = L => {
   const n = k => Number(L[k]) || 0;
+  // Basic logs makes only: rate on points, rebounds and assists (server.js pwBasicRating).
+  if (S && S.basic) return n('pts') + 0.7 * n('reb') + 0.7 * n('ast');
   const fgm = n('fg2m') + n('fg3m') + n('fg4m'), fga = fgm + n('fg2m_miss') + n('fg3m_miss') + n('fg4m_miss');
   return n('pts') + 0.4 * fgm - 0.7 * fga - 0.4 * n('ft_miss') + 0.7 * n('reb') + n('stl') + 0.7 * n('ast') + 0.7 * n('blk') - n('turnover');
 };

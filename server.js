@@ -8073,29 +8073,35 @@ app.post('/admin/games/:id/scoring/fix', requireAuth, express.json(), (req, res)
 // The same scorer as league games (public/scorer.js, bundle.papawis), Light vs Dark. A run is one
 // scoring session, score_games 'pw_<runId>', with its games numbered inside it: every play
 // carries `game`, and each game opens with a `setup` play (Basic or Full stats, quarter length,
-// quarters, who's on which side, who isn't here). One session for the whole run is what keeps
-// New game working offline at the court. No timeouts and no penalty at Papawis (Paolo); players
-// switch sides with `move` plays. Finish the run (/app/papawis/:id/finish): keep or discard each
-// game, then the Player of the Day (top box-score rating over the kept games, changeable), then
-// Save: papawis_scored + papawis_stat_lines (lib/portal-db.js), a bell for the Player of the Day.
+// quarters, who's on which side, who isn't here, guests added at the court). One session for the
+// whole run is what keeps New game working offline at the court. Papawis rules (Paolo): no
+// timeouts, no penalty, no foul-outs, a game can end tied (extra time only if there's time).
+// Players switch sides with `move` plays. Scored by Scorers only (the Scorer switch), one phone
+// at a time (settings.holder; /api/score/:id/hold). Finish the run (/app/papawis/:id/finish):
+// keep or discard each game, the Player of the Day, Save: papawis_scored + papawis_stat_lines
+// (lib/portal-db.js), a bell for the Player of the Day. Fable audit fixes 2026-10-30.
 const PW_SCORE = 'pw_';
 const isPwScoreId = id => String(id || '').startsWith(PW_SCORE);
 const pwScoreId = runId => PW_SCORE + runId;
 const pwRunOfScore = id => (isPwScoreId(id) && getSetting('papawis_enabled', '0') === '1' ? getPapawisGame(String(id).slice(PW_SCORE.length)) || null : null);
-const PW_SCORE_RULES = { ...SCORE_RULES, periodMin: 10, penaltyAt: 0, timeouts: { firstHalf: 0, secondHalf: 0, overtime: 0 }, waves: 'off' };
+const PW_SCORE_RULES = { ...SCORE_RULES, periodMin: 10, penaltyAt: 0, foulOut: 0, timeouts: { firstHalf: 0, secondHalf: 0, overtime: 0 }, waves: 'off' };
 const PW_SCORE_TYPES = new Set([...SCORE_TYPES, 'move', 'setup']);
+const PW_LINE_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'pf', 'fg2m', 'fg2m_miss', 'fg3m', 'fg3m_miss', 'fg4m', 'fg4m_miss', 'ftm', 'ft_miss'];
+// A guest added at the court: 'x' + an id made on the phone, declared in the game's setup play.
+const PW_GUEST_ID = /^x[A-Za-z0-9_-]{4,40}$/;
+const pwPerson = p => { const n = displayPlayerName(p.name || ''), raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), photo: playerPhotoUrl(p.id, 160), number: String(p.number ?? '') }; };
+const pwGuest = (id, name) => { const n = String(name || '').trim().slice(0, 40) || 'Guest'; return { id, name: n, short: (n.split(/\s+/)[0] || n).toUpperCase(), number: '', guest: true }; };
 // Everyone confirmed for the run, guests too ('g<signupId>'), on their side: a = Light, b = Dark.
 // Nobody on a side yet: onto the smaller one.
 function pwScoreRoster(run) {
   const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const seen = new Set();
   const people = getPapawisSignups(run.id).filter(s => s.status === 'confirmed').map(s => {
-    if (s.guest_name) { const n = String(s.guest_name).trim() || 'Guest'; return { id: `g${s.id}`, name: n, short: (n.split(/\s+/)[0] || n).toUpperCase(), number: '', guest: true, side: s.team }; }
+    if (s.guest_name) return { ...pwGuest(`g${s.id}`, s.guest_name), side: s.team };
     const p = byId[s.player_id];
     if (!p || seen.has(p.id)) return null;
     seen.add(p.id);
-    const n = displayPlayerName(p.name || ''), raw = String(p.name || '');
-    return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), photo: playerPhotoUrl(p.id, 160), number: String(p.number ?? ''), side: s.team };
+    return { ...pwPerson(p), side: s.team };
   }).filter(Boolean);
   const sides = { a: [], b: [] };
   for (const p of people) if (p.side === 'light') sides.a.push(p); else if (p.side === 'dark') sides.b.push(p);
@@ -8103,24 +8109,37 @@ function pwScoreRoster(run) {
   for (const t of ['a', 'b']) sides[t] = sides[t].map(({ side, ...p }) => p);
   return sides;
 }
-// Who may score a run: admins (Papawis or games), Scorers, and the players in it.
+// Everyone the run's games know about, by id: today's list, plus anyone a game's setup named
+// (someone an admin took off the list during the day still counts in the games they played:
+// Fable audit 2026-10-30) and the guests added at the court.
+function pwPeople(run, events = getScoreEvents(pwScoreId(run.id), 'live')) {
+  const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const sides = pwScoreRoster(run);
+  const who = Object.fromEntries([...sides.a, ...sides.b].map(p => [p.id, p]));
+  for (const e of events) {
+    if (e.type !== 'setup') continue;
+    for (const g of Array.isArray(e.guests) ? e.guests : []) if (g && PW_GUEST_ID.test(String(g.id)) && !who[g.id]) who[g.id] = pwGuest(g.id, g.name);
+    for (const id of [...((e.sides || {}).a || []), ...((e.sides || {}).b || []), ...(e.absent || [])]) if (!who[id] && byId[id]) who[id] = pwPerson(byId[id]);
+  }
+  return who;
+}
+const pwIsAdmin = req => isAdminWithSection(req, 'papawis') || isAdminWithSection(req, 'games-stats');
+// Who may score a run: Scorers (the Scorer switch; Paolo, 2026-10-30: assigned scorers only).
+// Papawis and games admins may open it too, to fix a game from Finish the run.
 function pwScoreAccess(req, run) {
   if (!run) return null;
-  if (isAdminWithSection(req, 'papawis') || isAdminWithSection(req, 'games-stats')) return 'admin';
+  if (pwIsAdmin(req)) return 'admin';
   const pid = req.session?.playerPlayerId;
-  if (!pid) return null;
-  if (getPlayerById(pid)?.is_scorer) return 'scorer';
-  return getPapawisSignups(run.id).some(s => s.status === 'confirmed' && s.player_id === pid && !s.guest_name) ? 'scorer' : null;
+  return pid && getPlayerById(pid)?.is_scorer ? 'scorer' : null;
 }
-// Who may finish the run (keep or discard games, the Player of the Day, Save): Papawis admins and
-// whoever started scoring it (Paolo's call still open; this is the proposal from 2026-10-30).
+// Who may finish the run (keep or discard games, the Player of the Day, Save): admins, and
+// anyone who scored a play in it.
 function pwCanFinish(req, run) {
   if (!run) return false;
-  if (isAdminWithSection(req, 'papawis') || isAdminWithSection(req, 'games-stats')) return true;
+  if (pwIsAdmin(req)) return true;
   const pid = req.session?.playerPlayerId;
   if (!pid || req.session?.impersonating) return false;
-  const first = getScoreEvents(pwScoreId(run.id), 'live').find(e => e.type === 'setup');
-  return !!first && first.author === pid;
+  return getScoreEvents(pwScoreId(run.id), 'live').some(e => e.author === pid);
 }
 function pwScoreBundle(run) {
   const id = pwScoreId(run.id), sg = getScoreGame(id) || { status: 'setup', settings: {} };
@@ -8128,37 +8147,44 @@ function pwScoreBundle(run) {
   let four = true;
   try { four = court ? (JSON.parse(court.info_json || '{}').features || []).includes('four_point') : true; } catch { four = true; }
   const sides = pwScoreRoster(run);
+  // People the games named who aren't on today's list any more (taken off during the day).
+  const listed = new Set([...sides.a, ...sides.b].map(p => p.id));
+  const extra = Object.values(pwPeople(run)).filter(p => !listed.has(p.id) && !p.guest);
   return {
     game: { id, date: run.date, tip: run.start_time || '', type: 'papawis' },
     fourPoint: four, status: sg.status, rules: PW_SCORE_RULES,
     a: { id: 'light', name: 'Light', color: 'var(--team-white, #d7dce5)', players: sides.a },
     b: { id: 'dark', name: 'Dark', color: 'var(--team-black, #6b7486)', players: sides.b },
     events: scoreEventsWithBy(id, 'live'), pass: 'live', video: '',
-    papawis: { runId: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '',
-      finish: `/app/papawis/${encodeURIComponent(run.id)}/finish`, done: !!getPapawisScored(run.id),
+    papawis: { runId: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '', extra,
+      finish: `/app/papawis/${encodeURIComponent(run.id)}/finish`, hold: `/api/score/${encodeURIComponent(id)}/hold`, done: !!getPapawisScored(run.id),
       defaults: { stats: 'basic', periodMin: PW_SCORE_RULES.periodMin, periods: PW_SCORE_RULES.periods } },
     over: { back: '/app/papawis' },
   };
 }
-// The run card's Score today's games (the app's Papawis tab): on the run's day, for whoever may
-// score it. Once it's saved, the card links the results instead.
+// The run card's Score today's games (the app's Papawis tab): on the run's day, for Scorers.
+// Once it's saved, the card links the results instead.
 function pwScoreLink(req, run) {
-  if (!run || pwDaysUntil(run.date) !== 0 || !pwScoreAccess(req, run)) return null;
+  if (!run || pwDaysUntil(run.date) !== 0) return null;
+  const pid = req.session?.playerPlayerId;
+  if (!pid || !getPlayerById(pid)?.is_scorer) return getPapawisScored(run.id) ? { results: `/app/papawis/${encodeURIComponent(run.id)}` } : null;
   const sg = getScoreGame(pwScoreId(run.id));
-  return { href: `/app/score/${encodeURIComponent(pwScoreId(run.id))}`, live: sg?.status === 'live', results: getPapawisScored(run.id) ? `/app/papawis/${encodeURIComponent(run.id)}` : '' };
+  const h = sg?.settings?.holder;
+  const busy = h && h.playerId !== pid && Date.now() - h.at < PW_HOLD_QUIET ? h.name : '';
+  return { href: `/app/score/${encodeURIComponent(pwScoreId(run.id))}`, live: sg?.status === 'live', busy, results: getPapawisScored(run.id) ? `/app/papawis/${encodeURIComponent(run.id)}` : '' };
 }
 function sendPapawisScorer(req, res, back) {
   const run = pwRunOfScore(req.params.id);
   const say = (code, msg) => res.status(code).send(appPage({ ver: APP_VER, title: 'Scoring · WKND', bare: true, body: `<div class="empty" style="margin-top:40px">${escHtml(msg)}</div>` }));
   if (!run) return say(404, 'This run isn’t on the list.');
-  if (!pwScoreAccess(req, run)) return say(403, 'Only the players in this run can score it.');
+  if (!pwScoreAccess(req, run)) return say(403, 'Papawis runs are scored by Scorers. An admin turns on your Scorer switch in Admin → Scorers.');
   res.set('Cache-Control', 'private, no-store');
   sendApp(res, { title: `Scoring · ${run.title || 'Papawis'} · WKND`, bare: true, body: appScorerPage({ bundle: pwScoreBundle(run), back }) });
 }
 function pwScoreEventsGet(req, res) {
   const run = pwRunOfScore(req.params.id);
   if (!run) return res.status(404).json({ error: 'Run not found.' });
-  if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'You aren’t in this run.' });
+  if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'Papawis runs are scored by Scorers.' });
   const id = pwScoreId(run.id), sg = getScoreGame(id);
   res.set('Cache-Control', 'private, no-store');
   res.json({ status: sg?.status || 'setup', events: sg ? scoreEventsWithBy(id, 'live') : [] });
@@ -8168,13 +8194,20 @@ function pwScoreEventsPost(req, res) {
   if (!run) return res.status(404).json({ error: 'Run not found.' });
   if (!req.session?.playerPlayerId && !req.session?.isAdmin) return res.status(401).json({ error: 'Sign in again.' });
   if (req.session?.impersonating) return res.status(403).json({ error: 'Viewing as a player: nothing was saved.' });
-  if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'You aren’t in this run.' });
+  if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'Papawis runs are scored by Scorers.' });
   const id = pwScoreId(run.id);
   const raw = Array.isArray(req.body?.events) ? req.body.events.slice(0, 2000) : [];
-  const sides = pwScoreRoster(run);
-  const roster = new Set([...sides.a, ...sides.b].map(p => p.id));
-  const okPlayer = v => v == null || roster.has(String(v));
-  const okList = v => v == null || (Array.isArray(v) && v.length <= 60 && v.every(x => roster.has(String(x))));
+  // Who a play may name: anyone the run's games know (today's list, earlier setups, their
+  // guests), plus anyone this batch's own setups name: a real player, or a guest it declares.
+  const known = new Set(Object.keys(pwPeople(run)));
+  const allPlayers = new Set(getAllPlayers().map(p => p.id));
+  for (const e of raw) {
+    if (!e || e.type !== 'setup') continue;
+    for (const g of Array.isArray(e.guests) ? e.guests.slice(0, 20) : []) if (g && PW_GUEST_ID.test(String(g.id)) && typeof g.name === 'string') known.add(String(g.id));
+    for (const x of [...((e.sides || {}).a || []), ...((e.sides || {}).b || []), ...(e.absent || [])]) if (allPlayers.has(String(x))) known.add(String(x));
+  }
+  const okPlayer = v => v == null || known.has(String(v));
+  const okList = v => v == null || (Array.isArray(v) && v.length <= 80 && v.every(x => known.has(String(x))));
   const okGame = v => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 30;
   const events = raw.filter(e => e && typeof e.id === 'string' && e.id.length <= 64 && PW_SCORE_TYPES.has(e.type) && Number.isFinite(Number(e.pos)) && okGame(e.game)
     && (e.team == null || e.team === 'a' || e.team === 'b') && okPlayer(e.player) && okPlayer(e.from) && okPlayer(e.in) && okPlayer(e.out)
@@ -8186,6 +8219,56 @@ function pwScoreEventsPost(req, res) {
   if (events.length < raw.length) console.warn(`[papawis scorer] run=${run.id} rejected ${raw.length - events.length} play(s) that didn't fit`);
   res.json({ ok: true, added, received: raw.length, rejected: raw.length - events.length, late: [], lateWhy: '' });
 }
+// One phone scores a run at a time (Fable audit 2026-10-30: two phones double-counted). The
+// phone holding it checks in every 10 s with how many plays it still has to send and whether its
+// game is over. Another Scorer opening the run sees "Paul is scoring" and can: take over between
+// games once Paul's phone has sent everything; ask Paul (Hand over / Keep on his phone); or take
+// over once Paul's phone has been quiet for 2 minutes. Admins can take over any time. With no
+// signal nothing is checked: the phone scores and sends later.
+const PW_HOLD_QUIET = 2 * 60 * 1000;
+app.post('/api/score/:id/hold', express.json(), (req, res) => {
+  const run = pwRunOfScore(req.params.id);
+  if (!run) return res.status(404).json({ error: 'Run not found.' });
+  const access = pwScoreAccess(req, run);
+  if (!access) return res.status(403).json({ error: 'Papawis runs are scored by Scorers.' });
+  if (req.session?.impersonating) return res.status(403).json({ error: 'Viewing as a player.' });
+  const b = req.body || {}, device = String(b.device || '').slice(0, 64);
+  if (!device) return res.status(400).json({ error: 'No device.' });
+  const id = pwScoreId(run.id), now = Date.now();
+  const pid = req.session?.playerPlayerId || '';
+  const name = (pid && displayPlayerName(getPlayerById(pid)?.name || '').split(' ')[0]) || 'An admin';
+  const me = { device, playerId: pid, name, at: now, unsent: Math.max(0, parseInt(b.unsent, 10) || 0), over: !!b.over };
+  const sg = getScoreGame(id) || saveScoreGame(id, {});
+  const st = { ...sg.settings };
+  let h = st.holder || null;
+  const quiet = h ? now - h.at : Infinity;
+  const free = !h || h.device === device || quiet >= PW_HOLD_QUIET;
+  const between = h && h.unsent === 0 && h.over;
+  let note = '';
+  if (b.action === 'take' && (free || between || access === 'admin')) { if (h && h.device !== device) note = `took over from ${h.name}`; h = { ...me }; }
+  else if (b.action === 'ask' && h && h.device !== device) h = { ...h, ask: { device, name, at: now } };
+  else if (b.action === 'answer' && h && h.device === device && h.ask) {
+    if (b.yes) { const a = h.ask; h = { device: a.device, playerId: '', name: a.name, at: now, unsent: 0, over: false, from: me.name }; }
+    else h = { ...h, at: now, unsent: me.unsent, over: me.over, ask: { ...h.ask, no: true } };
+  } else if (free) h = { ...(h && h.device === device ? h : {}), ...me, ask: h && h.device === device ? h.ask : undefined };
+  if (h !== st.holder) { st.holder = h; saveScoreGame(id, { settings: st }); }
+  if (note) console.log(`[papawis scorer] ${name} ${note} on run=${run.id}`);
+  const mine = !!h && h.device === device;
+  res.set('Cache-Control', 'private, no-store');
+  res.json({
+    mine, now,
+    holder: h && !mine ? { name: h.name, quiet: Math.round((now - h.at) / 1000), unsent: h.unsent, over: !!h.over } : null,
+    canTake: !mine && (!h || now - h.at >= PW_HOLD_QUIET || (h.unsent === 0 && h.over) || access === 'admin'),
+    ask: mine && h.ask && !h.ask.no ? { name: h.ask.name } : null,
+    said: !mine && h && h.ask && h.ask.device === device ? (h.ask.no ? 'no' : 'waiting') : '',
+    from: mine && h.from ? h.from : '',
+  });
+});
+// The box-score rating used to compare Papawis players. A Basic game logs makes only, so its
+// misses never count against anyone: when any kept game was Basic, everyone is rated on points,
+// rebounds and assists alone, so Basic and Full games compare fairly (Fable audit 2026-10-30).
+const pwBasicRating = L => (Number(L.pts) || 0) + 0.7 * (Number(L.reb) || 0) + 0.7 * (Number(L.ast) || 0);
+const pwRater = basicAny => (basicAny ? pwBasicRating : gameScore);
 // A run's games from its plays: [{ n, setup, rules, G, plays, sides, stats }], games with no
 // plays past their setup left out.
 function pwRunGames(run) {
@@ -8203,45 +8286,53 @@ function pwRunGames(run) {
 }
 // Every player's line over some games, with who they are: [{ key, playerId, name, side, line, rating, games }]
 function pwDayLines(run, games) {
-  const people = pwScoreRoster(run), who = Object.fromEntries([...people.a, ...people.b].map(p => [p.id, p]));
+  const who = pwPeople(run);
+  const rate = pwRater(games.some(g => g.stats === 'basic'));
   const out = {};
   for (const g of games) {
     for (const [id, L] of Object.entries(g.G.players)) {
       if (!who[id] || !g.sides[id]) continue;
-      const o = out[id] || (out[id] = { key: id, playerId: who[id].guest ? '' : id, name: who[id].name, guest: !!who[id].guest, number: who[id].number || '', line: {}, games: 0, side: '' });
-      for (const k of ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'pf', 'fg2m', 'fg2m_miss', 'fg3m', 'fg3m_miss', 'fg4m', 'fg4m_miss', 'ftm', 'ft_miss']) o.line[k] = (o.line[k] || 0) + (L[k] || 0);
+      const o = out[id] || (out[id] = { key: id, playerId: who[id].guest ? '' : id, name: who[id].name, guest: !!who[id].guest, atCourt: PW_GUEST_ID.test(id), number: who[id].number || '', line: {}, games: 0, side: '' });
+      for (const k of PW_LINE_KEYS) o.line[k] = (o.line[k] || 0) + (L[k] || 0);
       o.games++; o.side = g.sides[id];
       o.moved = o.moved || !!g.G.moved[id];
     }
   }
-  return Object.values(out).map(o => ({ ...o, rating: gameScore(o.line) })).sort((x, y) => y.rating - x.rating || y.line.pts - x.line.pts);
+  return Object.values(out).map(o => ({ ...o, rating: rate(o.line) })).sort((x, y) => y.rating - x.rating || y.line.pts - x.line.pts);
 }
 app.get('/app/papawis/:id/score', requireApp, (req, res) => res.redirect(`/app/score/${encodeURIComponent(pwScoreId(req.params.id))}`));
 // Finish the run: keep or discard each game (?discard=2,3 re-draws the page with them out), then
-// the Player of the Day, then Save. One screen, plain links and a form, works on any phone.
+// the Player of the Day, then Save. One screen, plain links and a form, works on any phone. The
+// scorer only offers it once every play on the phone is sent.
 app.get('/app/papawis/:id/finish', requireApp, (req, res) => {
   const me = appMe(req);
   const run = pwRunOfScore(pwScoreId(req.params.id));
   const back = { href: run ? `/app/score/${encodeURIComponent(pwScoreId(run.id))}` : '/app/papawis', label: 'Scorer' };
   if (!run) return sendTab(res, me, { title: 'Finish the run · WKND', tab: 'papawis', body: appPapawisFinishPage({ back, missing: 'This run isn’t on the list.' }) });
-  if (!pwCanFinish(req, run)) return sendTab(res, me, { title: 'Finish the run · WKND', tab: 'papawis', body: appPapawisFinishPage({ back, missing: 'An admin, or whoever started scoring this run, finishes it.' }) });
+  if (!pwCanFinish(req, run)) return sendTab(res, me, { title: 'Finish the run · WKND', tab: 'papawis', body: appPapawisFinishPage({ back, missing: 'An admin, or someone who scored this run, finishes it.' }) });
   const games = pwRunGames(run);
   if (!games.length) return sendTab(res, me, { title: 'Finish the run · WKND', tab: 'papawis', body: appPapawisFinishPage({ back, missing: 'No games scored yet.' }) });
   const done = getPapawisScored(run.id);
-  const discard = new Set(String(req.query.discard ?? (done ? games.filter(g => !done.games.some(d => d.n === g.n)).map(g => g.n).join(',') : '')).split(',').map(Number).filter(n => games.some(g => g.n === n)));
+  // Discarded: what the page says (?discard=), else what the last save discarded. A game scored
+  // after a save comes in kept.
+  const saved = getScoreGame(pwScoreId(run.id))?.settings?.discarded || [];
+  const discard = new Set(String(req.query.discard ?? saved.join(',')).split(',').map(Number).filter(n => games.some(g => g.n === n)));
   const kept = games.filter(g => !discard.has(g.n));
   const lines = pwDayLines(run, kept);
   const pick = String(req.query.potd || done?.potd_key || '');
   res.set('X-App-No-Copy', '1');
   sendTab(res, me, { title: 'Finish the run · WKND', tab: 'papawis', body: appPapawisFinishPage({ back, d: {
-    id: run.id, title: run.title || 'Papawis', day: pwDay(run.date), done: !!done,
+    id: run.id, title: run.title || 'Papawis', day: pwDay(run.date), done: !!done, admin: pwIsAdmin(req),
     games: games.map(g => ({ n: g.n, a: g.G.score.a, b: g.G.score.b, final: !!g.G.final, plays: g.plays, stats: g.stats, periodMin: g.rules.periodMin, periods: g.rules.periods,
       moves: Object.keys(g.G.moved).length, discarded: discard.has(g.n), toggle: [...(discard.has(g.n) ? [...discard].filter(x => x !== g.n) : [...discard, g.n])].sort((x, y) => x - y).join(','),
       edit: `/app/score/${encodeURIComponent(pwScoreId(run.id))}?game=${g.n}` })),
     discard: [...discard].sort((x, y) => x - y).join(','),
+    basicRating: kept.some(g => g.stats === 'basic'),
     cands: lines.slice(0, 12).map(o => ({ key: o.key, name: o.name, ini: initials(o.name), photo: o.playerId ? playerPhotoUrl(o.playerId, 96) : '', side: o.side, moved: o.moved, line: o.line, rating: Math.round(o.rating * 10) / 10, games: o.games })),
     pick: lines.some(o => o.key === pick) ? pick : lines[0]?.key || '',
     players: lines.length,
+    walkIns: lines.filter(o => o.atCourt).map(o => o.name),
+    manage: `/app/admin/papawis/${encodeURIComponent(run.id)}`,
   } }) });
 });
 app.post('/app/papawis/:id/finish', requireApp, express.urlencoded({ extended: false }), (req, res) => {
@@ -8249,23 +8340,25 @@ app.post('/app/papawis/:id/finish', requireApp, express.urlencoded({ extended: f
   if (!run) return res.redirect('/app/papawis');
   if (!pwCanFinish(req, run)) return res.redirect(`/app/papawis/${encodeURIComponent(run.id)}/finish`);
   const games = pwRunGames(run);
-  const discard = new Set(String(req.body?.discard || '').split(',').map(Number));
+  const discard = new Set(String(req.body?.discard || '').split(',').map(Number).filter(n => games.some(g => g.n === n)));
   const kept = games.filter(g => !discard.has(g.n));
   if (!kept.length) return res.redirect(`/app/papawis/${encodeURIComponent(run.id)}/finish?discard=${encodeURIComponent(req.body?.discard || '')}`);
   const day = pwDayLines(run, kept);
   const potd = day.find(o => o.key === String(req.body?.potd || '')) || day[0] || null;
-  const people = pwScoreRoster(run), who = Object.fromEntries([...people.a, ...people.b].map(p => [p.id, p]));
+  const who = pwPeople(run);
   const lines = [];
   for (const g of kept) for (const [id, L] of Object.entries(g.G.players)) {
     if (!who[id] || !g.sides[id]) continue;
     lines.push({ game_n: g.n, player_key: id, player_id: who[id].guest ? null : id, guest_name: who[id].guest ? who[id].name : null, side: g.sides[id] === 'a' ? 'light' : 'dark', level: g.stats, ...L });
   }
   const by = scorerNameOf(req);
-  const firstTime = !getPapawisScored(run.id);
+  const before = getPapawisScored(run.id);
   savePapawisScored(run.id, { potdKey: potd ? potd.key : null, by, games: kept.map(g => ({ n: g.n, a: g.G.score.a, b: g.G.score.b, stats: g.stats, periodMin: g.rules.periodMin, periods: g.rules.periods })) }, lines);
-  saveScoreGame(pwScoreId(run.id), { status: 'published', publishedAt: Date.now() });
+  const sgId = pwScoreId(run.id);
+  saveScoreGame(sgId, { status: 'published', publishedAt: Date.now(), settings: { ...(getScoreGame(sgId)?.settings || {}), discarded: [...discard] } });
   console.log(`[papawis scorer] ${by} finished run=${run.id}: ${kept.length} game(s), potd=${potd?.key || '-'}`);
-  if (firstTime && potd && potd.playerId && potd.playerId !== req.session?.playerPlayerId) {
+  // The Player of the Day hears it once (and again only if a later save picks someone else).
+  if (potd && potd.playerId && potd.key !== before?.potd_key && potd.playerId !== req.session?.playerPlayerId) {
     const L = potd.line;
     createNotification({ playerId: potd.playerId, type: 'papawis_potd', title: `You're the Papawis Player of the Day`,
       body: `${run.title || 'Papawis'}: ${L.pts} pts, ${L.reb} reb, ${L.ast} ast over ${potd.games} game${potd.games === 1 ? '' : 's'}.`, link: `/papawis/${encodeURIComponent(run.id)}/results` });
@@ -8282,11 +8375,12 @@ function pwResultsFor(run) {
   for (const r of rows) {
     const o = byKey[r.player_key] || (byKey[r.player_key] = { key: r.player_key, playerId: r.player_id || '', name: r.player_id ? displayPlayerName(getPlayerById(r.player_id)?.name || '') : (r.guest_name || 'Guest'), number: r.player_id ? String(getPlayerById(r.player_id)?.number ?? '') : '', side: r.side, games: {}, line: {}, n: 0 });
     o.games[r.game_n] = r; o.side = r.side; o.n++;
-    for (const k of ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'pf', 'fg2m', 'fg2m_miss', 'fg3m', 'fg3m_miss', 'fg4m', 'fg4m_miss', 'ftm', 'ft_miss']) o.line[k] = (o.line[k] || 0) + (r[k] || 0);
+    for (const k of PW_LINE_KEYS) o.line[k] = (o.line[k] || 0) + (r[k] || 0);
   }
+  const rate = pwRater(rows.some(r => r.level === 'basic'));
   // "SARMIENTO, Paul Erickson" → first "Paul Erickson", last "Sarmiento" (the card's two lines).
   const parts = o => { const raw = o.playerId ? String(getPlayerById(o.playerId)?.name || '') : ''; return raw.includes(',') ? { first: raw.split(',').slice(1).join(',').trim(), last: raw.split(',')[0].trim() } : o.playerId ? {} : { first: 'Guest', last: o.name }; };
-  const people = Object.values(byKey).map(o => ({ ...o, ...parts(o), rating: gameScore(o.line), photo: o.playerId ? playerPhotoUrl(o.playerId, 160) : '', ini: initials(o.name) }));
+  const people = Object.values(byKey).map(o => ({ ...o, ...parts(o), rating: rate(o.line), photo: o.playerId ? playerPhotoUrl(o.playerId, 160) : '', ini: initials(o.name) }));
   people.sort((x, y) => (x.key === done.potd_key ? -1 : y.key === done.potd_key ? 1 : 0) || y.rating - x.rating || y.line.pts - x.line.pts);
   const full = rows.some(r => r.level === 'full');
   const potd = people.find(o => o.key === done.potd_key) || null;
@@ -9689,6 +9783,9 @@ function appLinkFor(link = '') {
   // A run's own link (#pw-game-<id>) opens that run: its screen once it's over, its card before.
   const pwRun = /^\/papawis\/?$/.test(path) && /#pw-game-([A-Za-z0-9_-]+)$/.exec(link);
   if (pwRun) return `/app/papawis/${pwRun[1]}`;
+  // A scored run's results (the Player of the Day bell) open the run's screen.
+  const pwRes = /^\/papawis\/([A-Za-z0-9_-]+)\/results$/.exec(path);
+  if (pwRes) return `/app/papawis/${pwRes[1]}`;
   if (/^\/papawis/.test(path) || /^\/courts\//.test(path)) return '/app/papawis';
   if (/^\/picks/.test(path) || /^\/mvp/.test(path)) return '/app/picks';
   const gm = /^\/games\/([^/?#]+)/.exec(path);
@@ -24029,6 +24126,7 @@ app.get('/papawis', (req, res) => {
   // if the location hasn't been geocoded yet either, the old plain no-banner layout).
   for (const g of games) {
     const court = getPapawisCourtByName(g.location);
+    g.scored = !!getPapawisScored(g.id); // a Results link on the run (Papawis scoring)
     g.court_slug = liveCourtSlugByName().get(normCourtName(g.location)) || '';
     g.court_image_id = court?.image_url ? court.id : null;
     g.map_query = court?.address?.trim() || g.location;
