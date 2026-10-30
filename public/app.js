@@ -418,13 +418,14 @@
     // load that's still going after 10 s.
     var fail = function (why) {
       var r = $('[data-sc-root]', el);
-      if (!r || $('.sc-board', r)) return;
+      // Drawn: the scorer, or a Papawis game's setup screen.
+      if (!r || $('.sc-board, .su', r)) return;
       r.innerHTML = '<div class="sc-fail"><div class="msg msg--err" role="alert">The scorer didn\'t open' + (why ? ': <b>' + String(why).replace(/[<>&]/g, '') + '</b>' : '.') + '</div>'
         + '<p class="foot-note">Your plays are safe on this phone. Reload to try again; if it keeps happening, send Paolo a screenshot of this.</p>'
         + '<div class="sc-fail__btn"><button type="button" class="btn" onclick="location.reload()">Reload</button></div></div>';
       var pill = $('[data-sc-sync]', el); if (pill) pill.textContent = 'Not loaded';
     };
-    setTimeout(function () { if (document.contains(el) && !$('.sc-board', el)) fail('still loading after 10 seconds'); }, 10000);
+    setTimeout(function () { if (document.contains(el) && !el._scDrawn && !$('.sc-board, .su', el)) fail('still loading after 10 seconds'); }, 10000);
     var go = function () {
       try { var p = window.wkndScorer.mount(el); if (p && p.catch) p.catch(function (e) { fail(e && e.message); }); }
       catch (e) { fail(e && e.message); }

@@ -162,3 +162,24 @@ test('sub: who comes on is active, who goes off sits until they play again', () 
   const back = foldGame([P('sub', { in: 'z', out: 'x' }), P('ast', { player: 'x' })]);
   assert.deepEqual(back.benched, []);
 });
+
+test('Papawis move: points stay with the old side, later ones count for the new side', () => {
+  const g = foldGame([
+    P('shot', { team: 'b', player: 'r', pts: 2, made: true }),
+    P('move', { team: 'a', player: 'r', to: 'a' }),
+    P('shot', { team: 'a', player: 'r', pts: 3, made: true }),
+  ]);
+  assert.deepEqual(g.score, { a: 3, b: 2 });
+  assert.equal(g.players.r.pts, 5);
+  assert.deepEqual(g.moved, { r: 'a' });
+  assert.ok(!g.lastActive.b.includes('r'));
+  assert.ok(g.lastActive.a.includes('r'));
+});
+
+test('penaltyAt 0 (Papawis): never in the penalty', () => {
+  const fouls = Array.from({ length: 7 }, () => P('foul', { player: 'x' }));
+  const g = foldGame(fouls, { penaltyAt: 0, timeouts: { firstHalf: 0, secondHalf: 0, overtime: 0 } });
+  assert.equal(g.penalty.a, false);
+  assert.equal(g.penaltyNext.a, false);
+  assert.equal(g.timeouts.allowance, 0);
+});

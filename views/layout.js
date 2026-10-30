@@ -768,6 +768,7 @@ document.addEventListener('click', function (e) {
 });
 </script>
 <script src="/table-scroll.js${cssVer ? `?v=${cssVer}` : ''}" defer></script>
+<script src="/player-cards.js${cssVer ? `?v=${cssVer}` : ''}" defer></script>
 </body>
 </html>`;
 }

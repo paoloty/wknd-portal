@@ -29,7 +29,14 @@
 // offensive), a late scorer asks for a side and the holder gets Hand over / Keep it, a phone gone
 // quiet can be taken over. One phone keeps the clock (Both, else the first team); the other shows
 // it. Plays never wait on any of this: with no signal both phones keep scoring.
-import { foldGame, defaultFreeThrows, nextPos, isOvertime, correction, periodIndex, periodName } from './score-engine.js';
+//
+// Papawis (2026-10-30, bundle.papawis; mockup claude.ai/artifact/QyYMf51jSBCFrSK3ddi1ss): the same
+// screen, Light vs Dark, one session for the whole run with its games numbered inside it (every
+// play carries `game`). Each game opens on a setup screen (Basic or Full stats, quarter length,
+// quarters, who's here, sides) that becomes the game's `setup` play. Basic = makes only (FT,
+// 2PT, 3PT) plus REB and AST, no follow-ups. No timeouts or penalty. Hold a player → Move to
+// Light/Dark. Game over → Start the next game (set up from this one) or Finish the run.
+import { foldGame, defaultFreeThrows, nextPos, isOvertime, correction, periodIndex, periodName, livePlays, setupOf, papawisRules, papawisSides } from './score-engine.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
@@ -116,8 +123,12 @@ export async function mount(el) {
   const pill = el.querySelector('[data-sc-sync]');
   const api = el.getAttribute('data-api');
   const gid = B.game.id;
-  const rules = B.rules;
+  let rules = B.rules;
   const team = { a: B.a, b: B.b };
+  // Papawis: everyone in the run, and the side each signed up on (a Light, b Dark).
+  const pw = B.papawis || null;
+  const everyone = [...B.a.players, ...B.b.players];
+  const homeSides = Object.fromEntries([...B.a.players.map(p => [p.id, 'a']), ...B.b.players.map(p => [p.id, 'b'])]);
   // Team colours that vanish on one of the themes (White on light, Black on dark) use the
   // app's theme-aware team tokens.
   for (const t of ['a', 'b']) {
@@ -132,7 +143,8 @@ export async function mount(el) {
   // Numbers two players share (the name does the work on their tiles)
   const shared = new Set();
   for (const t of ['a', 'b']) { const seen = {}; for (const p of team[t].players) if (p.number) { if (seen[p.number]) { shared.add(seen[p.number]); shared.add(p.id); } else seen[p.number] = p.id; } }
-  const published = B.status === 'published';
+  // A finished Papawis run can still be fixed (Finish the run's Edit) and saved again.
+  const published = !pw && B.status === 'published';
   const video = B.pass === 'video';
   // A practice game (the app's Scoring → Practice game, 2026-10-27): the same screen and rules on
   // real rosters, but nothing leaves the phone. No sending, no fetching, no sides; the server only
@@ -141,7 +153,7 @@ export async function mount(el) {
   const key = practice ? 'practice' : video ? `${gid}:video` : gid;
   // Tablet landscape and laptops: the Scoresheet docks on the right.
   const wide = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false };
-  const multi = !video && !published && !practice;
+  const multi = !video && !published && !practice && !pw;
   const laneKey = `wknd-lane:${gid}`;
   const readLane = () => { try { const v = localStorage.getItem(laneKey); return ['a', 'b', 'both'].includes(v) ? v : null; } catch (e) { return null; } };
   const storeLane = l => { try { if (l) localStorage.setItem(laneKey, l); else localStorage.removeItem(laneKey); } catch (e) {} };
@@ -170,8 +182,25 @@ export async function mount(el) {
   };
 
   const list = () => [...events.values()];
+  // Papawis: which game a play belongs to (a void goes with the play it cancels), the game on
+  // screen, and that game's setup play.
+  const gameOf = (e, d = 0) => (e.game != null ? Number(e.game) || 1 : e.type === 'void' && events.has(e.target) && d < 5 ? gameOf(events.get(e.target), d + 1) : 1);
+  const games = () => [...new Set(list().map(e => gameOf(e)))].sort((x, y) => x - y);
+  const setupFor = n => setupOf(list().filter(e => !e.late && gameOf(e) === n));
+  {
+    const asked = Number(new URLSearchParams(location.search).get('game')) || 0;
+    const set = games().filter(n => setupFor(n));
+    ui.game = pw ? (asked >= 1 ? asked : set.length ? set[set.length - 1] : 1) : 1;
+  }
+  // Every new play joins the game on screen.
+  if (pw) {
+    const put = events.set.bind(events);
+    events.set = (k, e) => { if (e && e.game == null) e.game = e.type === 'void' && events.has(e.target) ? gameOf(events.get(e.target)) : ui.game; return put(k, e); };
+  }
   // Plays the server set aside as late (POST answer) stay on the phone but out of its game.
-  const counted = () => list().filter(e => !e.late);
+  const counted = () => list().filter(e => !e.late && (!pw || gameOf(e) === ui.game));
+  // Papawis Basic stats: makes only, REB and AST, no follow-ups.
+  const basic = () => !!pw && (setupFor(ui.game) || {}).stats !== 'full';
   const unsent = () => list().filter(e => !sent.has(e.id));
   // Everything is on the phone after every change: the plays, what's been sent, and the clock
   // (running or not, as of when), so leaving the scorer with no signal and coming back finds it
@@ -188,7 +217,19 @@ export async function mount(el) {
     if (practice && !practice.gone) pref.set('wknd-practice', JSON.stringify({ id: practice.id, a: team.a.id, b: team.b.id, an: team.a.name, bn: team.b.name, q: rules.periodMin, sa: G.score.a, sb: G.score.b, period: G.period, final: !!G.final || !!ui.published, at: Date.now() }));
     return store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs, running: ui.running, savedAt: Date.now(), practiceId: practice ? practice.id : undefined });
   };
-  const fold = () => foldGame(counted(), rules, { a: team.a.players.map(p => p.id), b: team.b.players.map(p => p.id) });
+  const fold = () => {
+    if (!pw) return foldGame(counted(), rules, { a: team.a.players.map(p => p.id), b: team.b.players.map(p => p.id) });
+    // Papawis: the game's own rules and sides (its setup), then who's moved since.
+    const st = setupFor(ui.game);
+    rules = papawisRules(B.rules, st);
+    const start = st ? papawisSides(st, null) : { ...homeSides };
+    const ids = t => Object.keys(start).filter(id => start[id] === t);
+    const g = foldGame(counted(), rules, { a: ids('a'), b: ids('b') });
+    const now = { ...start, ...g.moved };
+    for (const t of ['a', 'b']) team[t] = { ...team[t], players: everyone.filter(p => now[p.id] === t) };
+    for (const p of everyone) byId[p.id] = { ...p, team: now[p.id] || homeSides[p.id] };
+    return g;
+  };
   let G = fold();
   const clockStr = () => `${Math.floor(ui.secs / 60)}:${String(ui.secs % 60).padStart(2, '0')}`;
 
@@ -454,7 +495,7 @@ export async function mount(el) {
   const soundOn = () => pref.get('wknd-sc-sound', 'on') !== 'off';
   // Follow-up questions (Paolo, 2026-10-27): on by default; a scorer who knows the game can turn
   // off the optional ones (SKIPPABLE) on their phone.
-  const followOn = () => pref.get('wknd-sc-follow', 'on') !== 'off';
+  const followOn = () => !basic() && pref.get('wknd-sc-follow', 'on') !== 'off';
   const periodSecs = () => (isOvertime(G.period) ? rules.otMin : rules.periodMin) * 60;
   // Which five: the five who played last (topped up from the roster). Where they sit: tiles
   // never move (Paolo, 2026-10-25: the scorer learns where a player is). A player coming in
@@ -671,12 +712,30 @@ export async function mount(el) {
   // The team's name is its menu: team plays in labelled rows (the row says what kind, so the
   // chips stay short), and DNP. Sub sits beside Timeout in the team's header.
   // Timeout first (it lived beside the tiles until a mis-tap cost one: Paolo, 2026-10-26).
+  // Papawis: no timeouts or coaches; Basic has no turnovers either. Players: move one over, or
+  // bring in a late arrival.
   const teamMenu = t => menu(team[t].name, [
-    { group: 'Timeout', items: [[G.timeouts.left[t] > 0 ? 'timeout' : 'wait:timeout', G.timeouts.left[t] > 0 ? `Call timeout · ${G.timeouts.left[t]} left` : 'No timeouts left']] },
-    { group: 'Turnover', items: [['to', 'Team'], ['shot clock', 'Shot clock'], ['3 seconds', '3s'], ['5 seconds', '5s'], ['8 seconds', '8s']] },
-    { group: 'Technical', items: [['coach T', 'Coach'], ['bench T', 'Bench']] },
+    ...(G.timeouts.allowance ? [{ group: 'Timeout', items: [[G.timeouts.left[t] > 0 ? 'timeout' : 'wait:timeout', G.timeouts.left[t] > 0 ? `Call timeout · ${G.timeouts.left[t]} left` : 'No timeouts left']] }] : []),
+    ...(basic() ? [] : [{ group: 'Turnover', items: [['to', 'Team'], ['shot clock', 'Shot clock'], ['3 seconds', '3s'], ['5 seconds', '5s'], ['8 seconds', '8s']] }]),
+    ...(pw ? [] : [{ group: 'Technical', items: [['coach T', 'Coach'], ['bench T', 'Bench']] }]),
+    ...(pw ? [{ group: 'Players', items: [['pw-in', `Move someone to ${team[t].name}…`], ...(lateFor().length ? [['pw-late', 'A late arrival…']] : [])] }] : []),
     { group: 'Lineup', items: [['dnp', 'DNP…']] }],
-  k => (k === 'timeout' ? timeout(t) : k === 'dnp' ? dnpMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
+  k => (k === 'timeout' ? timeout(t) : k === 'dnp' ? dnpMenu(t) : k === 'pw-in' ? moveInMenu(t) : k === 'pw-late' ? lateMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
+  // Papawis: a player switches sides (a `move` play; his points so far stay with the old side).
+  function movePlayer(id, to) {
+    if (!byId[id] || (to !== 'a' && to !== 'b')) return;
+    add({ type: 'move', team: to, player: id, to });
+    ui.sel = null; ui.tip = `${short(id)} is on ${team[to].name} now. His points so far stay with ${team[other(to)].name}.`;
+    paint();
+  }
+  const moveInMenu = t => {
+    const from = team[other(t)].players.map(p => [p.id, `${short(p.id)}${onCourt(other(t), p.id) ? ' · on court' : ''}`]);
+    if (!from.length) { ui.tip = `Nobody on ${team[other(t)].name} to move.`; return paint(); }
+    menu(`Move to ${team[t].name}: who?`, from, id => movePlayer(id, t));
+  };
+  // Players not in this game (marked not here at setup) who came after all.
+  const lateFor = () => { const st = setupFor(ui.game); return st ? everyone.filter(p => (st.absent || []).includes(p.id) && !(G.moved || {})[p.id]) : []; };
+  const lateMenu = t => menu(`A late arrival for ${team[t].name}`, lateFor().map(p => [p.id, short(p.id)]), id => movePlayer(id, t));
   // Sub from the menu: who comes on, then who goes off (the same as tapping the tiles).
   // The Subs sheet (the Sub button beside Timeout): tap who comes off (court, red ↓) and who
   // goes on (bench, green ↑), as many as you like; they pair up in the order tapped. "All 5"
@@ -734,7 +793,7 @@ export async function mount(el) {
   function endPeriod() {
     if (G.final) { ui.tip = 'The game is over. Undo the last play to reopen it.'; return paint(); }
     const cur = G.period, next = periodName(periodIndex(cur) + 1);
-    const note = isOvertime(next) ? `${rules.otMin} min, 1 timeout each, team fouls carry on` : next === 'Q3' ? '3 timeouts each, team fouls reset' : 'Team fouls reset';
+    const note = pw ? (isOvertime(next) ? `${rules.otMin} min of overtime` : `${rules.periodMin} min`) : isOvertime(next) ? `${rules.otMin} min, 1 timeout each, team fouls carry on` : next === 'Q3' ? '3 timeouts each, team fouls reset' : 'Team fouls reset';
     const late = periodIndex(cur) >= rules.periods;
     if (late && G.score.a !== G.score.b) {
       return confirm('Game over?', `End of ${cur}: ${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}`, 'flag', 'Game over', () => {
@@ -769,8 +828,12 @@ export async function mount(el) {
     if (phone && file && navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file], title: 'My plays' }).catch(err => { if (!err || err.name !== 'AbortError') download(); });
     download();
   }
-  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ['follow', followOn() ? 'Follow-up questions: on (tap to turn off)' : 'Follow-up questions: off (tap to turn on)'], ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : [])], k => {
+  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ...(basic() ? [] : [['follow', followOn() ? 'Follow-up questions: on (tap to turn off)' : 'Follow-up questions: off (tap to turn on)']]), ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : []),
+    ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game of this run…']] : []), ...(pw ? [['pw-finish', 'Finish the run…']] : []), ['table', 'Table display (tablet)…']], k => {
     if (k === 'send') return sendMyPlays();
+    if (k === 'pw-games') return menu('Which game?', games().filter(n => setupFor(n)).map(n => [String(n), `Game ${n}${n === ui.game ? ' · on screen' : ''}`]), v => goGame(Number(v)));
+    if (k === 'pw-finish') { location.href = pw.finish; return; }
+    if (k === 'table') return tableOpen();
     if (k === 'sheet') { ui.sheet = true; return paint(); }
     if (k === 'follow') { pref.set('wknd-sc-follow', followOn() ? 'off' : 'on'); ui.tip = followOn() ? 'Follow-up questions on: Rebound?, Assisted? and the rest.' : 'Follow-up questions off. Foul-outs and free throws still ask.'; return paint(); }
     if (k === 'sound') { pref.set('wknd-sc-sound', soundOn() ? 'off' : 'on'); ui.tip = soundOn() ? 'Sounds on.' : 'Sounds off.'; if (soundOn()) chime('yes'); return paint(); }
@@ -912,12 +975,13 @@ export async function mount(el) {
   // red; past five, the number in red.
   const pips = t => {
     const n = G.teamFouls[t], at = rules.penaltyAt;
+    if (!(at > 0)) return ''; // no penalty (Papawis): no team-foul pips
     const label = `${n} team foul${n === 1 ? '' : 's'}${G.penalty[t] ? ', in the penalty' : G.penaltyNext[t] ? ', penalty next' : ''}. Tap for the fouls`;
     // Past five: the red pips stay and the count shows beside them (refs ask for it).
     const body = `<span class="sc-pips">${Array.from({ length: at }, (_, i) => `<i class="${n >= at ? 'pen' : i < n ? 'on' : n === at - 1 && i === at - 1 ? 'next' : ''}"></i>`).join('')}</span>${n > at ? `<b class="sc-pips__n num">${n}</b>` : ''}`;
     return `<button type="button" class="sc-pipbtn" data-act="fouls" data-team="${t}" aria-label="${esc(team[t].name)}: ${label}">${body}</button>`;
   };
-  const dots = t => `<span class="sc-dots" role="img" aria-label="${G.timeouts.left[t]} timeout${G.timeouts.left[t] === 1 ? '' : 's'} left">${Array.from({ length: G.timeouts.allowance }, (_, i) => `<i class="${i < G.timeouts.left[t] ? 'on' : ''}"></i>`).join('')}</span>`;
+  const dots = t => !G.timeouts.allowance ? '' : `<span class="sc-dots" role="img" aria-label="${G.timeouts.left[t]} timeout${G.timeouts.left[t] === 1 ? '' : 's'} left">${Array.from({ length: G.timeouts.allowance }, (_, i) => `<i class="${i < G.timeouts.left[t] ? 'on' : ''}"></i>`).join('')}</span>`;
   const sideBoard = t => `<div class="sc-tm sc-tm--${t}">
       <div class="sc-tm__r"><button type="button" class="sc-tm__s" data-hold="score" aria-label="${esc(team[t].name)} ${G.score[t]}. Hold for the score by quarter"><span class="dot" style="--c:${esc(team[t].color)}"></span><span class="num">${G.score[t]}</span></button>${dots(t)}</div>
       ${pips(t)}
@@ -974,6 +1038,8 @@ export async function mount(el) {
     if (r.type === 'period_end') return r.final ? `<b>Final</b> · game over` : `<b>End of ${esc(r.period)}</b>`;
     if (r.type === 'sub') return `<b>${esc(short(r.in))}</b> on for ${esc(short(r.out))}`;
     if (r.type === 'dnp') return `<b>${esc(short(r.player))}</b> ${r.on === false ? 'back on the roster' : 'didn’t play'}`;
+    if (r.type === 'move') return `<b>${esc(short(r.player))}</b> moved to ${esc(team[r.to] ? team[r.to].name : '')}`;
+    if (r.type === 'setup') return `<b>Game ${esc(String(r.game || ui.game))}</b> set up · ${r.stats === 'full' ? 'Full' : 'Basic'} · ${esc(String(r.periods || 4))} × ${esc(String(r.periodMin || 10))} min`;
     const who = r.player ? short(r.player) : r.team ? team[r.team].name : 'Refs';
     const w = { shot: `${r.pts}PT ${r.made ? 'made' : 'missed'}`, ft: `FT ${r.made ? 'made' : 'missed'}`, reb: r.off ? 'offensive rebound' : 'defensive rebound', ast: 'assist', blk: 'block', stl: `steal${r.from ? ` from ${short(r.from)}` : ''}`,
       to: `turnover${r.kind ? ` · ${r.kind}` : ''}`, foul: `${r.kind && r.kind !== 'personal' ? r.kind + ' ' : ''}foul`, team_to: `team turnover${r.kind ? ` · ${r.kind}` : ''}`, team_tech: `technical · ${r.kind || 'coach'}`,
@@ -1092,6 +1158,14 @@ export async function mount(el) {
   const pad = () => {
     const arm = k => (ui.arm && ui.arm.key === k ? ' arm' : '');
     const lab = p => (p === 1 ? 'FT' : p + 'PT');
+    // Papawis Basic: makes only, then REB and AST. One tap per play, no follow-ups.
+    if (basic()) return `<div class="sc-pad sc-pad--${shots.length} sc-pad--basic">
+        ${shots.map(p => `<button type="button" class="sc-st sc-st--made${arm(`s${p}m`)}" data-shot="${p}" data-made="1" aria-pressed="${!!arm(`s${p}m`)}" aria-label="${lab(p)} made">${lab(p)}</button>`).join('')}
+      </div>
+      <div class="sc-pad sc-pad--2">
+        <button type="button" class="sc-st${ui.arm && /^reb/.test(ui.arm.key) ? ' arm' : ''}" data-act="reb" aria-label="Rebound">REB</button>
+        <button type="button" class="sc-st${arm('ast')}" data-act="ast" aria-label="Assist">AST</button>
+      </div>`;
     return `<div class="sc-pad sc-pad--${shots.length}">
         ${shots.map(p => `<button type="button" class="sc-st sc-st--made${p > 1 ? ' up' : ''}${arm(`s${p}m`) || arm(`s${p}a`)}" data-shot="${p}" data-made="1" aria-pressed="${!!(arm(`s${p}m`) || arm(`s${p}a`))}" aria-label="${lab(p)} made${p > 1 ? '. Swipe up for and-one' : ''}">${lab(p)}</button>`).join('')}
         ${shots.map(p => `<button type="button" class="sc-st sc-st--miss${arm(`s${p}x`)}" data-shot="${p}" aria-pressed="${!!arm(`s${p}x`)}" aria-label="${lab(p)} missed">${lab(p)}</button>`).join('')}
@@ -1216,11 +1290,14 @@ export async function mount(el) {
       <div class="sc-pc">
         <span class="sc-pc__avw"><span class="avatar sc-pc__av" style="--ring:${esc(team[p.team].color)}">${esc(ini)}${p.photo ? `<img src="${esc(p.photo)}" alt="" onerror="this.remove()">` : ''}</span>${potgLeader() === p.id ? '<i class="sc-pc__star" aria-label="Player of the game so far">★</i>' : ''}</span>
         <span class="sc-pc__who"><small class="num">${p.number ? `#${esc(p.number)} · ` : ''}${esc(team[p.team].name)} · ${onCourt(p.team, p.id) ? 'on court' : 'bench'}</small><b>${esc(p.name)}</b>
-          <span class="sc-pc__fouls ${tr}" role="img" aria-label="${z('pf')} of ${rules.foulOut} fouls${tr === 'd' ? ', in foul trouble' : ''}">${Array.from({ length: rules.foulOut }, (_, i) => `<i class="${i < z('pf') ? 'on' : ''}"></i>`).join('')}</span></span>
+          <span class="sc-pc__fouls ${tr}"${basic() ? ' hidden' : ''} role="img" aria-label="${z('pf')} of ${rules.foulOut} fouls${tr === 'd' ? ', in foul trouble' : ''}">${Array.from({ length: rules.foulOut }, (_, i) => `<i class="${i < z('pf') ? 'on' : ''}"></i>`).join('')}</span></span>
         <span class="sc-pc__pts${z('pts') ? ' pos' : ''}"><b class="num">${z('pts')}</b><small class="num">PTS</small></span>
       </div>
-      <div class="sc-pop__line">${[['REB', z('reb'), 'pos'], ['AST', z('ast'), 'pos'], ['STL', z('stl'), 'pos'], ['BLK', z('blk'), 'pos'], ['TO', z('turnover'), 'neg'], ['PF', z('pf'), 'neg']].map(([k, v, t]) => `<span class="${v ? t : 'zero'}"><b class="num">${v}</b><small class="num">${k}</small></span>`).join('')}</div>
-      <div class="sc-pop__line sc-pop__line--3">${[['FG', m, a], ['3PT', z('fg3m'), z('fg3m') + z('fg3m_miss')], ['FT', z('ftm'), z('ftm') + z('ft_miss')]].map(([k, made, att]) => `<span><b class="num">${made}-${att}</b><small class="num">${k}${att ? ` · ${Math.round((made / att) * 100)}%` : ''}</small></span>`).join('')}</div>
+      ${basic() ? `<div class="sc-pop__line sc-pop__line--3">${[['REB', z('reb')], ['AST', z('ast')], ['3PT', z('fg3m')]].map(([k, v]) => `<span class="${v ? 'pos' : 'zero'}"><b class="num">${v}</b><small class="num">${k}</small></span>`).join('')}</div>`
+        : `<div class="sc-pop__line">${[['REB', z('reb'), 'pos'], ['AST', z('ast'), 'pos'], ['STL', z('stl'), 'pos'], ['BLK', z('blk'), 'pos'], ['TO', z('turnover'), 'neg'], ['PF', z('pf'), 'neg']].map(([k, v, t]) => `<span class="${v ? t : 'zero'}"><b class="num">${v}</b><small class="num">${k}</small></span>`).join('')}</div>
+      <div class="sc-pop__line sc-pop__line--3">${[['FG', m, a], ['3PT', z('fg3m'), z('fg3m') + z('fg3m_miss')], ['FT', z('ftm'), z('ftm') + z('ft_miss')]].map(([k, made, att]) => `<span><b class="num">${made}-${att}</b><small class="num">${k}${att ? ` · ${Math.round((made / att) * 100)}%` : ''}</small></span>`).join('')}</div>`}
+      ${pw && !ui.locked && !G.final ? `<button type="button" class="sc-move" data-act="move" data-pid="${esc(p.id)}"><span class="dot" style="--c:${esc(team[other(p.team)].color)}"></span>Move to ${esc(team[other(p.team)].name)}</button>
+      <p class="sc-move__n">His ${z('pts')} point${z('pts') === 1 ? '' : 's'} so far stay with ${esc(team[p.team].name)}. Undo works like any play.</p>` : ''}
       ${lastP ? `<div class="sc-pc__last"><span>Last: ${playText(lastP).replace(/<b>[^<]*<\/b>\s*/, '')}${lastP.period ? ` <span class="num">· ${esc(lastP.period)}${lastP.clock ? ' ' + esc(lastP.clock) : ''}</span>` : ''}</span>${ui.locked ? '' : `<button type="button" class="sc-lb" data-fix="${esc(lastP.id)}">Fix</button>`}</div>` : ''}
     </div></div>`;
   }
@@ -1268,6 +1345,7 @@ export async function mount(el) {
   // Undo on the last play reopens the game; the Scoresheet still fixes plays.
   function overPanel() {
     const n = unsent().length, all = list().length;
+    if (pw) return pwOverPanel(n, all);
     const O0 = B.over || {};
     if (O0.finish && !ui.locked && !ui.published) return courtPanel(n, all);
     const sendLine = ui.published ? esc(ui.published)
@@ -1350,7 +1428,105 @@ export async function mount(el) {
     if (off) return confirm('Which final score?', `The plays add up to ${G.score.a}–${G.score.b}; the final score says ${off.a}–${off.b}. Saving the box score uses the one you pick`, 'up', `Use ${G.score.a}–${G.score.b}`, () => send('plays'), `Keep ${off.a}–${off.b}`, () => send('typed'));
     confirm('Save the box score?', `${team.a.name} ${G.score.a}–${G.score.b} ${team.b.name}. The stats go on the site and in the app${O.liveOff ? ' once Visible to everyone is on' : ' now'}; the POTG and recap come next`, 'up', 'Save it', () => send(''));
   }
+  // ── Papawis: the setup before each game, and moving between the run's games ──
+  // A new game starts set up like the last one: same stats and minutes, sides as they
+  // finished (moves included), the same people not here. The first game: the run's defaults
+  // and the sides people signed up on.
+  function draftFor(n) {
+    const prevN = games().filter(x => x < n && setupFor(x)).pop();
+    if (prevN) {
+      const st = setupFor(prevN);
+      const Gp = foldGame(list().filter(e => !e.late && gameOf(e) === prevN), papawisRules(B.rules, st));
+      const now = papawisSides(st, Gp), side = {};
+      for (const p of everyone) side[p.id] = now[p.id] || homeSides[p.id];
+      return { stats: st.stats === 'full' ? 'full' : 'basic', periodMin: Number(st.periodMin) || 10, periods: Number(st.periods) || 4, side, absent: new Set(everyone.filter(p => !now[p.id]).map(p => p.id)) };
+    }
+    const d = pw.defaults || {};
+    return { stats: d.stats === 'full' ? 'full' : 'basic', periodMin: d.periodMin || 10, periods: d.periods || 4, side: { ...homeSides }, absent: new Set() };
+  }
+  const SWAP_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l-4 4 4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg>';
+  function setupView() {
+    const d = ui.draft || (ui.draft = draftFor(ui.game));
+    const seg = (act, v, label, sub = '') => `<button type="button" class="su-seg${String(d[act === 'su-stats' ? 'stats' : 'periodMin']) === String(v) ? ' on' : ''}" data-act="${act}" data-v="${v}" aria-pressed="${String(d[act === 'su-stats' ? 'stats' : 'periodMin']) === String(v)}"><span>${label}</span>${sub ? `<small>${sub}</small>` : ''}</button>`;
+    const chip = p => {
+      const off = d.absent.has(p.id), t = d.side[p.id], moved = t !== homeSides[p.id];
+      return `<div class="su-chip${off ? ' is-off' : ''}">
+        <button type="button" class="su-chip__n" data-act="su-here" data-pid="${esc(p.id)}" aria-pressed="${!off}" aria-label="${esc(p.name)}: ${off ? 'not here. Tap if they came' : 'here. Tap if they didn’t come'}">${p.number ? `<i class="num">${esc(p.number)}</i>` : '<i class="num">–</i>'}<span>${esc(p.short)}</span>${off ? '<small>Not here</small>' : moved ? `<small>from ${esc(team[homeSides[p.id]].name.charAt(0) + team[homeSides[p.id]].name.slice(1).toLowerCase())}</small>` : ''}</button>
+        ${off ? '' : `<button type="button" class="su-chip__mv" data-act="su-swap" data-pid="${esc(p.id)}" aria-label="Move ${esc(p.name)} to ${esc(team[other(t)].name)}">${SWAP_SM}</button>`}
+      </div>`;
+    };
+    const side = t => {
+      const ppl = everyone.filter(p => d.side[p.id] === t);
+      const here = ppl.filter(p => !d.absent.has(p.id)).length;
+      return `<section class="su-side"><div class="su-side__h"><span class="dot" style="--c:${esc(team[t].color)}"></span><b>${esc(team[t].name)}</b><span class="num">${here} PLAYING</span></div>
+        <div class="su-chips">${ppl.map(chip).join('')}</div></section>`;
+    };
+    const any = games().some(n => setupFor(n));
+    const here = t => everyone.filter(p => d.side[p.id] === t && !d.absent.has(p.id)).length;
+    return `<div class="su">
+      <div class="su-card">
+        <span class="su-l">Stats</span>
+        <div class="su-segs su-segs--2">${seg('su-stats', 'basic', 'Basic', 'PTS · REB · AST')}${seg('su-stats', 'full', 'Full', 'Like league games')}</div>
+        <p class="su-n">Basic logs makes only, one tap per play. Pick Full when someone can score properly.</p>
+        <span class="su-l">Quarter length</span>
+        <div class="su-segs su-segs--4">${[5, 8, 10, 12].map(m => seg('su-min', m, `${m} min`)).join('')}</div>
+        <div class="su-row"><span>Quarters</span><span class="su-step"><button type="button" data-act="su-q" data-v="-1" aria-label="Fewer quarters"${d.periods <= 1 ? ' disabled' : ''}>−</button><b class="num">${d.periods}</b><button type="button" data-act="su-q" data-v="1" aria-label="More quarters"${d.periods >= 4 ? ' disabled' : ''}>+</button></span></div>
+        <p class="su-n">No timeouts or penalty at Papawis.${ui.game > 1 && any ? ' Set up like the last game: change anything that’s different.' : ''}</p>
+      </div>
+      <div class="su-who"><span class="su-l">Who’s here</span><small>Tap a name if they didn’t come. ${SWAP_SM} moves them to the other side.</small></div>
+      ${side('a')}${side('b')}
+      <div class="su-go">
+        <button type="button" class="sc-over__btn" data-act="su-start"${here('a') && here('b') ? '' : ' disabled'}>Start Game ${ui.game} · ${d.stats === 'full' ? 'Full' : 'Basic'} · ${d.periods} × ${d.periodMin} min</button>
+        ${any ? `<button type="button" class="sc-over__btn sc-over__btn--ghost" data-act="su-cancel">Not now</button>` : ''}
+        <small>Late arrivals can be added during the game (the team menu).</small>
+      </div>
+    </div>`;
+  }
+  function setupAct(name, b) {
+    const d = ui.draft || (ui.draft = draftFor(ui.game));
+    const v = b.getAttribute('data-v'), pid = b.getAttribute('data-pid');
+    if (name === 'su-stats') d.stats = v === 'full' ? 'full' : 'basic';
+    else if (name === 'su-min') d.periodMin = Math.max(1, Math.min(20, Number(v) || 10));
+    else if (name === 'su-q') d.periods = Math.max(1, Math.min(4, d.periods + (Number(v) || 0)));
+    else if (name === 'su-here' && pid) { if (d.absent.has(pid)) d.absent.delete(pid); else d.absent.add(pid); }
+    else if (name === 'su-swap' && pid) d.side[pid] = other(d.side[pid] || homeSides[pid]);
+    else if (name === 'su-cancel') { const set = games().filter(n => setupFor(n)); ui.draft = null; return goGame(set[set.length - 1] || 1); }
+    else if (name === 'su-start') {
+      const sides = { a: [], b: [] };
+      for (const p of everyone) if (!d.absent.has(p.id)) sides[d.side[p.id] || homeSides[p.id]].push(p.id);
+      if (!sides.a.length || !sides.b.length) { ui.tip = 'Each side needs someone playing.'; return paint(); }
+      add({ type: 'setup', game: ui.game, stats: d.stats, periodMin: d.periodMin, periods: d.periods, sides, absent: [...d.absent] });
+      ui.draft = null; ui.running = false; ui.secs = rules.periodMin * 60; syncRun(); ui.tip = `Game ${ui.game} is on. The clock starts on the first play, or tap Start.`;
+      Object.keys(slots).forEach(t => { slots[t] = []; });
+      save();
+    }
+    return paint();
+  }
+  function goGame(n) {
+    ui.game = n; ui.draft = null; ui.sel = null; ui.arm = null; ui.ask = null; ui.queue = []; ui.peek = null; ui.after = null; ui.redo = null;
+    ui.running = false; syncRun();
+    Object.keys(slots).forEach(t => { slots[t] = []; });
+    G = fold();
+    ui.secs = G.final ? 0 : rules.periodMin * 60;
+    paint();
+  }
+  const nextGame = () => goGame(Math.max(ui.game, ...games()) + 1);
+  // Game over in a Papawis run: the next game, or Finish the run (that needs signal).
+  function pwOverPanel(n, all) {
+    const later = games().filter(x => x > ui.game && setupFor(x));
+    const sendLine = n ? `${n} play${n === 1 ? '' : 's'} still sending${ui.sync === 'offline' ? ': waiting for signal' : '…'}` : `All ${all} play${all === 1 ? '' : 's'} saved.`;
+    return `<div class="sc-over" role="status"><div class="sc-over__h"><b>Game ${ui.game} over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>
+      <p class="sc-over__s${n ? ' is-wait' : ''}">${sendLine}</p>
+      <div class="sc-over__b">${later.length ? `<button type="button" class="sc-over__btn" data-act="pw-goto" data-v="${later[0]}">Back to Game ${later[0]}</button>` : `<button type="button" class="sc-over__btn" data-act="pw-next">Start Game ${ui.game + 1}</button>`}
+        <a class="sc-over__btn sc-over__btn--ghost" href="${esc(pw.finish)}">${pw.done ? 'Finish the run again' : 'Done playing · Finish the run'}</a></div>
+      <p class="sc-over__n">${later.length ? '' : `Game ${ui.game + 1} starts set up like this one: same minutes, sides as they finished. `}${n ? 'Finishing the run needs signal: every play has to reach the server first.' : 'Undo the last play to reopen this game.'}</p></div>`;
+  }
+
   function paintNow() {
+    // Papawis: a game with no setup yet shows the setup screen instead.
+    const title = el.querySelector('.sc-nav .navbar__title');
+    if (pw && title) title.textContent = `Game ${ui.game} · ${pw.title}`;
+    if (pw && !setupFor(ui.game) && !ui.locked) { root.innerHTML = setupView() + (ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''); ui.tip = ''; paintPill(); return; }
     const quiet = a => !!a && SKIPPABLE.has(a.kind) && !followOn();
     if (quiet(ui.ask)) ui.ask = null;
     while (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) { ui.ask = ui.queue.shift(); if (quiet(ui.ask)) ui.ask = null; }
@@ -1412,6 +1588,10 @@ export async function mount(el) {
     const t = b.getAttribute('data-team');
     if (name === 'clock') { clockNow(); ui.running = !ui.running; syncRun(); ui.whistle = false; if (ui.running) ui.tip = ''; save(); return paint(); }
     if (name === 'end') return endPeriod();
+    if (name === 'move') { const id = b.getAttribute('data-pid'); ui.peek = null; return byId[id] ? movePlayer(id, other(byId[id].team)) : paint(); }
+    if (name === 'pw-next') return nextGame();
+    if (name === 'pw-goto') return goGame(Number(b.getAttribute('data-v')) || 1);
+    if (/^su-/.test(name)) return setupAct(name, b);
     if (name === 'confirm-no') { const c = ui.confirm; ui.confirm = null; if (c && c.noAct) c.noAct(); return paint(); }
     if (name === 'confirm-yes') { const c = ui.confirm; ui.confirm = null; if (c) c.act(); return paint(); }
     if (name === 'publish') return publish();
@@ -1754,13 +1934,14 @@ export async function mount(el) {
   }
 
   paint();
+  el._scDrawn = true; // the app's "didn't open" check (public/app.js initScorer) stands down
   sync();
   // Ask the phone to keep this app's saved data (a full or idle phone may otherwise clear it,
   // unsent plays and all).
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   // The players' photos (the hold card) come from the app's image cache at the court: fetch
   // them once now, while there's signal.
-  if (navigator.onLine) setTimeout(() => { for (const p of [...team.a.players, ...team.b.players]) if (p.photo) fetch(p.photo, { credentials: 'same-origin' }).catch(() => {}); }, 1500);
+  if (navigator.onLine) setTimeout(() => { for (const p of pw ? everyone : [...team.a.players, ...team.b.players]) if (p.photo) fetch(p.photo, { credentials: 'same-origin' }).catch(() => {}); }, 1500);
   if (multi) { listen(); if (ui.lane) lanes(); else lanes({ action: 'claim', want: 'both' }); }
 }
 

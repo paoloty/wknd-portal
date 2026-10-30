@@ -24,6 +24,8 @@
 //   sub     { in, out, batch? }  (batch: several made at once, undone together)   lineup { ids }
 //   dnp     { on }  (player didn't play: a late or absent player; any stat of theirs later
 //                   clears it, so a late arrival who plays counts as played)
+//   move    { to: 'a'|'b' }  (Papawis: the player switches sides when one is short; each of his
+//                   plays counts for the side he was on when it happened)
 //   void    { target }
 // A correction (Edit on a play) is a void plus the fixed play right where it was: correction().
 
@@ -33,7 +35,7 @@ export const DEFAULT_RULES = {
   periodMin: 12,
   otMin: 5,
   timeouts: { firstHalf: 2, secondHalf: 3, overtime: 1 }, // unused ones don't carry over
-  penaltyAt: 5,           // a team's 5th foul in a period and every one after gives free throws
+  penaltyAt: 5,           // a team's 5th foul in a period and every one after gives free throws (0: none, Papawis)
   foulOut: 5,
   ejectAt: 2,             // technicals + unsportsmanlike, counted together
   waves: 'first half',    // 'first half' | 'whole game' | 'off' (playoffs: off)
@@ -54,7 +56,7 @@ const foulWindow = p => (isOvertime(p) || p === 'Q4' ? 'Q4+' : p);
 const isMiss = e => (e.type === 'shot' || e.type === 'ft') && !e.made;
 // Plays that don't change possession context: skipped when looking at "the play right before"
 // for a rebound (a block sits between the miss and the board).
-const META = new Set(['timeout', 'stoppage', 'period_end', 'sub', 'lineup', 'blk', 'dnp']);
+const META = new Set(['timeout', 'stoppage', 'period_end', 'sub', 'lineup', 'blk', 'dnp', 'move', 'setup']);
 
 // The plays that count, in order: voided ones (and the voids) taken out.
 export function livePlays(events) {
@@ -83,6 +85,7 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
   const bucket = (o, k) => (o[k] = o[k] || { a: 0, b: 0 });
   const dnp = new Set();
   const benched = new Set(); // subbed off and not back since (a sub in, or any stat, brings them back)
+  const moved = {};          // Papawis: player → the side he's on now, for the ones who switched
   const touch = (t, id) => { if (!t || !id) return; dnp.delete(id); benched.delete(id); lastActive[t] = [id, ...lastActive[t].filter(x => x !== id)]; };
 
   plays.forEach((e, i) => {
@@ -138,6 +141,15 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
         if (e.in) touch(t, e.in);
         if (e.out && e.out !== e.in) { benched.add(e.out); lastActive[t] = [...lastActive[t].filter(x => x !== e.out), e.out]; }
         break;
+      // Papawis: the player switches sides and starts on the new side's bench.
+      case 'move':
+        if (p && (e.to === 'a' || e.to === 'b')) {
+          moved[p] = e.to;
+          lastActive[other(e.to)] = lastActive[other(e.to)].filter(x => x !== p);
+          lastActive[e.to] = [...lastActive[e.to].filter(x => x !== p), p];
+          benched.add(p);
+        }
+        break;
       default: break;
     }
     rows.push({ ...e, ...extra, score: { a: score.a, b: score.b } });
@@ -154,12 +166,12 @@ export function foldGame(events, rules = DEFAULT_RULES, rosters = null) {
     if (ejected || fouledOut) flags[id] = ejected ? 'ejected' : 'fouled out';
   }
   return {
-    period, final, score, rows, players, flags, teamTO, dnp: [...dnp], benched: [...benched],
+    period, final, score, rows, players, flags, teamTO, dnp: [...dnp], benched: [...benched], moved,
     byPeriod: Object.entries(byPeriod).map(([p, s]) => ({ period: p, ...s })).sort((x, y) => periodIndex(x.period) - periodIndex(y.period)),
     teamFouls: { a: fw.a, b: fw.b },
     // A team at penaltyAt - 1 fouls: its next foul gives free throws.
-    penalty: { a: fw.a >= r.penaltyAt, b: fw.b >= r.penaltyAt },
-    penaltyNext: { a: fw.a === r.penaltyAt - 1, b: fw.b === r.penaltyAt - 1 },
+    penalty: { a: r.penaltyAt > 0 && fw.a >= r.penaltyAt, b: r.penaltyAt > 0 && fw.b >= r.penaltyAt },
+    penaltyNext: { a: r.penaltyAt > 0 && fw.a === r.penaltyAt - 1, b: r.penaltyAt > 0 && fw.b === r.penaltyAt - 1 },
     timeouts: { allowance: allow, left: { a: Math.max(0, allow - tw.a), b: Math.max(0, allow - tw.b) } },
     wavesOn: r.waves === 'whole game' || (r.waves === 'first half' && periodIdx <= 2),
     lastActive,
@@ -198,5 +210,32 @@ export function nextPos(events, afterId = null) {
   return (a + b) / 2;
 }
 
+// Papawis (2026-10-30): a run is one scoring session with numbered games inside it. Every play
+// carries `game` (a void goes with the play it cancels); each game opens with a `setup` play
+// { stats: 'basic'|'full', periodMin, periods, sides: { a: [ids], b: [ids] }, absent: [ids] }.
+// Map: game number → its plays.
+export function playsByGame(events) {
+  const byId = new Map(events.map(e => [e.id, e]));
+  const gameOf = (e, d = 0) => (e.game != null ? Number(e.game) || 1 : e.type === 'void' && byId.has(e.target) && d < 5 ? gameOf(byId.get(e.target), d + 1) : 1);
+  const out = new Map();
+  for (const e of events) { const n = gameOf(e); if (!out.has(n)) out.set(n, []); out.get(n).push(e); }
+  return out;
+}
+// The setup play a Papawis game opened with (the last one standing), or null.
+export const setupOf = plays => livePlays(plays).filter(e => e.type === 'setup').pop() || null;
+// A Papawis game's rules: the run's, with its setup's quarter length and number of quarters.
+export function papawisRules(base, setup) {
+  if (!setup) return base;
+  return { ...base, periodMin: Math.max(1, Math.min(20, Number(setup.periodMin) || base.periodMin)), periods: Math.max(1, Math.min(4, Number(setup.periods) || base.periods)) };
+}
+// Who's on which side once the game's moves are in: { id: 'a' | 'b' } (absent players left out).
+export function papawisSides(setup, G) {
+  const out = {};
+  if (setup && setup.sides) for (const t of ['a', 'b']) for (const id of setup.sides[t] || []) out[id] = t;
+  for (const id of (setup && setup.absent) || []) delete out[id];
+  if (G && G.moved) Object.assign(out, G.moved);
+  return out;
+}
+
 // The players app loads this as a module script and finds it here.
-if (typeof window !== 'undefined') window.wkndScoreEngine = { DEFAULT_RULES, STAT_KEYS, foldGame, livePlays, defaultFreeThrows, nextPos, correction, periodIndex, periodName, isOvertime };
+if (typeof window !== 'undefined') window.wkndScoreEngine = { DEFAULT_RULES, STAT_KEYS, foldGame, livePlays, defaultFreeThrows, nextPos, correction, periodIndex, periodName, isOvertime, playsByGame, setupOf, papawisRules, papawisSides };

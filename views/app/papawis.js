@@ -103,10 +103,19 @@ function runCard(r) {
       ${r.price ? `<p class="pwr__fine">${esc(r.priceNote)}</p>` : ''}
       <div class="pw-act">${papawisAction(r)}</div>
       <p class="msg msg--err" data-pw-msg role="alert" hidden></p>
+      ${scoreBar(r.score)}
     </div>
     ${r.admin ? papawisAdminStrip(r.admin) : ''}
     ${appSocialBar(r.social)}
   </section>`;
+}
+
+// On the run's day (server.js pwScoreLink): score its games with the league scorer, or, once
+// saved, the results.
+function scoreBar(s) {
+  if (!s) return '';
+  if (s.results) return `<a class="pw-scorebar" href="${esc(s.results)}"><span><b>Today's results are in</b><small>Scores, box score and the Player of the Day</small></span><span class="btn btn--ghost">See results</span></a>`;
+  return `<div class="pw-scorebar"><span><b>${s.live ? 'Scoring now' : 'Score today\'s games'}</b><small>Same scorer as league games. Set the minutes and check who's here before each game.</small></span><a class="btn" href="${esc(s.href)}">${s.live ? 'Open the scorer' : 'Start scoring'}</a></div>`;
 }
 
 // A later run whose sign-ups aren't open yet: one line, nothing to do until they open.
@@ -158,10 +167,10 @@ export function appPapawisPastRows(items) {
 // One past run (/app/papawis/:id). run: { id, title, day, time, place, photo, kind, count,
 // max, price, faces, teamsOut, mine: null | { status: 'paid'|'unpaid'|'played'|'listed', team, amount } }
 // admin: the Manage run strip (views/app/admin-papawis.js papawisAdminStrip) for admins, else null
-export function appPapawisRunPage({ missing = false, run = null, back = { href: '/app/papawis', label: 'Papawis' }, admin = null }) {
+export function appPapawisRunPage({ missing = false, run = null, back = { href: '/app/papawis', label: 'Papawis' }, admin = null, results = '', saved = false, finish = '' }) {
   const nav = `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">${run ? esc(run.day) : 'Papawis'}</span><span></span></div>`;
   if (missing || !run) return `${nav}<div class="empty pw-gap">This run isn't on the list any more.</div>`;
-  const label = { played: 'Played', cancelled: 'Cancelled', pending: 'Price pending' }[run.kind];
+  const label = { played: 'Played', cancelled: 'Cancelled', pending: 'Price pending' }[run.kind] || 'Played';
   const m = run.mine;
   const mine = !m ? '' : m.status === 'unpaid'
     ? `<div class="pw-status pw-status--due" role="status"><i>${icons.wallet}</i><span><b>You owe ${peso(m.amount)} for this run</b><small>Settle it to keep joining runs</small></span></div><a class="btn" href="/app/settle?from=papawis">Settle ${peso(m.amount)}</a>`
@@ -177,6 +186,8 @@ export function appPapawisRunPage({ missing = false, run = null, back = { href: 
         <div class="pw-fact"><span>Time</span><b>${esc(run.time || '—')}</b></div>
       </div>
       ${mine ? `<div class="pw-act">${mine}</div>` : ''}
+      ${saved ? '<p class="msg msg--ok" role="status">Stats saved. They count in Papawis careers now.</p>' : ''}
+      ${results ? `<div class="pw-who pw-who--gap"><span class="pw-who__t">Results</span>${finish ? `<a class="pw-who__n" href="${esc(finish)}">Edit</a>` : ''}</div>${results}` : ''}
       <div class="pw-who pw-who--gap"><span class="pw-who__t">${run.teamsOut ? 'Teams' : run.kind === 'cancelled' ? 'Who was listed' : 'Who played'}</span><span class="pw-who__n"><b>${run.count}</b></span></div>
       ${run.faces.length ? seats({ ...run, max: run.faces.length, scheduled: false }) : '<p class="pwr__note">Nobody was listed.</p>'}
     </div>
