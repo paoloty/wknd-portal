@@ -313,6 +313,33 @@ export function appAdminPapawisPage({ missing = false, run = null, tab = 'roster
 }
 
 // The Messenger post, as the site's Copy for Messenger builds it (public/admin-papawis.js).
+// New run (/app/admin/papawis/new): the site's New run drawer as a screen. courts: active court
+// names (then Other…). values: what was sent back after a missing date; error: why.
+export function appAdminPapawisNewPage({ courts = [], today = '', back, error = '', values = {} }) {
+  const v = k => esc(values[k] ?? '');
+  const other = values.location === '__other__';
+  const opt = (val, label, on) => `<option value="${esc(val)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
+  return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">New run</span><span></span></div>
+  <form method="post" action="/app/admin/papawis/new" data-busy data-new-run>
+    ${error ? `<p class="msg msg--err" role="alert">${esc(error)}</p>` : ''}
+    <div class="group form-group" style="margin-top:14px">
+      <div class="cell"><label class="cell__lbl" for="nr-date">Date</label><input id="nr-date" name="date" type="date" min="${esc(today)}" value="${v('date')}" required></div>
+      <div class="cell"><label class="cell__lbl" for="nr-start">Start</label><input id="nr-start" name="start_time" type="time" value="${v('start_time')}"></div>
+      <div class="cell"><label class="cell__lbl" for="nr-end">End</label><input id="nr-end" name="end_time" type="time" value="${v('end_time')}"></div>
+      <div class="cell"><label class="cell__lbl" for="nr-court">Court</label><select id="nr-court" name="location" data-nr-court>
+        ${opt('', 'Pick a court', !values.location)}${courts.map(c => opt(c, c, values.location === c)).join('')}${opt('__other__', 'Other…', other)}</select></div>
+      <div class="cell" data-nr-other${other ? '' : ' hidden'}><label class="cell__lbl" for="nr-other">Where</label><input id="nr-other" name="location_other" type="text" placeholder="Court name and area" value="${v('location_other')}"></div>
+      <div class="cell"><label class="cell__lbl" for="nr-max">Players</label><input id="nr-max" name="max_slots" type="number" inputmode="numeric" min="1" step="1" value="${v('max_slots') || '20'}"></div>
+      <div class="cell"><label class="cell__lbl" for="nr-title">Title</label><input id="nr-title" name="title" type="text" placeholder="From the date, e.g. Sunday (Nov 8)" value="${v('title')}"></div>
+    </div>
+    <div class="group" style="margin-top:12px"><label class="cell adm-check"><input type="checkbox" name="open_days_before" value="6"${values.open_days_before ? ' checked' : ''}><span class="cell__t">Hold sign-ups until 6 days before<small>Shows as Scheduled until then</small></span></label></div>
+    <div class="pad stack" style="margin-top:12px"><button class="btn" type="submit">Create run</button></div>
+    <p class="foot-note">The run shows on the Papawis tab and Home once it's created. Announce it from Manage run → Messages.</p>
+  </form>
+  <script>(function () { var f = document.querySelector('[data-new-run]'); if (!f) return; var s = f.querySelector('[data-nr-court]'), o = f.querySelector('[data-nr-other]');
+    s.addEventListener('change', function () { o.hidden = s.value !== '__other__'; if (!o.hidden) o.querySelector('input').focus(); }); })();</script>`;
+}
+
 export function papawisMessengerText({ date, start_time, end_time, location, max_slots, completed, confirmed, waitlist, paid }) {
   const clock = hhmm => { const [h, m] = String(hhmm).split(':').map(Number); const h12 = h % 12 === 0 ? 12 : h % 12; return m === 0 ? `${h12}${h >= 12 ? 'PM' : 'AM'}` : `${h12}:${String(m).padStart(2, '0')}${h >= 12 ? 'PM' : 'AM'}`; };
   const d = new Date(`${date}T00:00:00`);

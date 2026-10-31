@@ -1356,6 +1356,9 @@ html.tk-lock { overflow: hidden; }
 .adm-act--danger .cell__t { color: var(--danger); font-weight: 600; }
 .adm-act:disabled { opacity: .5; }
 .adm-add { display: flex; flex-direction: column; gap: 8px; padding: 0 16px; }
+/* New run: the hold-sign-ups switch row (views/app/admin-papawis.js appAdminPapawisNewPage). */
+.adm-check { gap: 12px; }
+.adm-check input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--amber); }
 .adm-lbl { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .adm-input { width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--field-border); border-radius: var(--r-in); background: var(--field); color: var(--text); font: 16px var(--font-ui); }
 .adm-help + .seg, .adm-add .msg { margin: 0; }

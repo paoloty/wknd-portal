@@ -133,8 +133,10 @@ const laterRow = r => {
 
 // runs: server.js appPapawisRuns · totals: getPapawisTotalsForPlayer · summary: the stored
 // "Papawis this week" write-up ({ kicker, headline, body }) or null
-export function appPapawisPage({ off = false, runs = [], totals = null, summary = null, cutoffDays = 3 }) {
+// canCreate: an admin with the Papawis section: New run in the title row
+export function appPapawisPage({ off = false, runs = [], totals = null, summary = null, cutoffDays = 3, canCreate = false }) {
   if (off) return `${lt('Papawis')}<div class="empty">Papawis is off right now.</div>`;
+  const title = canCreate ? `<header class="lt"><h1>Papawis</h1><a class="lt__icon" href="/app/admin/papawis/new" aria-label="New run">${icons.plus}</a></header>` : lt('Papawis');
   const cards = runs.filter((r, i) => i === 0 || !r.scheduled), later = runs.filter((r, i) => i > 0 && r.scheduled);
   const tally = totals && (totals.played || totals.paid || totals.owing)
     ? `<div class="group pw-tally">
@@ -142,7 +144,7 @@ export function appPapawisPage({ off = false, runs = [], totals = null, summary 
         <div><b class="num">${peso(totals.paid)}</b><span>Paid</span></div>
         <div>${totals.owing ? `<a href="/app/settle?from=papawis"><b class="num pw-owing">${peso(totals.owing)}</b><span>Owing · settle</span></a>` : `<b class="num pw-clear">₱0</b><span>Owing</span>`}</div>
       </div>` : '';
-  return `${lt('Papawis')}
+  return `${title}
   ${cards.length ? cards.map(runCard).join('') : '<div class="empty pw-gap">No runs on the schedule. New ones show up here (and on Home) as soon as they\'re posted.</div>'}
   ${summary ? `<div class="sec">This week</div><div class="card pw-week"><span class="kick">${esc(summary.kicker || 'Papawis this week')}</span>${summary.headline ? `<p class="pw-week__h">${marked(summary.headline)}</p>` : ''}${summary.body ? `<p>${marked(summary.body)}</p>` : ''}</div>` : ''}
   ${later.length ? `<div class="sec">Also coming up</div><div class="group">${later.map(laterRow).join('')}</div>` : ''}

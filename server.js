@@ -6168,7 +6168,7 @@ import { appPlayerPage, appPlayerMissing, appSeasonPage } from './views/app/seas
 import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
 import { appPapawisFinishPage } from './views/app/papawis-score.js';
 import { papawisResultsPage, papawisResultsBody } from './views/papawis-results.js';
-import { appAdminPapawisPage, papawisMessengerText } from './views/app/admin-papawis.js';
+import { appAdminPapawisPage, appAdminPapawisNewPage, papawisMessengerText } from './views/app/admin-papawis.js';
 import { appAdminScorersPage } from './views/app/admin-scorers.js';
 import { appFinishGamePage } from './views/app/finish.js';
 import { appSettlePage } from './views/app/settle.js';
@@ -9745,7 +9745,7 @@ app.get('/app/papawis', requireApp, (req, res) => {
     off: !on, runs: runs.map(r => ({ ...r, social: social?.[`pw:${r.id}`] || null, score: pwScoreLink(req, getPapawisGame(r.id)), ...(appPapawisAdmin(req) ? { admin: appPapawisAdminHint(getPapawisGame(r.id)) } : {}) })),
     totals: on ? getPapawisTotalsForPlayer(me.playerId) : null,
     summary: on ? storedTeamsSummary('papawis_summary', papawisSummaryFacts(getPapawisGames())) : null,
-    cutoffDays: PAPAWIS_CUTOFF_DAYS,
+    cutoffDays: PAPAWIS_CUTOFF_DAYS, canCreate: on && appPapawisAdmin(req),
   }) });
 });
 
@@ -9814,6 +9814,30 @@ function appPapawisAdminHint(g) {
   ].filter(Boolean).join(' · ');
   return { id: g.id, note: note || 'Roster, teams, money and messages', count: t.pending + t.catchUp + (notAnnounced ? 1 : 0) + (t.closeOut ? 1 : 0) };
 }
+
+// New run in the app (Paolo, 2026-10-31): the site's New run fields on a screen; Create opens
+// the run's Manage screen. Declared before /app/admin/papawis/:id so "new" isn't a run id.
+app.get('/app/admin/papawis/new', requireApp, (req, res) => {
+  const me = appMe(req);
+  if (!appPapawisAdmin(req)) return res.redirect('/app/papawis');
+  res.set('X-App-No-Copy', '1');
+  sendTab(res, me, { title: 'New run · WKND', tab: 'papawis', body: appAdminPapawisNewPage({
+    courts: getActivePapawisCourts().map(c => c.name), today: manilaTodayStr(), back: { href: '/app/papawis', label: 'Papawis' },
+  }) });
+});
+app.post('/app/admin/papawis/new', requireApp, (req, res) => {
+  const me = appMe(req);
+  if (!appPapawisAdmin(req)) return res.redirect('/app/papawis');
+  const b = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ''))) {
+    return sendTab(res, me, { title: 'New run · WKND', tab: 'papawis', body: appAdminPapawisNewPage({
+      courts: getActivePapawisCourts().map(c => c.name), today: manilaTodayStr(), back: { href: '/app/papawis', label: 'Papawis' }, error: 'Pick the run’s date.', values: b,
+    }) });
+  }
+  const run = createPapawisRunFrom(b, req.session.playerName);
+  insertAdminLog({ actor: req.session.playerName || 'player-admin', actorType: req.session.isElevatedPlayer ? 'admin' : 'super', method: 'POST', path: '/app/admin/papawis/new', details: { id: run.id, date: run.date, location: run.location } });
+  res.redirect(`/app/admin/papawis/${encodeURIComponent(run.id)}?created=1`);
+});
 
 app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
   const me = appMe(req);
@@ -25725,25 +25749,29 @@ app.get('/api/papawis-map/photo', async (req, res) => {
   await sendPlayerPhotoUrl(res, cached?.map_image);
 });
 
-app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {
-  const { title, date, start_time, end_time, max_slots, open_days_before } = req.body;
-  // The New run drawer's court list ends with "Other…", whose text arrives as location_other.
-  const location = req.body.location === '__other__' ? req.body.location_other : req.body.location;
-  if (!date) return res.status(400).json({ error: 'Date is required.' });
+// A new run from the site's New run drawer or the app's New run screen (body: title, date,
+// start_time, end_time, max_slots, open_days_before, location / location_other). → the run.
+function createPapawisRunFrom(body, by) {
+  const { title, date, start_time, end_time, max_slots, open_days_before } = body;
+  // The court list ends with "Other…", whose text arrives as location_other.
+  const location = body.location === '__other__' ? body.location_other : body.location;
   const defaultTitle = new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
     + ' (' + new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ')';
-  const id = randomBytes(6).toString('hex');
-  const created = createPapawisGame({
-    id,
-    title: (title || '').trim() || defaultTitle,
+  return createPapawisGame({
+    id: randomBytes(6).toString('hex'),
+    title: String(title || '').trim() || defaultTitle,
     date,
-    start_time: (start_time || '').trim(),
-    end_time: (end_time || '').trim(),
-    location: (location || '').trim(),
+    start_time: String(start_time || '').trim(),
+    end_time: String(end_time || '').trim(),
+    location: String(location || '').trim(),
     max_slots: Number(max_slots) || 10,
     open_days_before: open_days_before ? Number(open_days_before) : null,
-    created_by: req.session.playerName || 'admin',
+    created_by: by || 'admin',
   });
+}
+app.post('/admin/papawis', requireAuth, express.json(), (req, res) => {
+  if (!req.body.date) return res.status(400).json({ error: 'Date is required.' });
+  const created = createPapawisRunFrom(req.body, req.session.playerName);
   res.json({ ok: true, id: created.id });
 });
 
