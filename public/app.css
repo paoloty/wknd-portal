@@ -799,6 +799,17 @@ a.sx:active { transform: scale(.99); }
 .px__foot { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
 .px__foot b { margin-left: auto; color: var(--amber-text); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .px__stack { display: flex; margin-top: 12px; }
+/* A finished run's card (feed 'pwres', 2026-10-31): the games, Player of the Day, who played. */
+.pxr__games { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--r-in); }
+.pxr__g { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
+.pxr__g + .pxr__g { border-top: 1px solid var(--border); }
+.pxr__n { font: 600 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.pxr__s { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; line-height: 1; }
+.pxr__s b { font: 700 20px/1 var(--font-num); }
+.pxr__s b.is-dim { color: var(--muted); }
+.pxr__who { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.pxr__who .px__stack { margin-top: 0; }
+.pw-week.pw-recap { padding: 0 0 12px; }
 
 /* News */
 .nx__pic, .px__pic { position: relative; aspect-ratio: 2 / 1; background: var(--surface-2); }

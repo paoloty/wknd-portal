@@ -137,7 +137,7 @@ import {
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   logShareCardAction, getAllShareCardLog,
   getPapawisGamesForPlayer, getPapawisHistoryForPlayer, getPapawisTotalsForPlayer,
-  getPapawisScored, getPapawisStatLines, savePapawisScored, getPapawisPotdCount, getPapawisScoredTotals,
+  getPapawisScored, getPapawisScoredList, getPapawisStatLines, savePapawisScored, getPapawisPotdCount, getPapawisScoredTotals,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
   lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
@@ -6703,7 +6703,10 @@ function appFeedIndex() {
   // Posts and Papawis follow the same switches as the site's homepage and /papawis.
   if (getSetting('posts_enabled', '0') === '1') for (const p of getPublicPosts()) items.push({ kind: 'post', id: p.id, at: p.publish_at || p.created_at, src: p });
   const today = manilaTodayStr();
+  // A finished (scored) run comes back as its results card, placed when it was finished.
+  const scored = new Map(getPapawisScoredList().map(x => [x.run_id, x.finished_at]));
   for (const r of getSetting('papawis_enabled', '0') === '1' ? getPapawisGames() : []) {
+    if (scored.has(r.id)) { if (r.status !== 'cancelled') items.push({ kind: 'pwres', id: r.id, at: scored.get(r.id), src: r }); continue; }
     if (r.status !== 'open' || String(r.date) < today || !isPapawisSignupOpenNow(r)) continue;
     items.push({ kind: 'papawis', id: r.id, at: r.created_at, src: r });
   }
@@ -6841,6 +6844,22 @@ function appFeedItem(it, me, extra) {
     const img = (/<img[^>]+src=["']((?:https?:\/\/|\/)[^"']+)["']/i.exec(p.body_html || '') || [])[1] || '';
     return { kind: 'post', day, when: feedWhen(it.at), title: p.title, excerpt: text.slice(0, 220), img, href: `/app/posts/${encodeURIComponent(p.slug)}` };
   }
+  // A finished run: the games, the Player of the Day, everyone who played, the AI recap.
+  if (it.kind === 'pwres') {
+    const run = it.src, res = pwResultsFor(run);
+    if (!res) return { kind: 'none', day: '' };
+    const RING = { light: 'var(--team-white, #d7dce5)', dark: 'var(--team-black, #6b7486)' };
+    const face = p => ({ playerId: p.playerId, initials: p.ini, ring: RING[p.side] || '', photoUrl: p.playerId ? playerPhotoUrl(p.playerId, 96) : '', me: !!p.playerId && p.playerId === me.playerId });
+    const mine = res.people.find(p => p.playerId && p.playerId === me.playerId);
+    // Day totals (Paolo, 2026-10-31: a run is one day, so totals, not averages), with the games
+    // played when someone sat one out ("9 PTS · 1 game").
+    const dayLine = p => statLine(p.line) + (p.n < res.games.length ? ` · ${p.n} game${p.n === 1 ? '' : 's'}` : '');
+    return { kind: 'pwres', day, when: feedWhen(it.at), id: run.id, href: `/app/papawis/${encodeURIComponent(run.id)}?from=home`,
+      title: run.title || 'Papawis', place: run.location || '', games: res.games.map(g => ({ n: g.n, a: g.a, b: g.b })),
+      potd: res.potd ? { ...face(res.potd), name: res.potd.name, line: dayLine(res.potd) } : null,
+      faces: res.people.map(face), mine: mine ? dayLine(mine) : '', summary: pwRunSummary(run, res),
+      social: extra.social?.[`pw:${run.id}`] || null };
+  }
   if (it.kind === 'papawis') {
     const run = extra.runs?.find(r => r.id === it.id);
     return run ? { kind: 'papawis', day, when: feedWhen(it.at), run, social: extra.social?.[`pw:${it.id}`] || null } : { kind: 'none', day: '' };
@@ -6868,7 +6887,7 @@ function appFeedPage(me, before, prevDay) {
   const from = m ? all.findIndex(it => it.at < Number(m[1]) || (it.at === Number(m[1]) && String(it.id).localeCompare(m[2]) < 0)) : 0;
   const page = from < 0 ? [] : all.slice(from, from + APP_FEED_PAGE);
   const gameIds = page.filter(it => it.kind === 'game').map(it => it.id);
-  const extra = { social: appSocialFor(page.filter(it => ['game', 'ann', 'papawis'].includes(it.kind)).map(it => (it.kind === 'ann' ? `ann:${it.id}` : it.kind === 'papawis' ? `pw:${it.id}` : it.id)), me.playerId) };
+  const extra = { social: appSocialFor(page.filter(it => ['game', 'ann', 'papawis', 'pwres'].includes(it.kind)).map(it => (it.kind === 'ann' ? `ann:${it.id}` : it.kind === 'papawis' || it.kind === 'pwres' ? `pw:${it.id}` : it.id)), me.playerId) };
   // The page's Papawis runs as the Papawis tab shapes them (who's in, the player's own state
   // and the one action), so the card can join right there.
   if (page.some(it => it.kind === 'papawis')) extra.runs = appPapawisRuns(me);
@@ -8431,6 +8450,7 @@ app.post('/app/papawis/:id/finish', requireApp, express.urlencoded({ extended: f
   const sgId = pwScoreId(run.id);
   saveScoreGame(sgId, { status: 'published', publishedAt: Date.now(), settings: { ...(getScoreGame(sgId)?.settings || {}), discarded: [...discard] } });
   console.log(`[papawis scorer] ${by} finished run=${run.id}: ${kept.length} game(s), potd=${potd?.key || '-'}`);
+  pwRunSummaryStart(run);
   // The Player of the Day hears it once (and again only if a later save picks someone else).
   if (potd && potd.playerId && potd.key !== before?.potd_key && potd.playerId !== req.session?.playerPlayerId) {
     const L = potd.line;
@@ -8460,12 +8480,52 @@ function pwResultsFor(run) {
   const potd = people.find(o => o.key === done.potd_key) || null;
   return { games: done.games, people, potd, full, potdCount: potd && potd.playerId ? getPapawisPotdCount(potd.playerId) : 0 };
 }
+// The run's AI recap (Paolo, 2026-10-31): a headline and a sentence or two from the games and
+// the standouts, through the same writer and checks as the teams summaries (teamsSummary),
+// stored as setting papawis_run_summary_<run id>. Written when the run is finished, and again
+// when a later save changes the facts. Shown on the feed's results card and the run screens.
+const pwRunSummaryKey = id => `papawis_run_summary_${id}`;
+function pwRunFacts(run, results) {
+  if (!results?.games?.length) return null;
+  const SIDE = { light: 'Light', dark: 'Dark' };
+  const who = p => `${p.name}${p.playerId ? '' : ' (a guest)'} (${SIDE[p.side] || p.side})`;
+  const line = L => [`${L.pts || 0} points`, ...[['reb', 'rebounds'], ['ast', 'assists'], ['stl', 'steals'], ['blk', 'blocks']].filter(([k]) => L[k] > 0).map(([k, w]) => `${L[k]} ${w}`)].join(', ');
+  const lines = [
+    `Run: ${run.title || 'Papawis'}, ${pwDay(run.date)}, at ${run.location || 'the court'}. A pickup run: the players split into two sides for the day, Light and Dark (not league teams).`,
+    `Players who played: ${results.people.length}. Games played: ${results.games.length}.`,
+  ];
+  for (const g of results.games) lines.push(`Game ${g.n}: ${g.a === g.b ? `Light and Dark tied ${g.a}–${g.b}` : g.a > g.b ? `Light beat Dark ${g.a}–${g.b}` : `Dark beat Light ${g.b}–${g.a}`}.`);
+  if (results.games.length > 1) {
+    const won = s => results.games.filter(g => (s === 'light' ? g.a > g.b : g.b > g.a)).length;
+    lines.push(`Games won over the day: Light ${won('light')}, Dark ${won('dark')}.`);
+  }
+  if (results.potd) lines.push(`Player of the Day: ${who(results.potd)}, ${line(results.potd.line)} over ${results.potd.n} game${results.potd.n === 1 ? '' : 's'}.`);
+  const top = results.people.filter(p => p !== results.potd).sort((x, y) => (y.line.pts || 0) - (x.line.pts || 0)).slice(0, 3);
+  for (const p of top) lines.push(`Also: ${who(p)}, ${line(p.line)} over ${p.n} game${p.n === 1 ? '' : 's'}.`);
+  const facts = lines.map(l => `- ${l}`).join('\n');
+  return {
+    key: factsKey('pwrun', facts), kicker: 'Papawis recap', section: 'Results', where: 'Papawis run results', facts,
+    focus: 'Write about how this pickup run went: the results between Light and Dark and the Player of the Day. Light and Dark are sides picked for the day, not league teams: no standings, seasons, rivalries or records.',
+  };
+}
+const pwRunSummary = (run, results) => storedTeamsSummary(pwRunSummaryKey(run.id), pwRunFacts(run, results));
+const pwRunSummaryStart = run => teamsSummary(pwRunSummaryKey(run.id), 'papawis-run', pwRunFacts(run, pwResultsFor(run)));
+// Runs finished in the last week with no recap yet get theirs a minute after a start.
+setTimeout(() => {
+  if (getSetting('papawis_enabled', '0') !== '1') return;
+  const since = addDaysYmd(manilaTodayStr(), -7);
+  for (const { run_id } of getPapawisScoredList()) {
+    const run = getPapawisGame(run_id);
+    if (run && String(run.date) >= since) pwRunSummaryStart(run);
+  }
+}, 60_000).unref?.();
 // The site's page for a scored run (the app's run screen shows the same).
 app.get('/papawis/:id/results', (req, res) => {
   const run = getSetting('papawis_enabled', '0') === '1' ? getPapawisGame(req.params.id) : null;
   const results = run ? pwResultsFor(run) : null;
   if (!run || !results) return res.redirect('/papawis');
-  res.send(renderPage(req, { title: `${run.title || 'Papawis'} · Results`, currentPath: '/papawis', body: papawisResultsPage({ run: { id: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '' }, results }) }));
+  const summary = pwRunSummaryStart(run);
+  res.send(renderPage(req, { title: `${run.title || 'Papawis'} · Results`, currentPath: '/papawis', body: papawisResultsPage({ run: { id: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '' }, results, summary }) }));
 });
 
 // ── Review: an admin checking the live plays, or re-tracking the game from the video ──
@@ -9610,7 +9670,7 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
   // A scored run shows its results here, even on the day (Papawis scoring, 2026-10-30).
   const results = g ? pwResultsFor(g) : null;
   if (g && !results && g.status === 'open' && pwDaysUntil(g.date) >= 0) return res.redirect(`/app/papawis#run-${encodeURIComponent(g.id)}`);
-  const back = req.query.from === 'notifications' ? { href: '/app/notifications', label: 'Notifications' } : { href: '/app/papawis', label: 'Papawis' };
+  const back = req.query.from === 'notifications' ? { href: '/app/notifications', label: 'Notifications' } : req.query.from === 'home' ? { href: '/app', label: 'Home' } : { href: '/app/papawis', label: 'Papawis' };
   if (!g) return sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisRunPage({ missing: true, back }) });
   const teams = getAllTeams();
   const confirmed = getPapawisSignups(g.id).filter(s => s.status === 'confirmed');
@@ -9618,7 +9678,7 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
   const mineS = confirmed.find(s => s.player_id === me.playerId && !s.guest_name) || null;
   const status = pwMine(kind, mineS, price);
   sendTab(res, me, { title: `${g.title || 'Papawis'} · WKND`, tab: 'papawis', body: appPapawisRunPage({ back, admin: appPapawisAdmin(req) ? appPapawisAdminHint(g) : null,
-    results: results ? papawisResultsBody(results, { profileHref: id => `/app/players/${encodeURIComponent(id)}` }) : '', saved: req.query.saved === '1',
+    results: results ? papawisResultsBody(results, { profileHref: id => `/app/players/${encodeURIComponent(id)}` }) : '', summary: results ? pwRunSummary(g, results) : null, saved: req.query.saved === '1',
     finish: results && pwCanFinish(req, g) ? `/app/papawis/${encodeURIComponent(g.id)}/finish` : '', run: {
     id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
     place: g.location || 'Papawis', photo: papawisCoverUrl(g, getPapawisCourtByName(g.location)) || '',

@@ -4,6 +4,7 @@
 // /papawis/:id/results (papawisResultsPage). Data: server.js pwResultsFor.
 import { escHtml as esc } from './layout.js';
 import { topThreeCards, playerCardTemplates } from './player-cards.js';
+import { summaryPanel } from './home.js';
 
 const SIDE = { light: 'Light', dark: 'Dark' };
 const RING = { light: 'var(--team-white, #d7dce5)', dark: 'var(--team-black, #6b7486)' };
@@ -37,7 +38,7 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
     <tbody>${rows.map(r => `<tr data-pcard="${esc(r.key)}" tabindex="0"${r.key === potd?.key ? ' class="is-potd"' : ''}><th scope="row"><span class="pwx-who">${r.number ? `<i class="num">${esc(r.number)}</i>` : ''}${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ''}</span></th>${cells(r.L).map(v => `<td class="num">${v}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
   // The whole day, each player under the side he finished on.
   const day = ['light', 'dark'].map(s => {
-    const rows = people.filter(p => p.side === s).sort((x, y) => (y.line.pts || 0) - (x.line.pts || 0)).map(p => ({ key: p.key, name: p.name, number: p.number, L: p.line, note: Object.values(p.games).some(r => r.side !== s) ? `also played ${s === 'light' ? 'Dark' : 'Light'}` : '' }));
+    const rows = people.filter(p => p.side === s).sort((x, y) => (y.line.pts || 0) - (x.line.pts || 0)).map(p => ({ key: p.key, name: p.name, number: p.number, L: p.line, note: Object.values(p.games).some(r => r.side !== s) ? `also played ${s === 'light' ? 'Dark' : 'Light'}` : p.n < games.length ? `${p.n} of ${games.length} games` : '' }));
     return rows.length ? table(`<span class="pw-shirt pw-shirt--${s}" aria-hidden="true"></span>${SIDE[s]} · whole day`, rows) : '';
   }).join('');
   const perGame = games.map(g => ['light', 'dark'].map(s => {
@@ -55,10 +56,12 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
 }
 
 // The site's page for a scored run.
-export function papawisResultsPage({ run, results }) {
+// summary: the run's AI recap (server.js pwRunSummaryStart) or null
+export function papawisResultsPage({ run, results, summary = null }) {
   return `<div class="container"><div class="page-content">
     <div class="section-header"><h2>${esc(run.title)} · results</h2><a href="/papawis">All runs</a></div>
     <p class="pwx-sub">${esc([run.day, run.place].filter(Boolean).join(' · '))}</p>
+    ${summary ? summaryPanel(summary, 'papawis-run', false) : ''}
     ${papawisResultsBody(results)}
   </div></div>`;
 }

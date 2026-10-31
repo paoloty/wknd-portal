@@ -115,7 +115,27 @@ function papawisCard(it) {
   </a><div class="sx__act pwr__action">${papawisAction(r)}<p class="msg msg--err" data-pw-msg hidden></p></div>${appSocialBar(it.social)}</article>`;
 }
 
-const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard };
+// A finished Papawis run (2026-10-31): the AI recap (or the run's name till it's written), each
+// game's Light–Dark score, the Player of the Day, everyone who played. Opens the run screen.
+// it: server.js appFeedItem 'pwres'.
+const boldNames = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+function papawisResultCard(r) {
+  const faces = r.faces.slice(0, 8);
+  const s = r.summary;
+  return `<article class="sx px pxr${r.social ? ' has-cx' : ''}"><a class="gx__link" href="${esc(r.href)}">
+    <div class="sx__body">
+      <div class="px__top"><span class="sx__chip sx__chip--amber">Papawis</span><span class="px__when">${esc(s ? r.title : 'Results')}</span></div>
+      <h3>${s?.headline ? boldNames(s.headline) : esc(r.title)}</h3>
+      ${s?.body ? `<p class="gx__ex">${esc(s.body.replace(/\*\*/g, ''))}</p>` : r.place ? `<p class="px__where">${icons.pin}${esc(r.place)}</p>` : ''}
+      <div class="pxr__games">${r.games.map(g => `<div class="pxr__g"><span class="pxr__n">Game ${g.n}</span><span class="pxr__s"><span class="pw-shirt pw-shirt--light" aria-hidden="true"></span>Light <b class="num${g.b > g.a ? ' is-dim' : ''}">${g.a}</b><span aria-hidden="true">–</span><b class="num${g.a > g.b ? ' is-dim' : ''}">${g.b}</b> Dark <span class="pw-shirt pw-shirt--dark" aria-hidden="true"></span></span></div>`).join('')}</div>
+      ${r.potd ? potgBox(r.potd, 'Player of the Day') : ''}
+      ${faces.length ? `<div class="pxr__who"><span class="pwr__stack px__stack"><span class="pwr__faces">${faces.map(f => `<span class="pwr__face${f.me ? ' is-me' : ''}">${appAvatar(f)}</span>`).join('')}${r.faces.length > faces.length ? `<span class="pwr__more">+${r.faces.length - faces.length}</span>` : ''}</span></span><span>${r.faces.length} played</span></div>` : ''}
+      ${r.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(r.mine)}</b></div>` : ''}
+    </div>
+  </a><div class="sx__act"><a class="btn btn--ghost" href="${esc(r.href)}">Full results</a></div>${appSocialBar(r.social)}</article>`;
+}
+
+const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard, pwres: papawisResultCard };
 
 // A card's pictures wait as data-src until the card nears the screen (public/app.js wakeImgs):
 // Home used to pull all 20 covers, ~1.7 MB, for the one and a half cards in view (Fable speed
