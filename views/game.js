@@ -60,9 +60,24 @@ const SSC_FAMILIES_ALL = [
   { key: 'jersey', label: 'Jersey', premium: true },
   { key: 'bug', label: 'Corner bug', premium: true },
   { key: 'receipt', label: 'Receipt', premium: true },
+  // Papawis-only (pw), on a run's card only, ahead of the rest (sscFamiliesFor). Holo goes to
+  // the day's top 3 by rating, Player of the Day to its winner (Paolo, 2026-10-31).
+  { key: 'pwsheet', label: 'Run sheet', pw: true },
+  { key: 'pwsides', label: 'Light vs Dark', pw: true },
+  { key: 'pwcard', label: 'Card', pw: true },
+  { key: 'pwholo', label: 'Holo card', pw: true, premium: true, top3: true },
+  { key: 'pwback', label: 'Card back', pw: true, premium: true },
+  { key: 'pwticket', label: 'Ticket', pw: true, premium: true },
+  { key: 'pwpotd', label: 'Player of the Day', pw: true, premium: true, potd: true },
 ].map(f => ({ def: f.key, variants: [[f.key, f.label]], ...f }));
 // Also the players app's share screen (views/app/share.js).
-export const SSC_FAMILIES = SSC_FAMILIES_ALL.filter(f => !f.hidden);
+export const SSC_FAMILIES = SSC_FAMILIES_ALL.filter(f => !f.hidden && !f.pw);
+// The templates one card offers: a Papawis run's (server.js pwShareFacts) adds its own first.
+export function sscFamiliesFor(game) {
+  const pw = game?.papawis?.pw;
+  if (!pw) return SSC_FAMILIES;
+  return [...SSC_FAMILIES_ALL.filter(f => f.pw && (!f.top3 || pw.rank <= 3) && (!f.potd || pw.potd)), ...SSC_FAMILIES];
+}
 // variant key → [family key, family label, variant label or '' for single-variant families]
 const SSC_VARIANT_OF = Object.fromEntries(SSC_FAMILIES_ALL.flatMap(f =>
   f.variants.map(([k, l]) => [k, [f.key, f.label, f.variants.length > 1 ? l : '']])));
@@ -90,6 +105,7 @@ export function shareStatsModal(game, stat, locked = false) {
   ].filter(Boolean);
   const bgBtn = b => `<button type="button" class="ssc2-bg" data-bg="${b.key}" data-css="${escHtml(b.css)}"${b.solid ? ' data-solid="1"' : ''}><span class="ssc2-bg__im"><i style="${escHtml(b.css)}"></i></span>${escHtml(b.label)}</button>`;
   const icon = d => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const fams = sscFamiliesFor(game);
 
   return `<div class="ssc2" id="ssc2" hidden role="dialog" aria-modal="true" aria-labelledby="ssc2-title"
     data-game="${escHtml(game.id)}" data-locked="${locked ? 1 : 0}" data-focus="${focus}" data-default-bg="${game.has_cover ? 'game' : 'team'}">
@@ -123,9 +139,9 @@ export function shareStatsModal(game, stat, locked = false) {
           </div>
         </section>
         <section class="ssc2__grp is-on" data-ssc2-panel="tpl">
-          <div class="ssc2__gh"><span class="gd-kick">Template</span><span>${SSC_FAMILIES.length} styles</span></div>
-          <div class="ssc2__tpls">${SSC_FAMILIES.map(f => `<button type="button" class="ssc2-tp" data-tpl="${f.def}" data-fam="${f.key}"${f.premium ? ' data-premium' : ''}><span class="ssc2-tp__im"><img alt="" data-thumb="${f.def}">${f.premium && locked ? `<span class="ssc2-tp__lock" title="Locked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>` : ''}</span>${escHtml(f.label)}</button>`).join('')}</div>
-          ${SSC_FAMILIES.filter(f => f.variants.length > 1).map(f => `<div class="ssc2__row ssc2__vars" data-vars="${f.key}" role="group" aria-label="${escHtml(f.label)} alignment" hidden>${f.variants.map(([k, l]) => `<button type="button" class="ssc2-chip" data-variant="${k}"><span class="pill-label">${escHtml(l)}</span></button>`).join('')}</div>`).join('')}
+          <div class="ssc2__gh"><span class="gd-kick">Template</span><span>${fams.length} styles</span></div>
+          <div class="ssc2__tpls">${fams.map(f => `<button type="button" class="ssc2-tp" data-tpl="${f.def}" data-fam="${f.key}"${f.premium ? ' data-premium' : ''}><span class="ssc2-tp__im"><img alt="" data-thumb="${f.def}">${f.premium && locked ? `<span class="ssc2-tp__lock" title="Locked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>` : ''}</span>${escHtml(f.label)}</button>`).join('')}</div>
+          ${fams.filter(f => f.variants.length > 1).map(f => `<div class="ssc2__row ssc2__vars" data-vars="${f.key}" role="group" aria-label="${escHtml(f.label)} alignment" hidden>${f.variants.map(([k, l]) => `<button type="button" class="ssc2-chip" data-variant="${k}"><span class="pill-label">${escHtml(l)}</span></button>`).join('')}</div>`).join('')}
         </section>
         <section class="ssc2__grp" data-ssc2-panel="style">
           <div class="ssc2__gh"><span class="gd-kick">Style</span><span></span></div>

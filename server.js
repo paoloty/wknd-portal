@@ -35,7 +35,7 @@ import { picksWidget } from './views/picks-widget.js';
 import { fmtCloseTime } from './views/pick-box.js';
 import { pickFacesRow } from './views/pick-card.js';
 import { highlightsPage } from './views/highlights.js';
-import { gamePage, reactorsWho, liveParts } from './views/game.js';
+import { gamePage, reactorsWho, liveParts, sscFamiliesFor } from './views/game.js';
 import { gameFlow, keyPlays, howItWasWon, teamTotals, duelAndCast, playerHistory, duelVerdict, seasonContext, badgeFor, quarterMarkers, flowHooks, shortName, gameScore } from './lib/game-detail.js';
 import { leadersPage, leadersScript, buildLeadersModel, sectionFacts, PER_GAME, TOTALS, fmtPerGame, fmtTotals, RECORD_CATS, recordContext, cardSnapshot } from './views/leaders.js';
 import { renderLeaderCardPng, renderLeaderWidePng, renderMvpCardPng, renderMvpWidePng } from './lib/leader-card-image.js';
@@ -76,7 +76,7 @@ import {
   getSeasonQuota, setSeasonQuota, getSeasonFeePaid, voidTransaction,
   getPendingTransactions, getCategoryTotals, getTeamTotals, getRecentTransactions,
   getAllTeams, getAllPlayers, getAllGames, getGameCover, getCommunityStats, getRecentlyApprovedMembers,
-  getPlayerSeasonLines, getSeasonPointsByGame, getPlayerSeasonTotalsLite, getPapawisPlayedCounts,
+  getPlayerSeasonLines, getSeasonPointsByGame, getPlayerSeasonTotalsLite, getPapawisPlayedCounts, getPapawisRunNumber,
   getTeamSeasonStats, getTeamPointsForAgainst, getTeamRecords, getTeamRecordsAsOf, getTeamGameCounts, getLeaders, getPlayoffLeaders,
   getLeadersAllTime, getLeaderSeasons,
   getGameById, getGameDetailStats, getGameStats,
@@ -275,7 +275,7 @@ import {
   verifyPapawisUnsubscribe, REGULAR_WINDOW, REGULAR_MIN_GAMES,
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
-import { SHARE_PREMIUM_KEYS, SHARE_ACCENTS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
+import { SHARE_PREMIUM_KEYS, SHARE_ACCENTS, PAPAWIS_KEYS, PAPAWIS_PREMIUM_KEYS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
 import { PHONE_KEYS as SHARE_PHONE_KEYS } from './public/share-cards.js';
 import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, rerenderMediaJob, requestFinal, outputPath, OUTPUT_FILES, startMediaWorker, expiresAt as mediaExpiresAt } from './lib/media-jobs.js';
 import { potgVideoContext, savePotgPhoto, queuePotgVideos, potgPrefill, uploadPath, STAT_CATS as POTG_STAT_CATS, PHOTO_COUNT as POTG_PHOTO_COUNT } from './lib/potg-video.js';
@@ -4183,7 +4183,8 @@ async function generateGameStatGaugesPng(game, stat, align = 'center', focus = '
     <text x="${cx}" y="${labelY}" text-anchor="middle" font-family="${font}" font-size="${fsz * 0.19}" font-weight="700" letter-spacing="1.5" fill="#ffffff" filter="url(#txt)">${escXml(label)}</text>`;
   }
 
-  function gaugeCol(cx, cy, r, pct, label, labelY, numFsz, labelFsz) {
+  // show: the number inside the ring when it isn't the percentage itself (a Papawis run's count).
+  function gaugeCol(cx, cy, r, pct, label, labelY, numFsz, labelFsz, show = null) {
     const c = 2 * Math.PI * r;
     const dash = pct === null ? 0 : (pct / 100) * c;
     const track = pct === null
@@ -4191,7 +4192,7 @@ async function generateGameStatGaugesPng(game, stat, align = 'center', focus = '
       : `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${GAUGES_TRACK_COLOR}" stroke-width="10" stroke-opacity="0.3" filter="url(#txt)"/>
     <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${accent.bg}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${dash} ${c - dash}" transform="rotate(-90 ${cx} ${cy})" filter="url(#txt)"/>`;
     return `${track}
-    <text x="${cx}" y="${cy + numFsz * 0.35}" text-anchor="middle" font-family="${font}" font-size="${numFsz}" font-weight="900" fill="#ffffff" fill-opacity="${pct === null ? '0.55' : '1'}" stroke="#000" stroke-width="3" stroke-opacity="0.25" paint-order="stroke fill" filter="url(#txt)">${pct === null ? '—' : pct}</text>
+    <text x="${cx}" y="${cy + numFsz * 0.35}" text-anchor="middle" font-family="${font}" font-size="${numFsz}" font-weight="900" fill="#ffffff" fill-opacity="${pct === null ? '0.55' : '1'}" stroke="#000" stroke-width="3" stroke-opacity="0.25" paint-order="stroke fill" filter="url(#txt)">${show != null ? show : pct === null ? '—' : pct}</text>
     <text x="${cx}" y="${labelY}" text-anchor="middle" font-family="${font}" font-size="${labelFsz}" font-weight="700" letter-spacing="1.2" fill="#ffffff" filter="url(#txt)">${escXml(label)}</text>`;
   }
 
@@ -4231,6 +4232,19 @@ async function generateGameStatGaugesPng(game, stat, align = 'center', focus = '
   const focusDef = GAUGES_FOCUS_DEFS[focus] || GAUGES_FOCUS_DEFS.all;
   let numberItems = focusDef.keys.map((key, i) => ({ value: shareStatValue(stat, key), label: focusDef.labels[i], isPct: false }));
   let gaugeDefs = showGauges ? pickBestShootingStats(stat) : [];
+  // A Basic-scored Papawis run records no misses, so every percentage would read 100 (Paolo,
+  // 2026-10-31): the numbers are games, W–L and threes, and each ring holds the player's PTS,
+  // REB or AST, filled to their share of their side's total over the games they played.
+  const pw = game.papawis?.pw;
+  if (pw?.basic) {
+    numberItems = [{ value: pw.games.length, label: pw.games.length === 1 ? 'GAME' : 'GAMES', isPct: false }, { value: `${pw.wl.w}–${pw.wl.l}`, label: 'W–L', isPct: false }, { value: Number(stat.fg3m) || 0, label: 'THREES', isPct: false }];
+    const side = pw.side === 'dark' ? 'DARK' : 'LIGHT';
+    gaugeDefs = showGauges ? [['pts', 'POINTS'], ['reb', 'REBOUNDS'], ['ast', 'ASSISTS']].map(([k, l]) => {
+      const v = Number(stat[k]) || 0, tot = pw.sideTotals[k] || 0;
+      const share = tot > 0 ? Math.min(100, Math.round(v / tot * 100)) : 0;
+      return { pct: share, show: v, label: `${l} · ${share}% OF ${side}` };
+    }) : [];
+  }
   if (opts.hideZeros) {
     const nz = numberItems.filter(x => !isZeroShareStat(x));
     if (nz.length) numberItems = nz;
@@ -4253,7 +4267,7 @@ async function generateGameStatGaugesPng(game, stat, align = 'center', focus = '
     const gaugeCenters = centersFor(gaugeDefs.length);
     const gaugeNumFsz = isCenter ? 46 : 36, gaugeLabelFsz = isCenter ? 17 : 14;
     gauges = gaugeDefs.map((g, i) =>
-      gaugeCol(gaugeCenters[i], gaugeCy, gaugeR, g.pct, g.label, gaugeLabelY, gaugeNumFsz, gaugeLabelFsz)
+      gaugeCol(gaugeCenters[i], gaugeCy, gaugeR, g.pct, g.label, gaugeLabelY, gaugeNumFsz, pw?.basic ? Math.round(gaugeLabelFsz * 0.82) : gaugeLabelFsz, g.show)
     ).join('\n');
   } else {
     handleY = numLabelY + GAP.numbersToHandleSolo;
@@ -4377,7 +4391,9 @@ async function generateGameStatNewsPng(game, stat, focus = 'all', opts = {}) {
     const def = SHARE_STAT_DEFS.find(d => d.key === key);
     return { value: shareStatValue(stat, key), label: def ? def.short : focusDef.labels[i], isPct: false };
   });
-  if (showGauges) {
+  // A Basic-scored Papawis run: threes made in place of the percentages it can't know.
+  if (game.papawis?.pw?.basic) deckStats.push({ value: Number(stat.fg3m) || 0, label: '3PM', isPct: false });
+  else if (showGauges) {
     pickBestShootingStats(stat).forEach(g => deckStats.push({ value: g.pct, label: g.shortLabel, isPct: true }));
   }
   deckStats = dedupeStatsByLabel(deckStats);
@@ -4485,7 +4501,7 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
   const showGauges = opts.gauges !== false;
   const focusDef = GAUGES_FOCUS_DEFS[focus] || GAUGES_FOCUS_DEFS.all;
   let rows = focusDef.keys.map((key, i) => ({ label: focusDef.labels[i], value: shareStatValue(stat, key), isPct: false }));
-  if (showGauges) {
+  if (showGauges && !game.papawis?.pw?.basic) {
     pickBestShootingStats(stat).forEach(g => rows.push({ label: g.label, value: g.pct, isPct: true }));
   }
   rows = dedupeStatsByLabel(rows);
@@ -4719,6 +4735,13 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
     .map(def => ({ label: def.short, value: shareStatValue(stat, def.key), isPct: false }))
     .sort((a, b) => b.value - a.value);
   pickBestShootingStats(stat).forEach(g => STATS.push({ label: `${g.shortLabel}%`, value: g.pct, isPct: true }));
+  // A Basic-scored Papawis run (Paolo, 2026-10-31): only what it records, then the day's games
+  // and W–L, in place of steals, blocks and three percentages that would read 0 and 100.
+  const pwRun = game.papawis?.pw;
+  if (pwRun?.basic) {
+    STATS = [['PTS', 'pts'], ['REB', 'reb'], ['AST', 'ast'], ['3PM', 'fg3m']].map(([label, k]) => ({ label, value: Number(stat[k]) || 0, isPct: false }))
+      .concat([{ label: pwRun.games.length === 1 ? 'GAME' : 'GAMES', value: pwRun.games.length, isPct: false }, { label: 'W–L', value: `${pwRun.wl.w}–${pwRun.wl.l}`, isPct: false }]);
+  }
   STATS = dedupeStatsByLabel(STATS);
   if (opts.hideZeros) {
     const filtered = STATS.filter(s => !isZeroShareStat(s));
@@ -8950,7 +8973,7 @@ app.get('/app/papawis/:id/share', requireApp, async (req, res) => {
   // Locked over this run's own fee: say so (the balance wording doesn't fit before close-out).
   const runDue = locked && pwRunUnpaid(run, me.playerId);
   sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, bare: true, bodyClass: 'is-editor', body: appSharePage({
-    back, focus, locked, bgs, phone, lockText: runDue ? 'Premium cards save with a lock until this run is paid.' : '',
+    back, focus, locked, bgs, phone, lockText: runDue ? 'Premium cards save with a lock until this run is paid.' : '', families: sscFamiliesFor(game),
     game: { id: game.id, opp: game.team_b_name, day: pwDay(run.date), line: statLine(stat) },
   }) });
 });
@@ -13356,7 +13379,7 @@ async function premiumShareData(game, stat, playerId, accentKey, key) {
     stat,
     season: game.papawis ? game.papawis.season : { label: String(game.season ?? ''), games: earlier.length, avg, high: earlier.length > 0 && pts > 0 && pts >= Math.max(...earlier.map(g => Number(g.pts) || 0)) },
     // A Papawis run (pwShareFacts): the cards say Papawis, and the day's result.
-    papawis: !!game.papawis, resultText: game.result_text || '',
+    papawis: !!game.papawis, resultText: game.result_text || '', pw: game.papawis?.pw || null,
     accent: resolveAccent(accentKey),
     photo: key === 'bug' && stat.picture_url ? await fetchCoverImageBuffer(stat.picture_url) : null,
   };
@@ -13425,13 +13448,34 @@ function pwShareFacts(run, playerId) {
   const team = PW_SIDE_NAME[side];
   // Earlier scored runs (by date): the average day and the best one.
   const earlier = getPapawisRunLines(playerId).filter(r => r.run_id !== run.id && String(r.date) < String(run.date));
-  const avg = earlier.length ? Object.fromEntries(['pts', 'reb', 'ast', 'stl', 'blk'].map(k => [k, earlier.reduce((a, r) => a + (Number(r[k]) || 0), 0) / earlier.length])) : null;
+  const avg = earlier.length ? Object.fromEntries(['pts', 'reb', 'ast', 'stl', 'blk', 'fg3m'].map(k => [k, earlier.reduce((a, r) => a + (Number(r[k]) || 0), 0) / earlier.length])) : null;
   const pts = Number(me.line.pts) || 0;
+  // What the Papawis-only templates and the Basic-run versions of the others read
+  // (public/share-cards.js d.pw). basic: scored makes, rebounds and assists only, so no
+  // percentages, misses, steals, blocks, turnovers or fouls on the card (Paolo, 2026-10-31).
+  const sum = (lines, k) => lines.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+  const games = mine.map(g => { const [x, y] = score(g), L = me.games[g.n]; return { n: g.n, my: x, opp: y, line: { pts: L.pts || 0, reb: L.reb || 0, ast: L.ast || 0, fg3m: L.fg3m || 0 } }; });
+  // My side's whole line across the games I played (Marquee's share rings).
+  const sideLines = mine.flatMap(g => res.people.map(o => o.games[g.n]).filter(r => r && r.side === me.games[g.n].side));
+  const rank = res.people.indexOf(me) + 1;
+  let positions = [];
+  try { positions = JSON.parse(p.positions || '[]'); } catch {}
+  const fact = res.potd?.key === me.key ? `Player of the Day with ${pts} point${pts === 1 ? '' : 's'} over ${mine.length} game${mine.length === 1 ? '' : 's'}.`
+    : pts > 0 && res.people.every(o => o === me || (Number(o.line.pts) || 0) < pts) ? `Top scorer of the run with ${pts} points over ${mine.length} game${mine.length === 1 ? '' : 's'}.`
+    : `${pts} PTS, ${me.line.reb || 0} REB and ${me.line.ast || 0} AST over ${mine.length} game${mine.length === 1 ? '' : 's'}.`;
+  const pw = {
+    basic: !res.full, side, games,
+    wl: { w: games.filter(g => g.my > g.opp).length, l: games.filter(g => g.my < g.opp).length },
+    sideTotals: { pts: games.reduce((a, g) => a + g.my, 0), reb: sum(sideLines, 'reb'), ast: sum(sideLines, 'ast') },
+    rank, of: res.people.length, potd: res.potd?.key === me.key,
+    court: String(run.location || '').split(',')[0].replace(/\s+(basketball\s+)?court$/i, '').trim(), place: String(run.location || '').trim(), tip: String(run.start_time || ''),
+    runNo: getPapawisRunNumber(playerId, run), positions: positions.slice(0, 3), fact,
+  };
   const game = {
     id: pwScoreId(run.id), date: String(run.date), season: 'Papawis', status: 'final',
     team_a_id: 'pw_side', team_b_id: 'pw_other', team_a_name: team, team_b_name: PW_SIDE_NAME[other],
     team_a_score: my, team_b_score: opp, result_text: resultText,
-    papawis: { run, games: mine.length, potd: res.potd?.key === me.key, season: { label: 'Papawis', games: earlier.length, avg, high: earlier.length > 0 && pts > 0 && pts >= Math.max(...earlier.map(r => Number(r.pts) || 0)) } },
+    papawis: { run, pw, games: mine.length, potd: res.potd?.key === me.key, season: { label: 'Papawis', games: earlier.length, avg, high: earlier.length > 0 && pts > 0 && pts >= Math.max(...earlier.map(r => Number(r.pts) || 0)) } },
   };
   const stat = { ...me.line, player_id: playerId, name: p.name, number: p.number, picture_url: p.picture_url, team_id: 'pw_side', team_name: team, team_color: '#f59332' };
   return { game, stat };
@@ -13481,7 +13525,9 @@ async function renderMyStatCard(req, game, stat, playerId, locked) {
   const align   = ['left', 'center', 'right', 'bottom', 'stacked'].includes(req.query.align) ? req.query.align : 'center';
   const corner  = ['tl', 'tr', 'bl', 'br'].includes(req.query.corner) ? req.query.corner : 'tl';
   const heroKey = SHARE_STAT_DEFS.some(d => d.key === req.query.stat) ? req.query.stat : 'pts';
-  const focus   = ['all', 'offense', 'defense'].includes(req.query.focus) ? req.query.focus : 'all';
+  // A Basic-scored Papawis run has no steals or blocks, so Defense shows the all-around line.
+  const pwBasic = !!game.papawis?.pw?.basic;
+  const focus   = pwBasic && req.query.focus === 'defense' ? 'all' : ['all', 'offense', 'defense'].includes(req.query.focus) ? req.query.focus : 'all';
   const gauges  = req.query.gauges !== '0';
   // Only meaningful for Bottom/Stacked — the grid's dashed ring already
   // handles "no attempts" cleanly, so this isn't wired into
@@ -13490,7 +13536,12 @@ async function renderMyStatCard(req, game, stat, playerId, locked) {
   const badge   = req.query.badge === '1';
   const accent  = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.query.accent) ? req.query.accent : 'amber';
   let png;
-  if (SHARE_PREMIUM_KEYS.includes(req.query.align)) {
+  if (game.papawis && PAPAWIS_KEYS.includes(req.query.align)) {
+    // Papawis-only templates (public/share-cards.js): the premium ones lock like the six below.
+    const data = { ...await premiumShareData(game, stat, playerId, accent, req.query.align), hideZeros };
+    png = await renderPremiumShareCard(req.query.align, data, (text, o) => measureTextWidth(escXml(text), o));
+    if (locked && PAPAWIS_PREMIUM_KEYS.includes(req.query.align)) png = await lockOverlay(png);
+  } else if (SHARE_PREMIUM_KEYS.includes(req.query.align)) {
     const data = { ...await premiumShareData(game, stat, playerId, accent, req.query.align), hideZeros };
     png = await renderPremiumShareCard(req.query.align, data, (text, o) => measureTextWidth(escXml(text), o));
     if (locked) png = await lockOverlay(png);
@@ -13580,7 +13631,7 @@ app.post('/api/games/:id/stat-card-action', express.json(), (req, res) => {
   // Every template the editor offers (views/game.js SSC_TEMPLATES) — this list once held only
   // the five align values, so Premium/Hero/Card/Scoreboard all logged as ''. Logged even when
   // invalid/missing isn't worth failing the request over.
-  const template = ['left', 'center', 'right', 'bottom', 'stacked', 'premium', 'premium-r', 'hero', 'card', 'scoreboard', ...SHARE_PREMIUM_KEYS].includes(req.body?.template) ? req.body.template : '';
+  const template = ['left', 'center', 'right', 'bottom', 'stacked', 'premium', 'premium-r', 'hero', 'card', 'scoreboard', ...SHARE_PREMIUM_KEYS, ...PAPAWIS_KEYS].includes(req.body?.template) ? req.body.template : '';
   const focus    = ['all', 'offense', 'defense'].includes(req.body?.focus) ? req.body.focus : '';
   const accent   = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.body?.accent) ? req.body.accent : '';
 

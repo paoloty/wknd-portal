@@ -14,8 +14,13 @@
 // so the phone only ever draws cards for a player who isn't locked.
 
 export const SHARE_PREMIUM_KEYS = ['usual', 'receipt', 'cover', 'poster', 'bug', 'jersey'];
+// Papawis-only templates (Paolo, 2026-10-31; mockup claude.ai/artifact/6n8kUsVYSdQqHDFEmPjbiD):
+// offered only on a run's card. Run sheet, Light vs Dark and the base Card are free; the rest
+// are premium, locked while the player owes for the run like the six above.
+export const PAPAWIS_KEYS = ['pwsheet', 'pwsides', 'pwcard', 'pwholo', 'pwback', 'pwticket', 'pwpotd'];
+export const PAPAWIS_PREMIUM_KEYS = ['pwholo', 'pwback', 'pwticket', 'pwpotd'];
 // What the phone draws. Not Receipt: it's set in a monospace font the phones don't share.
-export const PHONE_KEYS = ['usual', 'cover', 'poster', 'bug', 'jersey'];
+export const PHONE_KEYS = ['usual', 'cover', 'poster', 'bug', 'jersey', ...PAPAWIS_KEYS];
 export const SHARE_ACCENTS = {
   amber:  { bg: '#f59332', text: '#0a0e16' },
   red:    { bg: '#ef4444', text: '#ffffff' },
@@ -36,13 +41,18 @@ const MUTED = '#8a93a4', SOFT = '#c3cbd8', WHITE = '#ffffff';
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const n = v => Number(v) || 0;
-const CAT = { pts: 'PTS', reb: 'REB', ast: 'AST', stl: 'STL', blk: 'BLK' };
-const WORD = { pts: ['POINT', 'POINTS'], reb: ['BOARD', 'BOARDS'], ast: ['DIME', 'DIMES'], stl: ['STEAL', 'STEALS'], blk: ['BLOCK', 'BLOCKS'] };
-const LONG = { pts: 'Points', reb: 'Rebounds', ast: 'Assists', stl: 'Steals', blk: 'Blocks' };
+const CAT = { pts: 'PTS', reb: 'REB', ast: 'AST', stl: 'STL', blk: 'BLK', fg3m: '3PM' };
+const WORD = { pts: ['POINT', 'POINTS'], reb: ['BOARD', 'BOARDS'], ast: ['DIME', 'DIMES'], stl: ['STEAL', 'STEALS'], blk: ['BLOCK', 'BLOCKS'], fg3m: ['THREE', 'THREES'] };
+const LONG = { pts: 'Points', reb: 'Rebounds', ast: 'Assists', stl: 'Steals', blk: 'Blocks', fg3m: 'Threes' };
+// A Papawis run scored in Basic (server.js pwShareFacts d.pw.basic) records makes, rebounds and
+// assists only: its cards show PTS, REB, AST and threes made, never percentages, misses,
+// steals, blocks or turnovers, which would read as made-up 100s and 0s (Paolo, 2026-10-31).
+const basic = d => !!(d.pw && d.pw.basic);
+const statKeys = d => (basic(d) ? ['pts', 'reb', 'ast', 'fg3m'] : ['pts', 'reb', 'ast', 'stl', 'blk']);
 
 // Count stats, biggest first; the first one is the card's hero. PTS wins a tie.
-function ranked(stat) {
-  return Object.keys(CAT).map(k => ({ k, v: n(stat[k]) }))
+function ranked(stat, keys = ['pts', 'reb', 'ast', 'stl', 'blk']) {
+  return keys.map(k => ({ k, v: n(stat[k]) }))
     .sort((a, b) => b.v - a.v || (a.k === 'pts' ? -1 : b.k === 'pts' ? 1 : 0));
 }
 function shooting(stat) {
@@ -90,7 +100,7 @@ const widthOf = (measure, text, font, size, weight = 900, ls = 0) =>
 // header says so instead of inventing an average.
 async function usual(d, measure) {
   const { accent } = d;
-  let rows = ranked(d.stat).map(({ k, v }) => ({ k, v, avg: d.season.avg ? d.season.avg[k] : null }));
+  let rows = ranked(d.stat, statKeys(d)).map(({ k, v }) => ({ k, v, avg: d.season.avg ? d.season.avg[k] ?? null : null }));
   if (d.hideZeros) rows = rows.filter((r, i) => i === 0 || r.v > 0);
   const hasAvg = d.season.games > 0;
   const x0 = 66, labelW = 102, valR = x0 + labelW + 168, barX0 = valR + 30, barX1 = W - 66 - 186, deltaR = W - 66;
@@ -165,12 +175,13 @@ async function receipt(d) {
   y += lh; T('ORDER', { right: `vs ${d.oppName}` });
   y += 30; lines.push({ y, rule: true });
   y += 30;
-  for (const { k, v } of ranked(stat).filter(r => r.k !== 'pts' && (!d.hideZeros || r.v > 0))) { y += lh; T(LONG[k].toUpperCase(), { right: String(v) }); }
-  for (const s of shooting(stat)) if (s.a && (!d.hideZeros || s.pct > 0)) { y += lh; T(`${s.label} ${s.m}/${s.a}`, { right: `${s.pct}%` }); }
+  for (const { k, v } of ranked(stat, statKeys(d)).filter(r => r.k !== 'pts' && (!d.hideZeros || r.v > 0))) { y += lh; T(LONG[k].toUpperCase(), { right: String(v) }); }
+  if (!basic(d)) for (const s of shooting(stat)) if (s.a && (!d.hideZeros || s.pct > 0)) { y += lh; T(`${s.label} ${s.m}/${s.a}`, { right: `${s.pct}%` }); }
   y += 30; lines.push({ y, rule: true });
   y += 120; T('TOTAL PTS', { weight: 700, size: 38, big: String(n(stat.pts)) });
   y += 52; T('RESULT', { size: 27, color: '#5b6475', right: result(d) });
-  y += 40; T('TURNOVERS', { size: 27, color: '#5b6475', right: `${n(stat.turnover)} (NO REFUNDS)` });
+  if (basic(d)) { y += 40; T('GAMES', { size: 27, color: '#5b6475', right: String(d.pw.games.length) }); }
+  else { y += 40; T('TURNOVERS', { size: 27, color: '#5b6475', right: `${n(stat.turnover)} (NO REFUNDS)` }); }
   y += 40; const barY = y; y += 96;
   y += 46; T('THANK YOU, COME AGAIN', { center: true, size: 24, ls: 3 });
   y += 36; T('@WKNDBASKETBALL', { center: true, size: 24, ls: 3 });
@@ -205,9 +216,9 @@ async function receipt(d) {
 // Cover lines are the box score's own facts (stat + plain label), never invented copy.
 async function cover(d, measure) {
   const { accent, stat } = d;
-  const [hero, ...rest] = ranked(stat);
+  const [hero, ...rest] = ranked(stat, statKeys(d));
   const lines = rest.filter(r => r.v > 0).slice(0, 2).map(r => ({ big: `${r.v} ${CAT[r.k]}`, small: '' }));
-  const shot = shooting(stat).filter(s => s.a >= 2 && (!d.hideZeros || s.pct > 0)).sort((a, b) => b.pct - a.pct)[0];
+  const shot = basic(d) ? null : shooting(stat).filter(s => s.a >= 2 && (!d.hideZeros || s.pct > 0)).sort((a, b) => b.pct - a.pct)[0];
   if (shot) lines.push({ big: `${shot.m}/${shot.a}`, small: shot.label === 'FT' ? 'From the line' : shot.label === '3PT' ? 'From three' : 'From the field' });
   const coverLines = lines.map((l, i) => {
     const y = 560 + i * 170;
@@ -248,7 +259,7 @@ async function cover(d, measure) {
 async function poster(d, measure) {
   const { accent } = d;
   const SIZES = [276, 210, 174, 150, 150];
-  const rows = ranked(d.stat).filter(r => r.v > 0).slice(0, 5);
+  const rows = ranked(d.stat, statKeys(d)).filter(r => r.v > 0).slice(0, 5);
   const footY = H - 66;
   let y = footY - 72;
   const ys = [];
@@ -281,7 +292,7 @@ async function poster(d, measure) {
 // (a small data: URL), drawn here in a circle. hasPhoto drops the initials.
 async function bug(d, measure, { photoHref = null, hasPhoto = !!photoHref } = {}) {
   const { accent } = d;
-  const [hero, ...rest] = ranked(d.stat);
+  const [hero, ...rest] = ranked(d.stat, statKeys(d));
   const line = rest.filter(r => r.v > 0).map(r => `${r.v} ${CAT[r.k]}`).join(' · ');
   const name = d.cardName.toUpperCase();
   const x = 54, y = 54, heroW = 180, rowH = 168, av = 120;
@@ -331,7 +342,7 @@ async function jersey(d, measure) {
   let lastSize = 192;
   const lastW = await measure(last, { fontFamily: NUM, fontSize: lastSize, fontWeight: 900, letterSpacing: 3 });
   if (lastW > W - 108) lastSize = Math.floor(lastSize * (W - 108) / lastW);
-  let stats = ranked(d.stat);
+  let stats = ranked(d.stat, statKeys(d));
   if (d.hideZeros) stats = stats.filter((s, i) => i === 0 || s.v > 0);
   const cols = stats.length, colW = (W - 108) / cols, gridY = 1560, gridH = 186;
   const cells = stats.map((s, i) => {
@@ -360,7 +371,360 @@ async function jersey(d, measure) {
   return { svg };
 }
 
-const RENDER = { usual, receipt, cover, poster, bug, jersey };
+// ── Papawis-only templates ─────────────────────────────────────────────────────────────────
+// Offered only on a run's card (d.pw, server.js pwShareFacts): the day's games, the Light and
+// Dark shirts, the player's slot, Player of the Day, and a trading card. Overlays like the rest:
+// the photo stays clear at the top, the numbers sit on a fade at the bottom (the Ticket and the
+// card back float on the photo with a shadow, the card fronts frame it).
+const SIDE_WORD = { light: 'LIGHT', dark: 'DARK' };
+const SHIRT = { light: '#eef1f6', dark: '#1b2130' };
+const wl = g => (g.my > g.opp ? 'W' : g.my < g.opp ? 'L' : 'T');
+const dash = s => String(s).replace('-', '–');
+// "06:00" → "6:00 AM"
+function tipText(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+  if (!m) return '';
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+}
+// "Jose Paolo TY" → { first: 'JOSE PAOLO', last: 'TY' }
+function nameParts(d) {
+  const parts = String(d.displayName || '').trim().split(/\s+/);
+  const last = (parts.pop() || '').toUpperCase();
+  return { first: parts.join(' ').toUpperCase(), last };
+}
+// Words into lines no wider than maxW at this size.
+async function wrap(measure, text, { font, size, weight = 600, maxW }) {
+  const lines = [];
+  let cur = '';
+  for (const w of String(text).split(/\s+/)) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (cur && await widthOf(measure, next, font, size, weight, 0) > maxW) { lines.push(cur); cur = w; } else cur = next;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+const handleText = (x, y, anchor = 'end', fill = MUTED) => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-family="${BODY}" font-size="28" font-weight="700" letter-spacing="3" fill="${fill}" filter="url(#txt)">@WKNDBASKETBALL</text>`;
+const kicker = (x, y, text, accent, anchor = 'start') => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-family="${BODY}" font-size="30" font-weight="800" letter-spacing="8" fill="${accent.bg}" filter="url(#txt)">${esc(text)}</text>`;
+const topFade = `<linearGradient id="top" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a0e16" stop-opacity="0.55"/><stop offset="1" stop-color="#0a0e16" stop-opacity="0"/></linearGradient>`;
+
+// ── Run sheet: each game, then the day's totals ──────────────────────────────────────────────
+async function pwsheet(d, measure) {
+  const { accent, stat, pw } = d;
+  const x0 = 66, x1 = W - 66;
+  const games = pw.games.length > 1 ? pw.games.slice(0, 5) : [];
+  const rowH = games.length > 3 ? 104 : 124;
+  const footY = H - 66;
+  const totLabelY = footY - 76, totNumY = totLabelY - 44, ruleY = totNumY - 112;
+  const rowsTop = ruleY - 24 - games.length * rowH;
+  const subY = rowsTop - 40, nameY = subY - 58;
+  const { first, last } = nameParts(d);
+  const name = `${first} ${last}`.trim();
+  const nameSize = await fit(measure, name, { font: NUM, size: 120, ls: 1, maxW: x1 - x0 });
+  const sub = [`#${d.number}`, SIDE_WORD[pw.side], d.dateShort.toUpperCase(), pw.court.toUpperCase()].filter(Boolean).join(' · ');
+  const subSize = await fit(measure, sub, { font: BODY, size: 30, weight: 700, ls: 4, maxW: x1 - x0 });
+  const rows = games.map((g, i) => {
+    const top = rowsTop + i * rowH, mid = top + rowH / 2, r = wl(g);
+    const badge = r === 'W' ? accent.bg : r === 'L' ? '#2a3142' : '#3a4256';
+    return `<rect x="${x0}" y="${top}" width="${x1 - x0}" height="2" fill="#ffffff" fill-opacity="0.16"/>
+    <text x="${x0}" y="${mid + 11}" font-family="${BODY}" font-size="30" font-weight="800" letter-spacing="4" fill="${MUTED}">G${g.n}</text>
+    <rect x="${x0 + 84}" y="${mid - 30}" width="60" height="60" rx="10" fill="${badge}"/>
+    <text x="${x0 + 114}" y="${mid}" text-anchor="middle" dominant-baseline="central" font-family="${NUM}" font-size="40" font-weight="900" fill="${r === 'W' ? accent.text : SOFT}">${r}</text>
+    <text x="${x0 + 168}" y="${mid + 30}" font-family="${NUM}" font-size="84" font-weight="900" fill="${WHITE}" filter="url(#txt)">${g.my}–${g.opp}</text>
+    <text x="${x1}" y="${mid + 8}" text-anchor="end" font-family="${NUM}" font-size="60" font-weight="900" fill="${WHITE}">${g.line.pts} · ${g.line.reb} · ${g.line.ast}</text>
+    <text x="${x1}" y="${mid + 40}" text-anchor="end" font-family="${BODY}" font-size="21" font-weight="700" letter-spacing="4" fill="${MUTED}">PTS REB AST</text>`;
+  }).join('\n');
+  const tot = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['fg3m', '3PM']];
+  const colW = (x1 - x0) / tot.length;
+  const totals = tot.map(([k, l], i) => {
+    const cx = x0 + colW * i + colW / 2;
+    return `<text x="${cx}" y="${totNumY}" text-anchor="middle" font-family="${NUM}" font-size="112" font-weight="900" fill="${i === 0 ? accent.bg : WHITE}" filter="url(#txt)">${n(stat[k])}</text>
+    <text x="${cx}" y="${totLabelY}" text-anchor="middle" font-family="${BODY}" font-size="26" font-weight="800" letter-spacing="5" fill="${MUTED}">${l}</text>`;
+  }).join('\n');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>${DEFS}${scrim()}${topFade}</defs>
+  <rect x="0" y="0" width="${W}" height="300" fill="url(#top)"/>
+  <rect x="0" y="${nameY - 420}" width="${W}" height="${H - nameY + 420}" fill="url(#scrim)"/>
+  ${kicker(x0, 110, 'PAPAWIS · RUN SHEET', accent)}
+  <text x="${x0}" y="${nameY}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1" fill="${WHITE}" filter="url(#txt)">${esc(name)}</text>
+  <text x="${x0}" y="${subY}" font-family="${BODY}" font-size="${subSize}" font-weight="700" letter-spacing="4" fill="${SOFT}">${esc(sub)}</text>
+  ${rows}
+  <rect x="${x0}" y="${ruleY}" width="${x1 - x0}" height="6" fill="${accent.bg}"/>
+  ${totals}
+  <text x="${x0}" y="${footY}" font-family="${BODY}" font-size="28" font-weight="700" letter-spacing="3" fill="${SOFT}">${esc(result(d))}</text>
+  ${handleText(x1, footY)}
+</svg>`;
+  return { svg };
+}
+
+// ── Light vs Dark: a two-shirt scoreboard, game by game ──────────────────────────────────────
+async function pwsides(d, measure) {
+  const { accent, stat, pw } = d;
+  const x0 = 66, x1 = W - 66;
+  const games = pw.games.slice(0, 5);
+  const colW = Math.min(150, 620 / Math.max(1, games.length));
+  const footY = H - 66, rowH = 124, gap = 14;
+  const darkTop = footY - 70 - rowH, lightTop = darkTop - gap - rowH, headY = lightTop - 24;
+  const lineY = headY - 56, nameY = lineY - 84;
+  const mine = pw.side;
+  const name = `${nameParts(d).first} ${nameParts(d).last}`.trim();
+  const nameSize = await fit(measure, name, { font: NUM, size: 112, ls: 1, maxW: x1 - x0 });
+  const line = `${n(stat.pts)} PTS · ${n(stat.reb)} REB · ${n(stat.ast)} AST`;
+  const colX = i => x1 - 28 - colW * (games.length - 1 - i) - colW / 2;
+  const youX = {};
+  for (const sd of ['light', 'dark']) youX[sd] = x0 + 34 + Math.round(await widthOf(measure, SIDE_WORD[sd], BODY, 60, 900, 2)) + 24;
+  const row = (side, top) => {
+    const me = side === mine, light = side === 'light';
+    const ink = light ? '#0d121c' : WHITE;
+    const scores = games.map((g, i) => {
+      // Each game's score for this row's side: mine is g.my when I played this side.
+      const v = side === mine ? g.my : g.opp, other = side === mine ? g.opp : g.my;
+      return `<text x="${colX(i)}" y="${top + rowH / 2 + 30}" text-anchor="middle" font-family="${NUM}" font-size="84" font-weight="900" fill="${ink}" fill-opacity="${v >= other ? 1 : 0.42}">${v}</text>`;
+    }).join('');
+    const youW = 104;
+    return `<rect x="${x0}" y="${top}" width="${x1 - x0}" height="${rowH}" rx="20" fill="${SHIRT[side]}" fill-opacity="${light ? 1 : 0.94}" ${me ? `stroke="${accent.bg}" stroke-width="8"` : light ? '' : 'stroke="#ffffff" stroke-opacity="0.14" stroke-width="3"'}/>
+    <text x="${x0 + 34}" y="${top + rowH / 2 + 22}" font-family="${BODY}" font-size="60" font-weight="900" letter-spacing="2" fill="${ink}">${SIDE_WORD[side]}</text>
+    ${me ? `<rect x="${youX[side]}" y="${top + rowH / 2 - 22}" width="${youW}" height="44" rx="22" fill="${accent.bg}"/>
+    <text x="${youX[side] + youW / 2}" y="${top + rowH / 2}" text-anchor="middle" dominant-baseline="central" font-family="${BODY}" font-size="24" font-weight="800" letter-spacing="4" fill="${accent.text}">YOU</text>` : ''}
+    ${scores}`;
+  };
+  const heads = games.map((g, i) => `<text x="${colX(i)}" y="${headY}" text-anchor="middle" font-family="${BODY}" font-size="24" font-weight="800" letter-spacing="4" fill="${MUTED}">G${g.n}</text>`).join('');
+  const foot = [result(d), pw.court.toUpperCase()].filter(Boolean).join(' · ');
+  const footSize = await fit(measure, foot, { font: BODY, size: 28, weight: 700, ls: 3, maxW: x1 - x0 - 380 });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>${DEFS}${scrim()}${topFade}</defs>
+  <rect x="0" y="0" width="${W}" height="300" fill="url(#top)"/>
+  <rect x="0" y="${nameY - 420}" width="${W}" height="${H - nameY + 420}" fill="url(#scrim)"/>
+  ${kicker(x0, 110, `PAPAWIS · ${d.dateShort.toUpperCase()}`, accent)}
+  <text x="${x0}" y="${nameY}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1" fill="${WHITE}" filter="url(#txt)">${esc(name)}</text>
+  <text x="${x0}" y="${lineY}" font-family="${NUM}" font-size="60" font-weight="900" fill="${WHITE}">${esc(line)} <tspan fill="${MUTED}" font-family="${BODY}" font-size="28" font-weight="700">#${esc(d.number)}</tspan></text>
+  ${heads}
+  ${row('light', lightTop)}
+  ${row('dark', darkTop)}
+  <text x="${x0}" y="${footY}" font-family="${BODY}" font-size="${footSize}" font-weight="700" letter-spacing="3" fill="${SOFT}">${esc(foot)}</text>
+  ${handleText(x1, footY)}
+</svg>`;
+  return { svg };
+}
+
+// ── Ticket: the player's slot as a used ticket, stuck on the photo ───────────────────────────
+async function pwticket(d, measure) {
+  const { accent, stat, pw } = d;
+  const tw = 720, pad = 56, band = 230;
+  const ink = '#1a1d24', grey = '#6b6f78', paper = '#f3eee4';
+  const kv = [['PLAYER', d.shortName.toUpperCase()], ['SHIRT', SIDE_WORD[pw.side]], ['COURT', pw.court.toUpperCase() || 'PAPAWIS'], ['TIP-OFF', [d.dateShort.toUpperCase(), tipText(pw.tip)].filter(Boolean).join(' · ')]];
+  const colW = (tw - pad * 2) / 2;
+  const kvSvg = (await Promise.all(kv.map(async ([k, v], i) => {
+    const x = pad + (i % 2) * colW, y = band + 76 + Math.floor(i / 2) * 112;
+    const size = await fit(measure, v, { font: BODY, size: 36, weight: 800, maxW: colW - 24 });
+    return `<text x="${x}" y="${y}" font-family="${BODY}" font-size="22" font-weight="700" letter-spacing="5" fill="${grey}">${k}</text>
+      <text x="${x}" y="${y + 46}" font-family="${BODY}" font-size="${size}" font-weight="800" fill="${ink}">${esc(v)}</text>`;
+  }))).join('');
+  const perfY = band + 76 + 224 + 20;
+  const stats = [[n(stat.pts), 'PTS'], [n(stat.reb), 'REB'], [n(stat.ast), 'AST'], [`${pw.wl.w}–${pw.wl.l}`, 'W–L']];
+  const sw = (tw - pad * 2) / 4;
+  const statSvg = stats.map(([v, l], i) => `<text x="${pad + sw * i + sw / 2}" y="${perfY + 132}" text-anchor="middle" font-family="${NUM}" font-size="96" font-weight="900" fill="${i === 0 ? '#d06f12' : ink}">${v}</text>
+    <text x="${pad + sw * i + sw / 2}" y="${perfY + 172}" text-anchor="middle" font-family="${BODY}" font-size="22" font-weight="800" letter-spacing="5" fill="${grey}">${l}</text>`).join('');
+  const stubY = perfY + 250, th = stubY + 70;
+  const tx = W - 60 - tw, ty = H - 230 - th;
+  const games = `${pw.games.length} GAME${pw.games.length === 1 ? '' : 'S'} PLAYED`;
+  const titleSize = await fit(measure, 'PAPAWIS', { font: NUM, size: 150, ls: 2, maxW: tw - pad * 2 });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>${DEFS}
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="36" stdDeviation="34" flood-color="#000" flood-opacity="0.55"/></filter>
+    <mask id="notch"><rect x="0" y="0" width="${tw}" height="${th}" fill="#fff"/><circle cx="0" cy="${perfY}" r="30" fill="#000"/><circle cx="${tw}" cy="${perfY}" r="30" fill="#000"/></mask>
+    <clipPath id="tk"><rect x="0" y="0" width="${tw}" height="${th}" rx="34"/></clipPath>
+  </defs>
+  <g transform="translate(${tx} ${ty}) rotate(-4 ${tw / 2} ${th / 2})" filter="url(#drop)">
+    <g mask="url(#notch)" clip-path="url(#tk)">
+      <rect x="0" y="0" width="${tw}" height="${th}" fill="${paper}"/>
+      <rect x="0" y="0" width="${tw}" height="${band}" fill="${accent.bg}"/>
+    </g>
+    <text x="${pad}" y="72" font-family="${BODY}" font-size="26" font-weight="800" letter-spacing="9" fill="${accent.text}">ADMIT ONE · RUN #${pw.runNo}</text>
+    <text x="${pad - 4}" y="196" font-family="${NUM}" font-size="${titleSize}" font-weight="900" letter-spacing="2" fill="${accent.text}">PAPAWIS</text>
+    ${kvSvg}
+    <line x1="40" y1="${perfY}" x2="${tw - 40}" y2="${perfY}" stroke="#b9b2a3" stroke-width="5" stroke-dasharray="16 12"/>
+    ${statSvg}
+    <line x1="${pad}" y1="${stubY - 40}" x2="${tw - pad}" y2="${stubY - 40}" stroke="#d8d1c2" stroke-width="3"/>
+    <text x="${pad}" y="${stubY + 10}" font-family="${BODY}" font-size="26" font-weight="800" letter-spacing="5" fill="${ink}">${games}</text>
+    <rect x="${tw - pad - 124}" y="${stubY - 26}" width="124" height="50" rx="10" fill="${ink}"/>
+    <text x="${tw - pad - 62}" y="${stubY - 1}" text-anchor="middle" dominant-baseline="central" font-family="${BODY}" font-size="24" font-weight="800" letter-spacing="5" fill="${paper}">USED</text>
+  </g>
+  ${handleText(66, H - 80, 'start', WHITE)}
+</svg>`;
+  return { svg };
+}
+
+// ── Player of the Day: the photo is the player; crown up top, the title over the fade ────────
+async function pwpotd(d, measure) {
+  const { accent, stat, pw } = d;
+  const x0 = 66, x1 = W - 66;
+  const footY = H - 66, statLabelY = footY - 70, statNumY = statLabelY - 42;
+  const subY = statNumY - 140, nameY = subY - 52;
+  const titleSize = 230, lh = Math.round(titleSize * 0.84);
+  const t3 = nameY - 64, t2 = t3 - lh, t1 = t2 - lh;
+  const name = `${nameParts(d).first} ${nameParts(d).last} · #${d.number}`.trim();
+  const nameSize = await fit(measure, name, { font: BODY, size: 46, weight: 800, ls: 4, maxW: x1 - x0 });
+  const sub = [SIDE_WORD[pw.side], result(d), pw.court.toUpperCase()].filter(Boolean).join(' · ');
+  const subSize = await fit(measure, sub, { font: BODY, size: 30, weight: 700, ls: 4, maxW: x1 - x0 });
+  const sizeOf = w => fit(measure, w, { font: NUM, size: titleSize, ls: -2, maxW: x1 - x0 });
+  const [s1, s2, s3] = await Promise.all(['PLAYER', 'OF THE', 'DAY'].map(sizeOf));
+  const cols = [[n(stat.pts), 'PTS'], [n(stat.reb), 'REB'], [n(stat.ast), 'AST']];
+  const statSvg = cols.map(([v, l], i) => `<text x="${x0 + i * 250}" y="${statNumY}" font-family="${NUM}" font-size="120" font-weight="900" fill="${i === 0 ? accent.bg : WHITE}" filter="url(#txt)">${v}</text>
+    <text x="${x0 + i * 250 + 4}" y="${statLabelY}" font-family="${BODY}" font-size="26" font-weight="800" letter-spacing="5" fill="${MUTED}">${l}</text>`).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>${DEFS}${scrim()}${topFade}</defs>
+  <rect x="0" y="0" width="${W}" height="320" fill="url(#top)"/>
+  <rect x="0" y="${t1 - titleSize - 260}" width="${W}" height="${H - t1 + titleSize + 260}" fill="url(#scrim)"/>
+  <path transform="translate(${x0} 62) scale(3.4)" d="M2 18 0 4l9 6 7-10 7 10 9-6-2 14z" fill="${accent.bg}" filter="url(#txt)"/>
+  ${kicker(x1, 110, `PAPAWIS · ${d.dateShort.toUpperCase()}`, accent, 'end')}
+  <text x="${x0 - 6}" y="${t1}" font-family="${NUM}" font-size="${s1}" font-weight="900" letter-spacing="-2" fill="${WHITE}" filter="url(#txt)">PLAYER</text>
+  <text x="${x0 - 6}" y="${t2}" font-family="${NUM}" font-size="${s2}" font-weight="900" letter-spacing="-2" fill="${WHITE}" filter="url(#txt)">OF THE</text>
+  <text x="${x0 - 6}" y="${t3}" font-family="${NUM}" font-size="${s3}" font-weight="900" letter-spacing="-2" fill="${accent.bg}" filter="url(#txt)">DAY</text>
+  <text x="${x0}" y="${nameY}" font-family="${BODY}" font-size="${nameSize}" font-weight="800" letter-spacing="4" fill="${WHITE}">${esc(name)}</text>
+  <text x="${x0}" y="${subY}" font-family="${BODY}" font-size="${subSize}" font-weight="700" letter-spacing="4" fill="${SOFT}">${esc(sub)}</text>
+  ${statSvg}
+  ${handleText(x1, footY)}
+</svg>`;
+  return { svg };
+}
+
+// ── Trading card, front: a frame with a clear window, so the photo is the card ──────────────
+// Base: dark frame with an accent rule. Holo: rainbow foil, offered to the day's top 3 by
+// rating, with its serial stamp: the player's rank out of everyone who played.
+const CARD = { side: 54, top: 162, winBottom: 1400 };
+async function cardFront(d, measure, holo) {
+  const { accent, stat, pw } = d;
+  const { side: sx, top, winBottom } = CARD;
+  const ink = holo ? '#111111' : WHITE;
+  const { first, last } = nameParts(d);
+  const bannerTop = winBottom - 120, bannerH = 300, bx0 = sx, bx1 = W - sx;
+  const lastSize = await fit(measure, last, { font: NUM, size: 176, ls: 1, maxW: bx1 - bx0 - 140 });
+  const firstSize = await fit(measure, first || ' ', { font: BODY, size: 38, weight: 800, ls: 8, maxW: bx1 - bx0 - 140 });
+  const chips = [`#${d.number}`, (pw.positions || []).join(' · '), `${SIDE_WORD[pw.side]}`].filter(Boolean);
+  const chipInk = holo ? WHITE : accent.text;
+  let cx = bx0 + 44;
+  const chipSvg = (await Promise.all(chips.map(async (c, i) => {
+    const dot = i === chips.length - 1;
+    const w = Math.round(await widthOf(measure, c, BODY, 26, 800, 4)) + 36 + (dot ? 30 : 0);
+    const x = cx; cx += w + 14;
+    return `<rect x="${x}" y="${bannerTop + 222}" width="${w}" height="50" rx="10" fill="none" stroke="${chipInk}" stroke-width="3"/>
+    ${dot ? `<circle cx="${x + 26}" cy="${bannerTop + 247}" r="10" fill="${SHIRT[pw.side]}" stroke="${chipInk}" stroke-width="2"/>` : ''}
+    <text x="${x + 18 + (dot ? 30 : 0)}" y="${bannerTop + 256}" font-family="${BODY}" font-size="26" font-weight="800" letter-spacing="4" fill="${chipInk}">${esc(c)}</text>`;
+  }))).join('');
+  const stats = [[n(stat.pts), 'PTS'], [n(stat.reb), 'REB'], [n(stat.ast), 'AST'], [`${pw.wl.w}–${pw.wl.l}`, 'W–L']];
+  const sw = (bx1 - bx0) / 4, statY = bannerTop + bannerH + 140;
+  const statSvg = stats.map(([v, l], i) => `<text x="${bx0 + sw * i + sw / 2}" y="${statY}" text-anchor="middle" font-family="${NUM}" font-size="104" font-weight="900" fill="${i === 0 && !holo ? accent.bg : ink}">${v}</text>
+    <text x="${bx0 + sw * i + sw / 2}" y="${statY + 42}" text-anchor="middle" font-family="${BODY}" font-size="24" font-weight="800" letter-spacing="5" fill="${ink}" fill-opacity="0.7">${l}</text>`).join('');
+  const frame = `M0 0H${W}V${H}H0Z M${sx} ${top}V${winBottom}H${W - sx}V${top}Z`;
+  const tagW = Math.round(await widthOf(measure, `RUN ${pw.runNo}`, BODY, 24, 800, 6)) + 36;
+  const where = [d.dateShort.toUpperCase(), pw.court.toUpperCase()].filter(Boolean).join(' · ');
+  const whereSize = await fit(measure, where, { font: BODY, size: 24, weight: 700, ls: 4, maxW: bx1 - bx0 - 24 - Math.round(await widthOf(measure, '@WKNDBASKETBALL', BODY, 24, 700, 4)) - 40 });
+  const setW = Math.round(await widthOf(measure, 'PAPAWIS', NUM, 84, 900, 3));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>${DEFS}
+    <linearGradient id="foil" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${accent.bg}"/><stop offset="0.22" stop-color="#ffd36e"/><stop offset="0.45" stop-color="#7de3ff"/>
+      <stop offset="0.65" stop-color="#b18cff"/><stop offset="0.85" stop-color="#ff8ac2"/><stop offset="1" stop-color="${accent.bg}"/>
+    </linearGradient>
+    <pattern id="shine" width="150" height="150" patternUnits="userSpaceOnUse" patternTransform="rotate(28)">
+      <rect x="0" y="0" width="22" height="150" fill="#ffffff" fill-opacity="0.32"/><rect x="34" y="0" width="6" height="150" fill="#ffffff" fill-opacity="0.22"/>
+    </pattern>
+  </defs>
+  <path d="${frame}" fill-rule="evenodd" fill="${holo ? 'url(#foil)' : '#0e1320'}"/>
+  ${holo ? `<path d="${frame}" fill-rule="evenodd" fill="url(#shine)"/>` : ''}
+  <rect x="${sx}" y="${top}" width="${W - sx * 2}" height="${winBottom - top}" fill="none" stroke="${holo ? '#ffffff' : accent.bg}" stroke-opacity="${holo ? 0.7 : 1}" stroke-width="8"/>
+  <text x="${sx + 12}" y="112" font-family="${NUM}" font-size="84" font-weight="900" letter-spacing="3" fill="${ink}">PAPAWIS</text>
+  <rect x="${sx + 12 + setW + 24}" y="64" width="${tagW}" height="48" rx="10" fill="none" stroke="${holo ? '#111111' : accent.bg}" stroke-width="3"/>
+  <text x="${sx + 12 + setW + 24 + tagW / 2}" y="88" text-anchor="middle" dominant-baseline="central" font-family="${BODY}" font-size="24" font-weight="800" letter-spacing="6" fill="${holo ? '#111111' : accent.bg}">RUN ${pw.runNo}</text>
+  <text x="${W - sx - 12}" y="104" text-anchor="end" font-family="${BODY}" font-size="30" font-weight="800" letter-spacing="5" fill="${holo ? '#111111' : SOFT}">${esc(d.dateShort.toUpperCase())}</text>
+  ${holo ? `<rect x="${W - sx - 36 - 196}" y="${top + 36}" width="196" height="108" rx="14" fill="#0a0e16" fill-opacity="0.86" stroke="#ffd36e" stroke-width="4"/>
+  <text x="${W - sx - 36 - 98}" y="${top + 74}" text-anchor="middle" font-family="${BODY}" font-size="20" font-weight="800" letter-spacing="6" fill="#ffd36e">RANK</text>
+  <text x="${W - sx - 36 - 98}" y="${top + 128}" text-anchor="middle" font-family="${NUM}" font-size="56" font-weight="900" letter-spacing="2" fill="${WHITE}">${String(pw.rank).padStart(2, '0')}/${pw.of}</text>` : ''}
+  <polygon points="${bx0},${bannerTop} ${bx1},${bannerTop} ${bx1 - 40},${bannerTop + bannerH} ${bx0},${bannerTop + bannerH}" fill="${holo ? '#0e1320' : accent.bg}"/>
+  ${first ? `<text x="${bx0 + 44}" y="${bannerTop + 62}" font-family="${BODY}" font-size="${firstSize}" font-weight="800" letter-spacing="8" fill="${chipInk}">${esc(first)}</text>` : ''}
+  <text x="${bx0 + 38}" y="${bannerTop + 196}" font-family="${NUM}" font-size="${lastSize}" font-weight="900" letter-spacing="1" fill="${chipInk}">${esc(last)}</text>
+  ${chipSvg}
+  ${statSvg}
+  <text x="${bx0 + 12}" y="${H - 44}" font-family="${BODY}" font-size="${whereSize}" font-weight="700" letter-spacing="4" fill="${ink}" fill-opacity="0.7">${esc(where)}</text>
+  <text x="${bx1 - 12}" y="${H - 44}" text-anchor="end" font-family="${BODY}" font-size="24" font-weight="700" letter-spacing="4" fill="${ink}" fill-opacity="0.7">@WKNDBASKETBALL</text>
+</svg>`;
+  return { svg };
+}
+const pwcard = (d, measure) => cardFront(d, measure, false);
+const pwholo = (d, measure) => cardFront(d, measure, true);
+
+// ── Trading card, back: the stats side, floating on the photo ─────────────────────────────────
+async function pwback(d, measure) {
+  const { accent, stat, pw } = d;
+  const cw = 880, frame = 26, ink = '#141923', grey = '#5b6475';
+  const games = pw.games.slice(0, 5);
+  const ix = frame + 40, iw = cw - frame * 2 - 80;
+  const topH = 170, bioH = 120;
+  const tableY = frame + topH + bioH + 120, rowH = 66;
+  const rowsEnd = tableY + 40 + (games.length + 1) * rowH;
+  const factLines = await wrap(measure, pw.fact, { font: BODY, size: 32, weight: 600, maxW: iw - 40 });
+  const factY = rowsEnd + 70;
+  const ch = factY + factLines.length * 46 + 150;
+  const cxp = (W - cw) / 2, cyp = Math.round((H - ch) / 2) - 40;
+  const { first, last } = nameParts(d);
+  const name = `${first} ${last}`.trim();
+  const nameSize = await fit(measure, name, { font: NUM, size: 72, ls: 1, maxW: cw - frame * 2 - 220 });
+  const bio = [['POS', (pw.positions || []).join(' · ') || '—'], ['SHIRT', SIDE_WORD[pw.side]], ['RUNS', String(pw.runNo)]];
+  const bw = (cw - frame * 2) / 3;
+  const bioSvg = (await Promise.all(bio.map(async ([k, v], i) => {
+    const x = frame + 40 + bw * i;
+    const size = await fit(measure, v, { font: NUM, size: 48, maxW: bw - 50 });
+    return `<text x="${x}" y="${frame + topH + 42}" font-family="${BODY}" font-size="22" font-weight="800" letter-spacing="5" fill="${accent.text}" fill-opacity="0.75">${k}</text>
+    <text x="${x}" y="${frame + topH + 96}" font-family="${NUM}" font-size="${size}" font-weight="900" fill="${accent.text}">${esc(v)}</text>`;
+  }))).join('');
+  // Game and score sit left; the numbers align right on their column's edge.
+  const colsX = [ix, ix + 150, ix + 470, ix + 570, ix + 670, ix + iw];
+  const head = ['GAME', 'SCORE', 'PTS', 'REB', 'AST', '3PM'];
+  const cell = (i, y, v, o = {}) => `<text x="${colsX[i]}" y="${y}" ${i >= 2 ? 'text-anchor="end"' : ''} font-family="${o.font || NUM}" font-size="${o.size || 44}" font-weight="900" fill="${o.fill || ink}">${esc(v)}</text>`;
+  const rows = [...games.map(g => [`G${g.n}`, `${wl(g)} ${g.my}–${g.opp}`, g.line.pts, g.line.reb, g.line.ast, g.line.fg3m]),
+    ['DAY', `${pw.wl.w}–${pw.wl.l}`, n(stat.pts), n(stat.reb), n(stat.ast), n(stat.fg3m)]];
+  const table = `${head.map((h, i) => `<text x="${colsX[i]}" y="${tableY}" ${i >= 2 ? 'text-anchor="end"' : ''} font-family="${BODY}" font-size="22" font-weight="800" letter-spacing="4" fill="${grey}">${h}</text>`).join('')}
+    <rect x="${ix}" y="${tableY + 16}" width="${iw}" height="4" fill="${ink}"/>
+    ${rows.map((r, j) => {
+      const y = tableY + 40 + j * rowH, tot = j === rows.length - 1;
+      return `${tot ? `<rect x="${ix - 12}" y="${y}" width="${iw + 24}" height="${rowH}" fill="#e1e5ec"/>` : `<rect x="${ix}" y="${y + rowH - 2}" width="${iw}" height="2" fill="#cfd4dd"/>`}
+      ${r.map((v, i) => cell(i, y + 48, v, i === 0 ? { font: BODY, size: 28 } : {})).join('')}`;
+    }).join('')}`;
+  const fact = factLines.map((l, i) => `<text x="${ix + 28}" y="${factY + i * 46}" font-family="${BODY}" font-size="32" font-weight="600" fill="#2c3340">${esc(l)}</text>`).join('');
+  const place = (pw.place || pw.court).toUpperCase();
+  const placeSize = await fit(measure, place || ' ', { font: BODY, size: 24, weight: 700, ls: 4, maxW: iw - 200 });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>${DEFS}
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="40" stdDeviation="40" flood-color="#000" flood-opacity="0.55"/></filter>
+    <clipPath id="cb"><rect x="0" y="0" width="${cw}" height="${ch}" rx="36"/></clipPath>
+  </defs>
+  <g transform="translate(${cxp} ${cyp}) rotate(2 ${cw / 2} ${ch / 2})">
+    <rect x="0" y="0" width="${cw}" height="${ch}" rx="36" fill="#0e1320" filter="url(#drop)"/>
+    <g clip-path="url(#cb)">
+      <rect x="${frame}" y="${frame}" width="${cw - frame * 2}" height="${ch - frame * 2}" rx="14" fill="#eef0f4"/>
+      <rect x="${frame}" y="${frame}" width="${cw - frame * 2}" height="${topH}" fill="#0e1320"/>
+      <rect x="${frame}" y="${frame + topH}" width="${cw - frame * 2}" height="${bioH}" fill="${accent.bg}"/>
+    </g>
+    <circle cx="${frame + 96}" cy="${frame + topH / 2}" r="58" fill="${accent.bg}"/>
+    <text x="${frame + 96}" y="${frame + topH / 2}" text-anchor="middle" dominant-baseline="central" font-family="${NUM}" font-size="${String(d.number).length > 2 ? 48 : 66}" font-weight="900" fill="${accent.text}">${esc(d.number)}</text>
+    <text x="${frame + 184}" y="${frame + topH / 2 + 4}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1" fill="${WHITE}">${esc(name)}</text>
+    <text x="${frame + 186}" y="${frame + topH / 2 + 48}" font-family="${BODY}" font-size="22" font-weight="700" letter-spacing="5" fill="${MUTED}">PAPAWIS · RUN ${pw.runNo} · ${esc(d.dateShort.toUpperCase())}</text>
+    ${bioSvg}
+    <text x="${ix}" y="${tableY - 46}" font-family="${BODY}" font-size="24" font-weight="800" letter-spacing="6" fill="${grey}">GAME BY GAME</text>
+    ${table}
+    <rect x="${ix}" y="${factY - 34}" width="8" height="${factLines.length * 46 + 6}" fill="${accent.bg}"/>
+    ${fact}
+    <line x1="${frame}" y1="${ch - frame - 84}" x2="${cw - frame}" y2="${ch - frame - 84}" stroke="#b6bcc8" stroke-width="3" stroke-dasharray="12 9"/>
+    <text x="${ix}" y="${ch - frame - 34}" font-family="${BODY}" font-size="${placeSize}" font-weight="700" letter-spacing="4" fill="${grey}">${esc(place)}</text>
+    <text x="${ix + iw}" y="${ch - frame - 30}" text-anchor="end" font-family="${NUM}" font-size="40" font-weight="900" letter-spacing="3" fill="${ink}">WKND</text>
+  </g>
+  ${handleText(W / 2, H - 80, 'middle', WHITE)}
+</svg>`;
+  return { svg };
+}
+
+const RENDER = { usual, receipt, cover, poster, bug, jersey, pwsheet, pwsides, pwcard, pwholo, pwback, pwticket, pwpotd };
 
 // d: { gameId, displayName, shortName, initials, number, teamName, teamColor, oppName,
 //      cardName (first given name + surname), myScore, oppScore, won, mySideScore, otherSideScore, otherTeamName, dateShort, dateLong,

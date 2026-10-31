@@ -20,7 +20,8 @@ const TOOLS = [['tpl', 'Templates', 'layers'], ['colour', 'Colour', 'palette'], 
 // public/share-cards.js, loaded as a module script by initShare.
 // missingText: the empty state's line (a Papawis run says run, not game).
 // lockText: the lock note's own words (a Papawis run not paid yet), else the balance one.
-export function appSharePage({ back, missing = false, missingText = 'Only players in this game can make its stat card.', game, focus = 'all', locked = false, lockText = '', bgs = [], phone = null }) {
+// families: the templates on offer (views/game.js sscFamiliesFor; a Papawis run adds its own).
+export function appSharePage({ back, missing = false, missingText = 'Only players in this game can make its stat card.', game, focus = 'all', locked = false, lockText = '', bgs = [], phone = null, families = SSC_FAMILIES }) {
   if (missing) return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">‹ ${esc(back.label)}</a><span class="navbar__title">Share my stats</span><span></span></div>
     <div class="empty" style="margin-top:12px">${esc(missingText)}</div>`;
   const chip = (attr, k, label, on) => `<button type="button" class="se__chip${on ? ' is-on' : ''}" data-${attr}="${esc(k)}">${esc(label)}</button>`;
@@ -36,9 +37,9 @@ export function appSharePage({ back, missing = false, missingText = 'Only player
     </div>
     <div class="se__bottom">
       <div data-panel="tpl">
-        <div class="se__tpls">${SSC_FAMILIES.map((f, i) => `<button type="button" class="se__tpl${i === 0 ? ' is-on' : ''}" data-tpl="${esc(f.def)}" data-fam="${esc(f.key)}"${f.premium ? ' data-premium' : ''}>
+        <div class="se__tpls">${families.map((f, i) => `<button type="button" class="se__tpl${i === 0 ? ' is-on' : ''}" data-tpl="${esc(f.def)}" data-fam="${esc(f.key)}"${f.premium ? ' data-premium' : ''}>
           <span class="se__thumb"><img alt="" data-thumb="${esc(f.def)}">${f.premium && locked ? `<i class="se__lock">${LOCK}</i>` : ''}</span><span class="se__tl">${esc(f.label)}</span></button>`).join('')}</div>
-        ${SSC_FAMILIES.filter(f => f.variants.length > 1).map(f => `<div class="se__chips se__vars" data-vars="${esc(f.key)}" hidden>${f.variants.map(([k, l]) => chip('variant', k, l, k === f.def)).join('')}</div>`).join('')}
+        ${families.filter(f => f.variants.length > 1).map(f => `<div class="se__chips se__vars" data-vars="${esc(f.key)}" hidden>${f.variants.map(([k, l]) => chip('variant', k, l, k === f.def)).join('')}</div>`).join('')}
       </div>
       <div data-panel="colour" hidden><div class="se__h">Colour</div><div class="se__sws">${SSC_ACCENTS.map(([k, c], i) => `<button type="button" class="se__sw${i === 0 ? ' is-on' : ''}" data-accent="${esc(k)}" style="--sw:${esc(c)}" aria-label="${esc(k)}"></button>`).join('')}</div></div>
       <div data-panel="stats" hidden><div class="se__h">Stats to show</div><div class="se__chips">${[['all', 'All-around'], ['offense', 'Offense'], ['defense', 'Defense']].map(([k, l]) => chip('focus', k, l, k === focus)).join('')}</div></div>
