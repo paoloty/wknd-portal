@@ -19,7 +19,8 @@ const TOOLS = [['tpl', 'Templates', 'layers'], ['colour', 'Colour', 'palette'], 
 // phone: { keys, data, photo } when the phone draws those templates itself (not locked):
 // public/share-cards.js, loaded as a module script by initShare.
 // missingText: the empty state's line (a Papawis run says run, not game).
-export function appSharePage({ back, missing = false, missingText = 'Only players in this game can make its stat card.', game, focus = 'all', locked = false, bgs = [], phone = null }) {
+// lockText: the lock note's own words (a Papawis run not paid yet), else the balance one.
+export function appSharePage({ back, missing = false, missingText = 'Only players in this game can make its stat card.', game, focus = 'all', locked = false, lockText = '', bgs = [], phone = null }) {
   if (missing) return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">‹ ${esc(back.label)}</a><span class="navbar__title">Share my stats</span><span></span></div>
     <div class="empty" style="margin-top:12px">${esc(missingText)}</div>`;
   const chip = (attr, k, label, on) => `<button type="button" class="se__chip${on ? ' is-on' : ''}" data-${attr}="${esc(k)}">${esc(label)}</button>`;
@@ -43,7 +44,7 @@ export function appSharePage({ back, missing = false, missingText = 'Only player
       <div data-panel="stats" hidden><div class="se__h">Stats to show</div><div class="se__chips">${[['all', 'All-around'], ['offense', 'Offense'], ['defense', 'Defense']].map(([k, l]) => chip('focus', k, l, k === focus)).join('')}</div></div>
       <div data-panel="bg" hidden><div class="se__h">Backdrop <em>· just for the preview, the card saves see-through</em></div><div class="se__chips">${bgs.map((b, i) => `<button type="button" class="se__chip${i === 0 ? ' is-on' : ''}" data-bg="${esc(b.key)}" data-css="${esc(b.css)}">${esc(b.label)}</button>`).join('')}</div></div>
       <div data-panel="share" hidden><div class="se__h">Share</div>
-        ${locked ? '<p class="se__note" data-sh-lockmsg hidden>Premium cards save with a lock while you have a balance. <a class="link" href="/app/settle?from=me">Settle it</a> to unlock them.</p>' : ''}
+        ${locked ? `<p class="se__note" data-sh-lockmsg hidden>${lockText ? `${esc(lockText)} <a class="link" href="/app/settle?from=me">Settle up</a> once it's priced to unlock them.` : 'Premium cards save with a lock while you have a balance. <a class="link" href="/app/settle?from=me">Settle it</a> to unlock them.'}</p>` : ''}
         ${row('save', 'download', 'Save image', 'To your photos')}
         ${row('copy', 'copy', 'Copy image', 'Paste it into a story or chat')}
         ${row('send', 'share', 'Share to…', 'Instagram, Messenger and the rest')}

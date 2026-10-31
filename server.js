@@ -8534,7 +8534,7 @@ app.get('/papawis/:id/results', (req, res) => {
   if (!run || !results) return res.redirect('/papawis');
   const summary = pwRunSummaryStart(run);
   const t = pwShareFacts(run, req.session?.playerPlayerId);
-  const share = t ? { ...t, locked: shareCardsLocked(req) } : null;
+  const share = t ? { ...t, locked: shareCardsLocked(req, t.game) } : null;
   res.send(renderPage(req, { title: `${run.title || 'Papawis'} · Results`, currentPath: '/papawis', body: papawisResultsPage({ run: { id: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '' }, results, summary, share }) }));
 });
 
@@ -8943,11 +8943,13 @@ app.get('/app/papawis/:id/share', requireApp, async (req, res) => {
     { key: 'none', label: 'None', css: '' },
   ].filter(Boolean);
   logApp(req, 'share_open', game.id);
-  const locked = shareCardsLocked(req);
+  const locked = shareCardsLocked(req, game);
   const cardData = locked ? null : await phoneShareData(game, stat, me.playerId).catch(err => { console.error('phoneShareData', err); return null; });
   const phone = cardData ? { keys: SHARE_PHONE_KEYS, data: cardData, photo: playerPhotoUrl(me.playerId, 192) } : null;
+  // Locked over this run's own fee: say so (the balance wording doesn't fit before close-out).
+  const runDue = locked && pwRunUnpaid(run, me.playerId);
   sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, bare: true, bodyClass: 'is-editor', body: appSharePage({
-    back, focus, locked, bgs, phone,
+    back, focus, locked, bgs, phone, lockText: runDue ? 'Premium cards save with a lock until this run is paid.' : '',
     game: { id: game.id, opp: game.team_b_name, day: pwDay(run.date), line: statLine(stat) },
   }) });
 });
@@ -13280,11 +13282,19 @@ app.get('/games/:ref', (req, res) => {
 // same signal as the balance reminder bar (player_financials.current_balance > 0) — except
 // for admins (Paolo, 2026-10-19) and players a super admin gave the pass to
 // (players.premium_cards_pass, 2026-10-27). A locked card still renders; the lock is stamped into it.
-function shareCardsLocked(req) {
+// game: the card's game; a Papawis run's card (pwShareFacts) is also locked while that run
+// isn't paid (Paolo, 2026-10-31), even before it's closed out and charged.
+function shareCardsLocked(req, game = null) {
   if (req.session?.isAdmin) return false;
   const pid = req.session?.playerPlayerId;
   if (!pid || getPlayerById(pid)?.premium_cards_pass) return false;
+  if (game?.papawis && pwRunUnpaid(game.papawis.run, pid)) return true;
   return (getPlayerFinancials(pid)?.current_balance ?? 0) > 0;
+}
+// The player's own slot in the run isn't paid (a closed-out free run owes nothing).
+function pwRunUnpaid(run, pid) {
+  if (run.status === 'completed' && !(Number(run.price_per_player) > 0)) return false;
+  return getPapawisSignups(run.id).some(s => s.player_id === pid && !s.guest_name && s.status === 'confirmed' && !s.paid_at);
 }
 
 // Everything the premium templates draw, from this game and this player's EARLIER games this
@@ -13414,7 +13424,7 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   if (!target) return res.status(404).end();
   const { game, stat } = target;
   try {
-    const locked = shareCardsLocked(req);
+    const locked = shareCardsLocked(req, game);
     const q = ['layout', 'align', 'corner', 'stat', 'focus', 'gauges', 'hidezeros', 'badge', 'accent'].map(k => String(req.query[k] ?? '')).join('|');
     const facts = JSON.stringify([stat, game.date, game.team_a_name, game.team_b_name, game.team_a_score, game.team_b_score]);
     const full = `${playerId}|${game.id}|${q}|${locked ? 1 : 0}|${facts}`;
