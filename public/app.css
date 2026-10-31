@@ -869,6 +869,10 @@ a.sx:active { transform: scale(.99); }
 .pw-seat.is-you svg { width: 16px; height: 16px; }
 /* Didn't play (no-show / DNP) on a past run: faded faces, the mark under the name. */
 .pw-absent .avatar { opacity: .5; }
+/* Manage run: No-show / DNP pill beside the name (views/app/admin-papawis.js). */
+.adm-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.adm-att { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 20px; padding: 0 8px; border-radius: 999px; font: 600 11px/1 var(--font-num); letter-spacing: .06em; text-transform: uppercase; background: var(--surface-2); color: var(--muted); }
+.adm-att--noshow { background: rgba(239,68,68,.14); color: var(--loss); }
 .pw-seat__x { font: 600 11px/1 var(--font-num); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .pw-seats.is-locked .pw-seat__av { opacity: .5; }
 .pw-team { margin-top: 14px; }

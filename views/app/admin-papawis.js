@@ -43,9 +43,11 @@ function rowActs(run, s, canManage, full) {
 // One player row. Drag by the grip to reorder or move between lists; tap for the sheet.
 function row(run, s, { canManage, full, n, drag = true, right = '' }) {
   const acts = rowActs(run, s, canManage, full);
-  const sub = [s.att === 'noshow' ? 'No-show' : s.att === 'dnp' ? 'DNP' : '', s.guest ? `Guest of ${s.sponsor}` : s.teamName, run.open && s.status === 'confirmed' && s.team ? sideLabel(s.team) : ''].filter(Boolean).join(' · ');
+  const sub = [s.guest ? `Guest of ${s.sponsor}` : s.teamName, run.open && s.status === 'confirmed' && s.team ? sideLabel(s.team) : ''].filter(Boolean).join(' · ');
+  // No-show / DNP as a pill beside the name, so the roster reads at a glance.
+  const att = s.att ? `<span class="adm-att adm-att--${esc(s.att)}">${s.att === 'noshow' ? 'No-show' : 'DNP'}</span>` : '';
   const face = appAvatar({ playerId: s.face.playerId, initials: s.face.ini, ring: s.face.color, photoUrl: s.face.photoUrl });
-  const who = `${face}<span class="cell__t">${esc(s.name)}<small>${esc(sub || ' ')}</small></span>`;
+  const who = `${face}<span class="cell__t"><span class="adm-name">${esc(s.name)}${att}</span><small>${esc(sub || ' ')}</small></span>`;
   return `<div class="cell adm-row" data-id="${esc(s.id)}">
     ${canManage && drag ? `<button type="button" class="adm-grip" aria-label="Drag ${esc(s.name)} to reorder">${grip}</button>` : `<span class="adm-n num">${n}</span>`}
     ${acts.length ? `<button type="button" class="adm-row__open" data-adm-acts="${attrJson(acts)}" data-adm-title="${esc(s.name)}">${who}<span class="adm-row__more" aria-hidden="true">${icons.more}</span></button>` : `<span class="adm-row__open">${who}</span>`}
@@ -80,7 +82,7 @@ function rosterTab(run, d) {
     ask: run.locked ? 'Unlock the roster? Sign-ups and teams become editable again.' : 'Lock the roster? Sign-ups and teams freeze until you unlock. Do this once you\'ve sent the list out.',
     done: run.locked ? 'Roster unlocked' : 'Roster locked' }) : '';
   return `${dep}
-    ${list('confirmed', `Confirmed · ${confirmed.length}/${run.max}`, confirmed, 'No one confirmed yet.')}
+    ${list('confirmed', `Confirmed · ${confirmed.length}/${run.max}${['noshow', 'dnp'].map(k => { const n = confirmed.filter(s => s.att === k).length; return n ? ` · ${n} ${k === 'noshow' ? 'no-show' : 'DNP'}` : ''; }).join('')}`, confirmed, 'No one confirmed yet.')}
     ${run.open || waitlist.length ? list('waitlist', `Waitlist · ${waitlist.length}`, waitlist, 'Nobody waiting.') : ''}
     ${canManage ? '<p class="foot-note">Drag the grip to reorder or move between lists. The order is the slot order.</p>' : ''}
     <div class="adm-actions">

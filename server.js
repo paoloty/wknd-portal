@@ -8481,7 +8481,10 @@ function pwResultsFor(run) {
   people.sort((x, y) => (x.key === done.potd_key ? -1 : y.key === done.potd_key ? 1 : 0) || y.rating - x.rating || y.line.pts - x.line.pts);
   const full = rows.some(r => r.level === 'full');
   const potd = people.find(o => o.key === done.potd_key) || null;
-  return { games: done.games, people, potd, full, potdCount: potd && potd.playerId ? getPapawisPotdCount(potd.playerId) : 0 };
+  // No-shows and DNPs (marked by an admin): listed under the box score, no line.
+  const absent = getPapawisSignups(run.id).filter(s => s.status === 'confirmed' && s.attendance)
+    .map(s => ({ name: s.guest_name || displayPlayerName(s.player_name || ''), mark: s.attendance, side: s.team === 'light' || s.team === 'dark' ? s.team : '' }));
+  return { games: done.games, people, potd, full, absent, potdCount: potd && potd.playerId ? getPapawisPotdCount(potd.playerId) : 0 };
 }
 // The run's AI recap (Paolo, 2026-10-31): a headline and a sentence or two from the games and
 // the standouts, through the same writer and checks as the teams summaries (teamsSummary),

@@ -16,7 +16,7 @@ const fgLine = L => { const m = fg(L, ['fg2m', 'fg3m', 'fg4m']), a = m + fg(L, [
 // number, side, line, games: { n: row }, rating, photo, ini }] (Player of the Day first), potd,
 // full, potdCount }
 export function papawisResultsBody(results, { profileHref = id => `/players/${encodeURIComponent(id)}` } = {}) {
-  const { games, people, potd, full } = results;
+  const { games, people, potd, full, absent = [] } = results;
   const statsOf = L => [['PTS', L.pts || 0], ['REB', L.reb || 0], ['AST', L.ast || 0], ...(full ? [['STL', L.stl || 0]] : [])];
   const card = p => ({
     key: p.key, name: p.name, first: p.first, last: p.last, number: p.number, photo: p.photo, ini: p.ini, ring: RING[p.side], team: SIDE[p.side] || '',
@@ -50,6 +50,9 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
     <div class="pwx-games">${games.map(result).join('')}</div>
     ${topThreeCards(cards, { firstLabel: 'Player of the Day', label: 'Player of the Day · top 3' })}
     ${day}
+    ${absent.length ? `<div class="pwx-box"><div class="pwx-box__h">Didn’t play</div>
+      <div class="table-scroll"><table class="pwx-tbl"><thead><tr><th scope="col">Player</th><th scope="col">Status</th></tr></thead>
+      <tbody>${absent.map(a => `<tr><th scope="row"><span class="pwx-who">${esc(a.name)}${a.side ? `<small>${SIDE[a.side]}</small>` : ''}</span></th><td>${a.mark === 'noshow' ? 'No-show' : 'DNP'}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
     <details class="pwx-more"><summary>Each game</summary>${perGame}</details>
     <p class="pwx-note">Papawis stats count in Papawis careers and leaders, separate from league totals.${full ? '' : ' Basic stats: points, rebounds and assists.'}</p>
     ${playerCardTemplates(cards)}

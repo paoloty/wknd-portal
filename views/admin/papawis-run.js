@@ -65,7 +65,7 @@ function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPa
   const name = signupName(s);
   const canNotify = canManage && !s.guest_name && s.status === 'confirmed' && s.team && s.reminder_sent_at && !s.team_notified_at;
   const att = s.status === 'confirmed' ? { noshow: 'No-show', dnp: 'DNP' }[s.attendance] || '' : '';
-  const sub = [att, s.guest_name ? `Guest of ${displayPlayerName(s.player_name)}` : (s.team_name || '')].filter(Boolean).join(' · ');
+  const sub = s.guest_name ? `Guest of ${displayPlayerName(s.player_name)}` : (s.team_name || '');
   const canMark = game.status !== 'cancelled' && String(game.date) <= manilaTodayStr();
   // One visible action at most (Confirm, for the waitlist); the rest live in the ⋯ menu.
   const actions = [];
@@ -92,7 +92,7 @@ function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPa
   const side = s.status === 'confirmed' ? s.team : '';
   return `<tr class="aui-grid__row"${canManage ? ' draggable="true"' : ''} data-id="${attr(s.id)}" data-status="${attr(s.status)}" data-name="${attr(name)}" data-paid="${s.paid_at ? 1 : 0}">
     <td class="pw-roster__n">${canManage ? '<span class="pw-handle" aria-hidden="true" title="Drag to reorder">⠿</span>' : ''}<span class="aui-num">${n}</span></td>
-    <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, s.guest_name ? '' : colorByTeam[s.team_name] || '', { playerId: s.guest_name ? '' : s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}</span>${sub ? `<span class="aui-cell__sub">${escHtml(sub)}</span>` : ''}</span>${side ? `<span class="pw-side-inline">${sideBadge(side)}</span>` : ''}</span></td>
+    <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, s.guest_name ? '' : colorByTeam[s.team_name] || '', { playerId: s.guest_name ? '' : s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}${att ? ` ${badge(att, att === 'No-show' ? 'red' : 'gray')}` : ''}</span>${sub ? `<span class="aui-cell__sub">${escHtml(sub)}</span>` : ''}</span>${side ? `<span class="pw-side-inline">${sideBadge(side)}</span>` : ''}</span></td>
     <td class="is-bare is-desk" data-label="Side">${sideBadge(side)}</td>
     ${showPaid ? `<td class="is-bare" data-label="Paid">${paidCell(game, s, (unlinkedByPlayer[s.player_id] || []), (reusableByPlayer[s.player_id] || []))}</td>` : ''}
     <td class="is-num is-desk" data-label="Signed up">${escHtml(fmtTime(s.signed_up_at))}</td>
