@@ -157,7 +157,7 @@ import {
   setGamePick, setGamePickMargin, getGamePickCounts, getPlayerGamePicks,
   getAllGamePicks, getGamePicksWithPlayers, getAllGamePickSettings, setGamePickClosed, setGamePickHideOdds, claimGamePickSettle,
   getGamePreview, saveGamePreview, getGamePreviewIds,
-  getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments, getSameDayOtherPayments, fileTxUnderPapawis,
+  getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments, getSameDayOtherPayments, fileTxUnderPapawis, getPendingRunPayments,
   getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   bumpPageView, prunePageViews, bumpCtaClick, getCtaClickTotals, getGuestPageViews,
@@ -9886,7 +9886,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
       if (s.paid) continue;
       const c = pwPaymentCandidates(s.playerId, g);
       s.match = c.length;
-      if (c.length === 1) Object.assign(s, { matchId: c[0].id, matchAmount: c[0].amount, matchCat: pwOtherCategory(c[0]), matchDate: manilaFormat(Date.parse(`${c[0].date}T12:00:00+08:00`), { month: 'short', day: 'numeric' }) });
+      if (c.length === 1) Object.assign(s, { matchId: c[0].id, matchAmount: c[0].amount, matchCat: pwOtherCategory(c[0]), matchPending: c[0].status === 'pending', matchMethod: c[0].payment_method || '', matchDate: manilaFormat(Date.parse(`${c[0].date}T12:00:00+08:00`), { month: 'short', day: 'numeric' }) });
     }
   }
   if (tab === 'messages') {
@@ -26078,8 +26078,11 @@ app.post('/admin/papawis/:id/signups/:signupId/status', requireAuth, express.jso
 
 // A run's possible payment matches for a player: their unlinked Papawis payments from the
 // run's day on, plus any payment recorded under another category on the run's day itself.
+// None confirmed: the player's payments still waiting for an admin (status 'pending'), which
+// Confirm & link posts and links in one go.
 function pwPaymentCandidates(pid, run) {
-  return [...getUnlinkedPapawisPayments(pid).filter(x => x.date >= run.date), ...getSameDayOtherPayments(pid, run.date)];
+  const confirmed = [...getUnlinkedPapawisPayments(pid).filter(x => x.date >= run.date), ...getSameDayOtherPayments(pid, run.date)];
+  return confirmed.length ? confirmed : getPendingRunPayments(pid, run.date);
 }
 // The category a candidate is filed under, when it isn't Papawis ('' otherwise).
 const pwOtherCategory = tx => (/^papawis/i.test(String(tx.category || '')) ? '' : String(tx.category || 'no category'));
@@ -26328,6 +26331,25 @@ app.post('/admin/papawis/:id/signups/:signupId/link-payment', requireAuth, expre
     console.log(`[papawis] ${currentAdminActor(req).name} linked tx=${txId} (was ${tx.category || 'no category'}) to run=${game.id} signup=${signup.id}, filed under Papawis`);
   }
   markPapawisSignupPaid(signup.id, txId);
+  res.json({ ok: true });
+});
+
+// Confirm & link: a payment the player sent (still pending) is confirmed in the ledger, filed
+// under Papawis, and marks their slot paid, in one step (Paolo, 2026-10-31).
+app.post('/admin/papawis/:id/signups/:signupId/confirm-link', requireAuth, express.json(), (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Not found.' });
+  if (game.status !== 'completed') return res.status(400).json({ error: 'Close out the run first.' });
+  const signup = getPapawisSignupById(req.params.signupId);
+  if (!signup || signup.game_id !== game.id) return res.status(404).json({ error: 'Not found.' });
+  if (signup.paid_at) return res.status(400).json({ error: 'Already marked paid.' });
+  const tx = getPendingRunPayments(signup.player_id, game.date).find(x => x.id === String(req.body?.tx_id || ''));
+  if (!tx) return res.status(400).json({ error: 'That payment is no longer waiting. Refresh and try again.' });
+  setTransactionCategory(tx.id, 'Papawis');
+  if (!confirmTransaction(tx.id)) return res.status(400).json({ error: 'Could not confirm that payment.' });
+  notifyLedgerEvent({ playerId: tx.player_id, type: tx.type, amount: tx.amount, notes: tx.notes });
+  markPapawisSignupPaid(signup.id, tx.id);
+  console.log(`[papawis] ${currentAdminActor(req).name} confirmed tx=${tx.id} (${tx.amount}, was ${tx.category || 'no category'}) and linked it to run=${game.id} signup=${signup.id}`);
   res.json({ ok: true });
 });
 

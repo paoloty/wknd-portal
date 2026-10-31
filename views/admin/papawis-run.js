@@ -50,6 +50,13 @@ export function paidCell(game, s, candidates = [], reusable = [], { unpaidBadge 
   const mark = label => postBtn(label, `${base}/paid`, { kind: 'secondary', data: { paid: true }, done: `${signupName(s)} marked paid.` });
   const reuse = reusable.map(c => `<span class="pw-hint pw-hint--blue">Also covers ${peso(c.amount)} paid ${escHtml(fmtDay(c.date))}, already linked to ${escHtml(c.linked_game_title || 'another game')}
       ${postBtn('Link here too', `${base}/link-payment`, { kind: 'secondary', data: { tx_id: c.id }, done: 'Payment linked.' })}</span>`).join('');
+  // A payment the player sent that's still pending (server.js pwPaymentCandidates): Confirm & link.
+  if (candidates.length === 1 && candidates[0].status === 'pending') {
+    const c = candidates[0];
+    return `<div class="pw-paid">${unpaid}<span class="pw-hint">Sent ${peso(c.amount)} on ${escHtml(fmtDay(c.date))}${c.payment_method ? ` · ${escHtml(c.payment_method)}` : ''} · waiting to confirm</span>
+      <span class="aui-row">${postBtn('Confirm & link', `${base}/confirm-link`, { kind: 'primary', data: { tx_id: c.id }, done: 'Payment confirmed and linked.',
+        confirm: { title: `Confirm ${peso(c.amount)} from ${signupName(s)}?`, body: 'It’s posted to the ledger under Papawis and marks them paid for this run.', send: 'Confirm & link' } })}${mark('Mark paid instead')}</span>${reuse}</div>`;
+  }
   if (candidates.length === 1) {
     const c = candidates[0];
     // Same-day payment under another category (server.js pwPaymentCandidates): linking files it under Papawis.
