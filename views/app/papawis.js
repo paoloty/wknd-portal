@@ -177,6 +177,7 @@ export function appPapawisRunPage({ missing = false, run = null, back = { href: 
   const m = run.mine;
   const mine = !m ? '' : m.status === 'unpaid'
     ? `<div class="pw-status pw-status--due" role="status"><i>${icons.wallet}</i><span><b>You owe ${peso(m.amount)} for this run</b><small>Settle it to keep joining runs</small></span></div><a class="btn" href="/app/settle?from=papawis">Settle ${peso(m.amount)}</a>`
+    : m.att ? `<div class="pw-status pw-status--plain" role="status"><i>${icons.check}</i><span><b>${m.att === 'noshow' ? 'Marked as a no-show' : 'Marked DNP: you didn’t play'}</b><small>${m.status === 'paid' ? `${peso(m.amount)} · paid` : m.status === 'unpaid' ? `${peso(m.amount)} still owed` : 'Not counted as a run played'}</small></span></div>${m.status === 'unpaid' ? `<a class="btn" href="/app/settle?from=papawis">Settle ${peso(m.amount)}</a>` : ''}`
     : m.status === 'listed' ? `<div class="pw-status pw-status--plain" role="status"><i>${icons.check}</i><span><b>You were listed</b><small>Nobody was charged</small></span></div>`
     : `<div class="pw-status" role="status"><i>${icons.check}</i><span><b>You played${m.team ? ` on ${m.team === 'light' ? 'Light' : 'Dark'}` : ''}</b><small>${m.status === 'paid' ? `${peso(m.amount)} · paid` : run.kind === 'pending' ? 'Price being set' : 'Nothing owed'}</small></span></div>`;
   return `${nav}
@@ -193,6 +194,7 @@ export function appPapawisRunPage({ missing = false, run = null, back = { href: 
       ${results ? `<div class="pw-who pw-who--gap"><span class="pw-who__t">Results</span>${finish ? `<a class="pw-who__n" href="${esc(finish)}">Edit</a>` : ''}</div>${summary ? `<div class="pw-week pw-recap"><span class="kick">${esc(summary.kicker || 'Papawis recap')}</span>${summary.headline ? `<p class="pw-week__h">${marked(summary.headline)}</p>` : ''}${summary.body ? `<p>${esc(summary.body.replace(/\*\*/g, ''))}</p>` : ''}</div>` : ''}${results}` : ''}
       <div class="pw-who pw-who--gap"><span class="pw-who__t">${run.teamsOut ? 'Teams' : run.kind === 'cancelled' ? 'Who was listed' : 'Who played'}</span><span class="pw-who__n"><b>${run.count}</b></span></div>
       ${run.faces.length ? seats({ ...run, max: run.faces.length, scheduled: false }) : '<p class="pwr__note">Nobody was listed.</p>'}
+      ${run.absent?.length ? `<div class="pw-team pw-absent"><div class="pw-team__h">Didn’t play<small>${run.absent.length}</small></div><div class="pw-seats">${run.absent.map(f => seat(f, { ring: '' }).replace('</div>', `<span class="pw-seat__x">${f.att === 'noshow' ? 'No-show' : 'DNP'}</span></div>`)).join('')}</div></div>` : ''}
     </div>
     ${admin ? papawisAdminStrip(admin) : ''}
   </section>`;

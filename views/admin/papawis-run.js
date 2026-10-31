@@ -4,7 +4,7 @@
 // Settings. Browser behaviour (drag to reorder, the price calculator, copy for Messenger,
 // cover upload): public/admin-papawis.js. Every POST goes to the same routes as before.
 import { escHtml } from '../layout.js';
-import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow, depositPresets } from '../utils.js';
+import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow, depositPresets, manilaTodayStr } from '../utils.js';
 import { CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from '../papawis.js';
 import { parseHeightCm } from '../../lib/papawis-teams.js';
 import {
@@ -64,7 +64,9 @@ export function paidCell(game, s, candidates = [], reusable = [], { unpaidBadge 
 function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPaid, unlinkedByPlayer, reusableByPlayer }) {
   const name = signupName(s);
   const canNotify = canManage && !s.guest_name && s.status === 'confirmed' && s.team && s.reminder_sent_at && !s.team_notified_at;
-  const sub = s.guest_name ? `Guest of ${displayPlayerName(s.player_name)}` : (s.team_name || '');
+  const att = s.status === 'confirmed' ? { noshow: 'No-show', dnp: 'DNP' }[s.attendance] || '' : '';
+  const sub = [att, s.guest_name ? `Guest of ${displayPlayerName(s.player_name)}` : (s.team_name || '')].filter(Boolean).join(' · ');
+  const canMark = game.status !== 'cancelled' && String(game.date) <= manilaTodayStr();
   // One visible action at most (Confirm, for the waitlist); the rest live in the ⋯ menu.
   const actions = [];
   if (canManage && s.status === 'waitlist') {
@@ -75,6 +77,12 @@ function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPa
     canNotify ? { label: `Email their team (${teamLabel(s.team)})`, post: `/admin/papawis/${game.id}/signups/${s.id}/notify-team`, done: `${name} emailed their team.`,
       confirm: { title: `Email ${name} that they’re on Team ${teamLabel(s.team)}?`, body: 'Their reminder went out before teams were set. This is a one-time catch-up email.', send: 'Send email' } } : null,
     canManage && s.status === 'confirmed' ? { label: 'Move to the waitlist', post: `/admin/papawis/${game.id}/signups/${s.id}/status`, body: { status: 'waitlist' }, done: `${name} moved to the waitlist.` } : null,
+    // No-show / DNP, on the day or after (also closed out): both still charged.
+    ...(canMark && s.status === 'confirmed' ? [
+      s.attendance !== 'noshow' ? { label: 'Mark as no-show', post: `/admin/papawis/${game.id}/signups/${s.id}/attendance`, body: { mark: 'noshow' }, done: `${name} marked no-show (still charged).` } : null,
+      s.attendance !== 'dnp' ? { label: 'Mark as DNP', post: `/admin/papawis/${game.id}/signups/${s.id}/attendance`, body: { mark: 'dnp' }, done: `${name} marked DNP (still charged).` } : null,
+      s.attendance ? { label: 'Mark as played', post: `/admin/papawis/${game.id}/signups/${s.id}/attendance`, body: { mark: '' }, done: `${name} marked played.` } : null,
+    ] : []),
     !s.guest_name && s.player_id ? { label: 'Open player', href: `/admin/players/${s.player_id}` } : null,
     canManage ? 'sep' : null,
     canManage ? { label: 'Remove…', danger: true, post: `/admin/papawis/${game.id}/remove/${s.id}`, done: `${name} removed.`,

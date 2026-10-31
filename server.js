@@ -133,7 +133,7 @@ import {
   createPapawisGame, joinPapawisGame, cancelPapawisSignup, promotePapawisPendingSignup, getMaxPapawisPrice,
   getPendingPapawisSignupsForPlayer, getUnconfirmedPapawisDeposit,
   adminAddPapawisSignup, autofillPapawisRegulars, adminRemovePapawisSignup, setPapawisSignupStatus, reorderPapawisSignups,
-  completePapawisGame, cancelPapawisGame, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime, setPapawisGameMaxSlots,
+  completePapawisGame, cancelPapawisGame, setPapawisAttendance, deletePapawisGame, savePapawisEstimate, setPapawisGameLocation, setPapawisGameTime, setPapawisGameMaxSlots,
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   logShareCardAction, getAllShareCardLog,
   getPapawisGamesForPlayer, getPapawisHistoryForPlayer, getPapawisTotalsForPlayer,
@@ -8144,7 +8144,9 @@ const pwGuest = (id, name) => { const n = String(name || '').trim().slice(0, 40)
 function pwScoreRoster(run) {
   const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const seen = new Set();
-  const people = getPapawisSignups(run.id).filter(s => s.status === 'confirmed').map(s => {
+  // A no-show or DNP marked before the scoring starts isn't offered to the scorer (anyone already
+  // in a game's setup stays: pwPeople reads the setup too).
+  const people = getPapawisSignups(run.id).filter(s => s.status === 'confirmed' && !s.attendance).map(s => {
     if (s.guest_name) return { ...pwGuest(`g${s.id}`, s.guest_name), side: s.team };
     const p = byId[s.player_id];
     if (!p || seen.has(p.id)) return null;
@@ -9489,7 +9491,7 @@ function pwFace(s, teams, meId) {
   return { ini: guest ? 'G' : name.split(' ').map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase(),
     first: guest ? String(s.guest_name).split(' ')[0] : name.split(' ')[0],
     color: s.team_id && !guest ? teamColorById(teams, s.team_id) : 'var(--subtle)', me: s.player_id === meId && !guest,
-    team: s.team === 'light' || s.team === 'dark' ? s.team : '', pending: s.status === 'pending',
+    team: s.team === 'light' || s.team === 'dark' ? s.team : '', pending: s.status === 'pending', att: s.attendance || '',
     photoUrl: guest ? '' : playerPhotoUrl(s.player_id, 96), playerId: guest ? '' : s.player_id };
 }
 function appPapawisRuns(me) {
@@ -9677,15 +9679,18 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
   const kind = pwKind(g), price = Number(g.price_per_player) || 0;
   const mineS = confirmed.find(s => s.player_id === me.playerId && !s.guest_name) || null;
   const status = pwMine(kind, mineS, price);
+  // No-shows and DNPs sit apart, under "Didn't play" (they're still on the bill).
+  const played = confirmed.filter(s => !s.attendance), absent = confirmed.filter(s => s.attendance);
   sendTab(res, me, { title: `${g.title || 'Papawis'} · WKND`, tab: 'papawis', body: appPapawisRunPage({ back, admin: appPapawisAdmin(req) ? appPapawisAdminHint(g) : null,
     results: results ? papawisResultsBody(results, { profileHref: id => `/app/players/${encodeURIComponent(id)}` }) : '', summary: results ? pwRunSummary(g, results) : null, saved: req.query.saved === '1',
     finish: results && pwCanFinish(req, g) ? `/app/papawis/${encodeURIComponent(g.id)}/finish` : '', run: {
     id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
     place: g.location || 'Papawis', photo: papawisCoverUrl(g, getPapawisCourtByName(g.location)) || '',
-    kind, count: confirmed.length, max: g.max_slots || confirmed.length, price: kind === 'played' ? price : 0,
-    faces: confirmed.map(s => pwFace(s, teams, me.playerId)),
-    teamsOut: confirmed.some(s => s.team === 'light' || s.team === 'dark'),
-    mine: status ? { status, amount: price, team: mineS.team === 'light' || mineS.team === 'dark' ? mineS.team : '' } : null,
+    kind, count: kind === 'cancelled' ? confirmed.length : played.length, max: g.max_slots || confirmed.length, price: kind === 'played' ? price : 0,
+    faces: (kind === 'cancelled' ? confirmed : played).map(s => pwFace(s, teams, me.playerId)),
+    absent: kind === 'cancelled' ? [] : absent.map(s => pwFace(s, teams, me.playerId)),
+    teamsOut: played.some(s => s.team === 'light' || s.team === 'dark'),
+    mine: status ? { status, amount: price, att: mineS.attendance || '', team: mineS.team === 'light' || mineS.team === 'dark' ? mineS.team : '' } : null,
   } }) });
 });
 
@@ -9782,6 +9787,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
     id: s.id, status: s.status, name: pwSignupName(s), guest: !!s.guest_name, sponsor: displayPlayerName(s.player_name), playerId: s.player_id,
     team: s.team === 'light' || s.team === 'dark' ? s.team : '', teamName: s.guest_name ? '' : (s.team_name || ''), paid: !!s.paid_at,
     reminded: !!s.reminder_sent_at, teamNotified: !!s.team_notified_at, face: pwFace(s, teams, ''),
+    att: s.status === 'confirmed' ? s.attendance || '' : '', canMark: s.status === 'confirmed' && pwCanMark(g),
   });
   const confirmed = signups.filter(s => s.status === 'confirmed').map(row);
   const waitlist = signups.filter(s => s.status === 'waitlist').map(row);
@@ -25967,6 +25973,20 @@ app.post('/admin/papawis/:id/signups/:signupId/status', requireAuth, express.jso
   const result = setPapawisSignupStatus(req.params.signupId, status);
   if (result.error === 'full') return res.status(400).json({ error: 'Confirmed list is full.' });
   if (result.error) return res.status(400).json({ error: 'Could not move.' });
+  res.json({ ok: true });
+});
+
+// No-show / DNP (Paolo, 2026-10-31): marked on the day or after, also once the run is closed
+// out or locked. Both are still charged; neither counts as a run played (lib/portal-db.js).
+const PW_ATTENDANCE = { noshow: 'no-show', dnp: 'DNP', '': 'played' };
+const pwCanMark = run => !!run && run.status !== 'cancelled' && pwDaysUntil(run.date) <= 0;
+app.post('/admin/papawis/:id/signups/:signupId/attendance', requireAuth, express.json(), (req, res) => {
+  const run = getPapawisGame(req.params.id);
+  if (!run) return res.status(404).json({ error: 'Run not found.' });
+  if (!pwCanMark(run)) return res.status(400).json({ error: 'No-shows and DNPs are marked on the run day or after.' });
+  const mark = ['noshow', 'dnp'].includes(req.body?.mark) ? req.body.mark : '';
+  if (!setPapawisAttendance(run.id, req.params.signupId, mark)) return res.status(400).json({ error: 'Only confirmed players can be marked.' });
+  console.log(`[papawis] ${currentAdminActor(req).name} marked signup=${req.params.signupId} run=${run.id} as ${PW_ATTENDANCE[mark]}`);
   res.json({ ok: true });
 });
 

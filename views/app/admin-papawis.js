@@ -28,6 +28,13 @@ function rowActs(run, s, canManage, full) {
     canManage && s.status === 'confirmed' ? { label: 'Move to the waitlist', sub: 'Frees their slot for the next person', post: `${base}/status`, body: { status: 'waitlist' }, done: `${s.name} moved to the waitlist` } : null,
     canNotify ? { label: `Email their team (${sideLabel(s.team)})`, sub: 'Their reminder went out before teams were set', post: `${base}/notify-team`, done: `${s.name} emailed their team`,
       ask: `Email ${s.name} that they're on Team ${sideLabel(s.team)}? This is a one-time catch-up email.` } : null,
+    // On the day or after (also once closed out): who didn't show, who came and sat out.
+    // Both stay on the bill.
+    ...(s.canMark ? [
+      s.att !== 'noshow' ? { label: 'Mark as no-show', sub: 'Signed up, didn’t come. Still charged', post: `${base}/attendance`, body: { mark: 'noshow' }, done: `${s.name} marked no-show` } : null,
+      s.att !== 'dnp' ? { label: 'Mark as DNP', sub: 'Came, didn’t play. Still charged', post: `${base}/attendance`, body: { mark: 'dnp' }, done: `${s.name} marked DNP` } : null,
+      s.att ? { label: 'Mark as played', sub: 'Clears the no-show or DNP', post: `${base}/attendance`, body: { mark: '' }, done: `${s.name} marked played` } : null,
+    ] : []),
     canManage ? { label: 'Remove from the run', danger: true, post: `/admin/papawis/${run.id}/remove/${s.id}`, done: `${s.name} removed`,
       ask: `Remove ${s.name}? ${s.status === 'confirmed' ? 'The first person on the waitlist moves up.' : 'They come off the waitlist.'}` } : null,
   ].filter(Boolean);
@@ -36,7 +43,7 @@ function rowActs(run, s, canManage, full) {
 // One player row. Drag by the grip to reorder or move between lists; tap for the sheet.
 function row(run, s, { canManage, full, n, drag = true, right = '' }) {
   const acts = rowActs(run, s, canManage, full);
-  const sub = [s.guest ? `Guest of ${s.sponsor}` : s.teamName, run.open && s.status === 'confirmed' && s.team ? sideLabel(s.team) : ''].filter(Boolean).join(' · ');
+  const sub = [s.att === 'noshow' ? 'No-show' : s.att === 'dnp' ? 'DNP' : '', s.guest ? `Guest of ${s.sponsor}` : s.teamName, run.open && s.status === 'confirmed' && s.team ? sideLabel(s.team) : ''].filter(Boolean).join(' · ');
   const face = appAvatar({ playerId: s.face.playerId, initials: s.face.ini, ring: s.face.color, photoUrl: s.face.photoUrl });
   const who = `${face}<span class="cell__t">${esc(s.name)}<small>${esc(sub || ' ')}</small></span>`;
   return `<div class="cell adm-row" data-id="${esc(s.id)}">
