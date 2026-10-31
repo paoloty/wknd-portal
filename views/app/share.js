@@ -18,9 +18,10 @@ const TOOLS = [['tpl', 'Templates', 'layers'], ['colour', 'Colour', 'palette'], 
 // game: { id, opp, day, line } · focus: the opening "stats to show" · bgs: [{ key, label, css }]
 // phone: { keys, data, photo } when the phone draws those templates itself (not locked):
 // public/share-cards.js, loaded as a module script by initShare.
-export function appSharePage({ back, missing = false, game, focus = 'all', locked = false, bgs = [], phone = null }) {
+// missingText: the empty state's line (a Papawis run says run, not game).
+export function appSharePage({ back, missing = false, missingText = 'Only players in this game can make its stat card.', game, focus = 'all', locked = false, bgs = [], phone = null }) {
   if (missing) return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">‹ ${esc(back.label)}</a><span class="navbar__title">Share my stats</span><span></span></div>
-    <div class="empty" style="margin-top:12px">Only players in this game can make its stat card.</div>`;
+    <div class="empty" style="margin-top:12px">${esc(missingText)}</div>`;
   const chip = (attr, k, label, on) => `<button type="button" class="se__chip${on ? ' is-on' : ''}" data-${attr}="${esc(k)}">${esc(label)}</button>`;
   const row = (act, icon, title, sub) => `<button type="button" class="se__row" data-sh-do="${act}"><i>${icons[icon]}</i><span><b>${title}</b><small>${sub}</small></span></button>`;
   return `<div class="se" data-sh data-game="${esc(game.id)}" data-locked="${locked ? 1 : 0}" data-focus="${esc(focus)}"${phone ? ` data-phone="${esc(phone.keys.join(' '))}" data-photo="${esc(phone.photo)}"` : ''}>

@@ -170,7 +170,8 @@ export function appPapawisPastRows(items) {
 // max, price, faces, teamsOut, mine: null | { status: 'paid'|'unpaid'|'played'|'listed', team, amount } }
 // admin: the Manage run strip (views/app/admin-papawis.js papawisAdminStrip) for admins, else null
 // summary: the run's AI recap ({ kicker, headline, body }, server.js pwRunSummary) or null
-export function appPapawisRunPage({ missing = false, run = null, back = { href: '/app/papawis', label: 'Papawis' }, admin = null, results = '', summary = null, saved = false, finish = '' }) {
+// share: the player's Share my stats link (they have a line in the scored run) or ''
+export function appPapawisRunPage({ missing = false, run = null, back = { href: '/app/papawis', label: 'Papawis' }, admin = null, results = '', summary = null, saved = false, finish = '', share = '' }) {
   const nav = `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">${run ? esc(run.day) : 'Papawis'}</span><span></span></div>`;
   if (missing || !run) return `${nav}<div class="empty pw-gap">This run isn't on the list any more.</div>`;
   const label = { played: 'Played', cancelled: 'Cancelled', pending: 'Price pending' }[run.kind] || 'Played';
@@ -189,7 +190,7 @@ export function appPapawisRunPage({ missing = false, run = null, back = { href: 
         <div class="pw-fact"><span>Per head</span><b${run.price ? ' class="num"' : ''}>${run.kind === 'cancelled' ? 'Nobody charged' : run.price ? peso(run.price) : 'Being set'}</b></div>
         <div class="pw-fact"><span>Time</span><b>${esc(run.time || '—')}</b></div>
       </div>
-      ${mine ? `<div class="pw-act">${mine}</div>` : ''}
+      ${mine || share ? `<div class="pw-act">${mine}${share ? `<a class="btn${run.mine?.status === 'unpaid' ? ' btn--ghost' : ''}" href="${esc(share)}">${icons.share}<span>Share my stats</span></a>` : ''}</div>` : ''}
       ${saved ? '<p class="msg msg--ok" role="status">Stats saved. They count in Papawis careers now.</p>' : ''}
       ${results ? `<div class="pw-who pw-who--gap"><span class="pw-who__t">Results</span>${finish ? `<a class="pw-who__n" href="${esc(finish)}">Edit</a>` : ''}</div>${summary ? `<div class="pw-week pw-recap"><span class="kick">${esc(summary.kicker || 'Papawis recap')}</span>${summary.headline ? `<p class="pw-week__h">${marked(summary.headline)}</p>` : ''}${summary.body ? `<p>${esc(summary.body.replace(/\*\*/g, ''))}</p>` : ''}</div>` : ''}${results}` : ''}
       <div class="pw-who pw-who--gap"><span class="pw-who__t">${run.teamsOut ? 'Teams' : run.kind === 'cancelled' ? 'Who was listed' : 'Who played'}</span><span class="pw-who__n"><b>${run.count}</b></span></div>

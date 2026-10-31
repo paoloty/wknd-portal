@@ -71,7 +71,7 @@ export const SSC_ACCENTS = [
   ['purple', '#a78bfa'], ['pink', '#f472b6'], ['cyan', '#22d3ee'],
 ];
 
-function shareStatsModal(game, stat, locked = false) {
+export function shareStatsModal(game, stat, locked = false) {
   const ast = Number(stat.ast) || 0, stl = Number(stat.stl) || 0, blk = Number(stat.blk) || 0, fg3m = Number(stat.fg3m) || 0;
   // Opening "Focus" follows this player's own box score — a rough offense-vs-defense signal
   // (ast+3PM vs stl+blk), so a defensive night doesn't open on a PTS/REB/AST row.

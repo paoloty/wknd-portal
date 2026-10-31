@@ -5,6 +5,7 @@
 import { escHtml as esc } from './layout.js';
 import { topThreeCards, playerCardTemplates } from './player-cards.js';
 import { summaryPanel } from './home.js';
+import { shareStatsModal } from './game.js';
 
 const SIDE = { light: 'Light', dark: 'Dark' };
 const RING = { light: 'var(--team-white, #d7dce5)', dark: 'var(--team-black, #6b7486)' };
@@ -57,11 +58,14 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
 
 // The site's page for a scored run.
 // summary: the run's AI recap (server.js pwRunSummaryStart) or null
-export function papawisResultsPage({ run, results, summary = null }) {
+// share: { game, stat, locked } for a signed-in player with a line (server.js pwShareFacts): the
+// game page's Share my stats editor, on the run
+export function papawisResultsPage({ run, results, summary = null, share = null }) {
   return `<div class="container"><div class="page-content">
     <div class="section-header"><h2>${esc(run.title)} · results</h2><a href="/papawis">All runs</a></div>
     <p class="pwx-sub">${esc([run.day, run.place].filter(Boolean).join(' · '))}</p>
     ${summary ? summaryPanel(summary, 'papawis-run', false) : ''}
+    ${share ? `<p class="pwx-share"><button type="button" class="gd-btn gd-btn--amber" data-ssc-open>Share my stats</button></p>${shareStatsModal(share.game, share.stat, share.locked)}` : ''}
     ${papawisResultsBody(results)}
   </div></div>`;
 }

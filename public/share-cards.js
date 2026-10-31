@@ -57,7 +57,9 @@ function shooting(stat) {
     { label: '3PT', m: tpm, a: tpa, pct: pct(tpm, tpa) },
   ];
 }
-function result(d) { return `${d.won ? 'W' : 'L'} ${d.myScore}–${d.oppScore}`; }
+function result(d) { return d.resultText ? d.resultText.replace('-', '–') : `${d.won ? 'W' : 'L'} ${d.myScore}–${d.oppScore}`; }
+// A Papawis run's card (server.js pwShareFacts) says Papawis where a game's says Season.
+const scope = d => (d.papawis ? 'PAPAWIS' : 'SEASON');
 function footer(d, y, { x0 = 66, x1 = W - 66, color = SOFT, size = 30 } = {}) {
   return `<text x="${x0}" y="${y}" font-family="${BODY}" font-size="${size}" font-weight="700" letter-spacing="3" fill="${color}">vs ${esc(d.oppName)} · ${esc(result(d))} · ${esc(d.dateShort.toUpperCase())}</text>
   <text x="${x1}" y="${y}" text-anchor="end" font-family="${BODY}" font-size="${size}" font-weight="700" letter-spacing="3" fill="${MUTED}">@WKNDBASKETBALL</text>`;
@@ -122,15 +124,16 @@ async function usual(d, measure) {
     ${delta ? `<text x="${deltaR}" y="${cy + 16}" text-anchor="end" font-family="${NUM}" font-size="46" font-weight="900" fill="${deltaFill}">${delta}</text>` : ''}`;
   }))).join('\n');
   const high = d.season.high;
-  const kicker = hasAvg ? `VS SEASON AVERAGE · ${d.season.games} GAME${d.season.games === 1 ? '' : 'S'}` : 'FIRST GAME OF THE SEASON';
-  const chipW = Math.round(await widthOf(measure, 'SEASON HIGH', NUM, 38, 900, 4)) + 48;
+  const unit = d.papawis ? 'RUN' : 'GAME';
+  const kicker = hasAvg ? `VS ${scope(d)} AVERAGE · ${d.season.games} ${unit}${d.season.games === 1 ? '' : 'S'}` : d.papawis ? 'FIRST SCORED PAPAWIS RUN' : 'FIRST GAME OF THE SEASON';
+  const chipW = Math.round(await widthOf(measure, `${scope(d)} HIGH`, NUM, 38, 900, 4)) + 48;
   const kickX = high ? x0 + chipW + 24 : x0;
   const kickSize = await fit(measure, kicker, { font: BODY, size: 31, weight: 700, ls: 4, maxW: W - 66 - kickX });
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>${DEFS}${scrim()}</defs>
   <rect x="0" y="${headY - 260}" width="${W}" height="${H - headY + 260}" fill="url(#scrim)"/>
   ${high ? `<rect x="${x0}" y="${headY - 40}" width="${chipW}" height="56" rx="12" fill="${accent.bg}"/>
-  <text x="${x0 + chipW / 2}" y="${headY - 12}" text-anchor="middle" dominant-baseline="central" font-family="${NUM}" font-size="38" font-weight="900" letter-spacing="4" fill="${accent.text}">SEASON HIGH</text>` : ''}
+  <text x="${x0 + chipW / 2}" y="${headY - 12}" text-anchor="middle" dominant-baseline="central" font-family="${NUM}" font-size="38" font-weight="900" letter-spacing="4" fill="${accent.text}">${scope(d)} HIGH</text>` : ''}
   <text x="${kickX}" y="${headY}" font-family="${BODY}" font-size="${kickSize}" font-weight="700" letter-spacing="4" fill="${MUTED}">${kicker}</text>
   <text x="${x0}" y="${nameY}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1" fill="${WHITE}" filter="url(#txt)">${esc(cardName)}</text>
   <circle cx="${x0 + 12}" cy="${nameY + 52}" r="12" fill="${esc(d.teamColor)}"/>
@@ -152,7 +155,7 @@ async function receipt(d) {
   let y = 0;
   const T = (txt, o = {}) => lines.push({ y, txt, ...o });
   y += 96; T('WKND', { center: true, font: NUM, size: 96, weight: 900, ls: 8 });
-  y += 48; T(`GAME RECEIPT · S${d.season.label}`, { center: true, size: 27, weight: 700, ls: 5 });
+  y += 48; T(d.papawis ? 'PAPAWIS RECEIPT' : `GAME RECEIPT · S${d.season.label}`, { center: true, size: 27, weight: 700, ls: 5 });
   y += 38; T(`${d.dateLong.toUpperCase()}${stat.minutes ? ` · ${stat.minutes} MIN` : ''}`, { center: true, size: 26, color: '#5b6475' });
   y += 34; lines.push({ y, rule: true });
   y += 58; T('CUSTOMER', { weight: 700, right: d.shortName.toUpperCase() });
@@ -209,7 +212,8 @@ async function cover(d, measure) {
     ${l.small ? `<text x="${W - 54}" y="${y + 46}" text-anchor="end" font-family="${BODY}" font-size="32" font-weight="700" fill="${WHITE}" filter="url(#txt)">${esc(l.small)}</text>` : ''}`;
   }).join('\n');
   const heroWord = WORD[hero.k][hero.v === 1 ? 0 : 1];
-  const mastSize = await fit(measure, 'WKND', { font: NUM, size: 400, ls: -6, maxW: W - 108 });
+  const mast = d.papawis ? 'PAPAWIS' : 'WKND';
+  const mastSize = await fit(measure, mast, { font: NUM, size: 400, ls: -6, maxW: W - 108 });
   const heroNumW = await widthOf(measure, hero.v, NUM, 340, 900);
   const wordX = Math.round(40 + heroNumW + 30);
   const wordSize = await fit(measure, heroWord, { font: NUM, size: 78, maxW: W - 54 - wordX });
@@ -222,12 +226,12 @@ async function cover(d, measure) {
   </defs>
   <rect x="0" y="0" width="${W}" height="520" fill="url(#top)"/>
   <rect x="0" y="1060" width="${W}" height="860" fill="url(#scrim)"/>
-  <text x="54" y="74" font-family="${BODY}" font-size="27" font-weight="800" letter-spacing="6" fill="${WHITE}">SEASON ${esc(d.season.label)} · vs ${esc(d.oppName)}</text>
+  <text x="54" y="74" font-family="${BODY}" font-size="27" font-weight="800" letter-spacing="6" fill="${WHITE}">${d.papawis ? 'PAPAWIS' : `SEASON ${esc(d.season.label)}`} · vs ${esc(d.oppName)}</text>
   <text x="${W - 54}" y="74" text-anchor="end" font-family="${BODY}" font-size="27" font-weight="800" letter-spacing="6" fill="${WHITE}">${esc(d.dateLong.toUpperCase())}</text>
-  <text x="${W / 2}" y="${Math.round(110 + mastSize * 0.72)}" text-anchor="middle" font-family="${NUM}" font-size="${mastSize}" font-weight="900" letter-spacing="-6" fill="${accent.bg}">WKND</text>
+  <text x="${W / 2}" y="${Math.round(110 + mastSize * 0.72)}" text-anchor="middle" font-family="${NUM}" font-size="${mastSize}" font-weight="900" letter-spacing="-6" fill="${accent.bg}">${mast}</text>
   ${coverLines}
   ${d.season.high ? `<rect x="54" y="1446" width="290" height="54" fill="${accent.bg}"/>
-  <text x="199" y="1473" text-anchor="middle" dominant-baseline="central" font-family="${BODY}" font-size="30" font-weight="800" letter-spacing="4" fill="${accent.text}">SEASON HIGH</text>` : ''}
+  <text x="199" y="1473" text-anchor="middle" dominant-baseline="central" font-family="${BODY}" font-size="30" font-weight="800" letter-spacing="4" fill="${accent.text}">${scope(d)} HIGH</text>` : ''}
   <text x="40" y="1770" font-family="${NUM}" font-size="340" font-weight="900" fill="${WHITE}" filter="url(#txt)">${hero.v}</text>
   <text x="${wordX}" y="1690" font-family="${NUM}" font-size="${wordSize}" font-weight="900" fill="${WHITE}">${heroWord}</text>
   <text x="${wordX}" y="1748" font-family="${BODY}" font-size="${bylineSize}" font-weight="700" fill="${SOFT}">${esc(byline)}</text>
@@ -334,6 +338,9 @@ async function jersey(d, measure) {
     ${i < cols - 1 ? `<rect x="${54 + colW * (i + 1)}" y="${gridY + 24}" width="3" height="${gridH - 48}" fill="#ffffff" fill-opacity="0.12"/>` : ''}`;
   }).join('\n');
   const num = String(d.number ?? '');
+  // The footer fits beside the handle (a Papawis side, "PAPAWIS · LIGHT", runs longer).
+  const foot = `${d.teamName} vs ${d.oppName} · ${result(d)}`;
+  const footSize = await fit(measure, foot, { font: BODY, size: 30, weight: 700, ls: 3, maxW: W - 54 - 90 - 40 - Math.round(await widthOf(measure, '@WKNDBASKETBALL', BODY, 30, 700, 3)) });
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>${DEFS}${scrim()}</defs>
   <rect x="0" y="760" width="${W}" height="1160" fill="url(#scrim)"/>
@@ -344,7 +351,7 @@ async function jersey(d, measure) {
   <rect x="54" y="${gridY + gridH}" width="${W - 108}" height="3" fill="#ffffff" fill-opacity="0.18"/>
   ${cells}
   <circle cx="66" cy="${H - 76}" r="10" fill="${esc(d.teamColor)}"/>
-  <text x="90" y="${H - 66}" font-family="${BODY}" font-size="30" font-weight="700" letter-spacing="3" fill="${SOFT}">${esc(d.teamName)} vs ${esc(d.oppName)} · ${esc(result(d))}</text>
+  <text x="90" y="${H - 66}" font-family="${BODY}" font-size="${footSize}" font-weight="700" letter-spacing="3" fill="${SOFT}">${esc(foot)}</text>
   <text x="${W - 54}" y="${H - 66}" text-anchor="end" font-family="${BODY}" font-size="30" font-weight="700" letter-spacing="3" fill="${MUTED}">@WKNDBASKETBALL</text>
 </svg>`;
   return { svg };

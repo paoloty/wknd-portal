@@ -132,7 +132,7 @@ function papawisResultCard(r) {
       ${faces.length ? `<div class="pxr__who"><span class="pwr__stack px__stack"><span class="pwr__faces">${faces.map(f => `<span class="pwr__face${f.me ? ' is-me' : ''}">${appAvatar(f)}</span>`).join('')}${r.faces.length > faces.length ? `<span class="pwr__more">+${r.faces.length - faces.length}</span>` : ''}</span></span><span>${r.faces.length} played</span></div>` : ''}
       ${r.mine ? `<div class="gx__mine"><span>Your line</span><b class="num">${esc(r.mine)}</b></div>` : ''}
     </div>
-  </a><div class="sx__act"><a class="btn btn--ghost" href="${esc(r.href)}">Full results</a></div>${appSocialBar(r.social)}</article>`;
+  </a><div class="sx__act">${r.shareHref ? `<a class="btn" href="${esc(r.shareHref)}">${icons.share}<span>Share my stats</span></a>` : `<a class="btn btn--ghost" href="${esc(r.href)}">Full results</a>`}</div>${appSocialBar(r.social)}</article>`;
 }
 
 const CARD = { game: gameCard, ann: annCard, post: postCard, papawis: papawisCard, pwres: papawisResultCard };

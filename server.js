@@ -137,7 +137,7 @@ import {
   logPapawisActivity, getPapawisActivityForGame, getAllPapawisActivity, getFrequentPapawisCancellers, getFrequentPapawisPlayers,
   logShareCardAction, getAllShareCardLog,
   getPapawisGamesForPlayer, getPapawisHistoryForPlayer, getPapawisTotalsForPlayer,
-  getPapawisScored, getPapawisScoredList, getPapawisStatLines, savePapawisScored, getPapawisPotdCount, getPapawisScoredTotals,
+  getPapawisScored, getPapawisScoredList, getPapawisRunLines, getPapawisStatLines, savePapawisScored, getPapawisPotdCount, getPapawisScoredTotals,
   getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
   lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
@@ -3629,7 +3629,7 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
   const chipW      = Math.max(160, Math.round(estTextW(chipText, chipFsz, 2) + 76));
   const chipX      = boxX(chipW);
 
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
 
   const ribbonFsz  = 22;
   const ribbonH    = 40;
@@ -3822,7 +3822,7 @@ async function generateGameStatGridPng(game, stat, align = 'center', opts = {}) 
   const chipW      = Math.max(160, Math.round(estTextW(chipText, chipFsz, 2) + 76));
   const chipX      = boxX(chipW);
 
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
 
   // Fixed box-score order (not "best stat first" like the default template's
   // secondary row) — this layout's whole point is an even, familiar box-score
@@ -4130,7 +4130,7 @@ async function generateGameStatGaugesPng(game, stat, align = 'center', focus = '
   // long, at which point 40px alone ran off the canvas edge entirely.
   const nameFsz = displayName.length > 34 ? 30 : displayName.length > 28 ? 34
     : displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
   const chipFsz = 20, chipH = 46;
 
@@ -4343,7 +4343,7 @@ async function generateGameStatNewsPng(game, stat, focus = 'all', opts = {}) {
   // hypothetical, no real roster name is this long) name at 36px still ran
   // off the right edge, so there's now one tier below that too.
   const nameFsz = displayName.length > 35 ? 28 : displayName.length > 30 ? 36 : displayName.length > 24 ? 44 : displayName.length > 18 ? 58 : displayName.length > 13 ? 70 : 84;
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const contextFsz = 17;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
   const chipFsz = 20, chipH = 46;
@@ -4478,7 +4478,7 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
   // long, at which point 40px alone ran off the canvas edge entirely.
   const nameFsz = displayName.length > 34 ? 30 : displayName.length > 28 ? 34
     : displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
   const chipFsz = 20, chipH = 46;
 
@@ -4695,7 +4695,7 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = `@WKNDBASKETBALL`;
 
   // Jersey number + a separator lead the rotated name now ("#34 · GIANNIS
@@ -4907,7 +4907,7 @@ async function generateGameStatHeroPng(game, stat, opts = {}) {
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = '@WKNDBASKETBALL';
 
   const hero = SHARE_STAT_DEFS
@@ -4995,7 +4995,7 @@ async function generateGameStatTradingCardPng(game, stat, opts = {}) {
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = '@WKNDBASKETBALL';
 
   const ranked = SHARE_STAT_DEFS
@@ -5097,7 +5097,7 @@ async function generateGameStatScoreboardPng(game, stat, opts = {}) {
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `vs ${escXml(oppTeamName)} · ${won ? 'W' : 'L'} ${myScore}-${oppScore} · ${escXml(dateShort)}`;
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = '@WKNDBASKETBALL';
 
   const ranked = SHARE_STAT_DEFS
@@ -6858,6 +6858,7 @@ function appFeedItem(it, me, extra) {
       title: run.title || 'Papawis', place: run.location || '', games: res.games.map(g => ({ n: g.n, a: g.a, b: g.b })),
       potd: res.potd ? { ...face(res.potd), name: res.potd.name, line: dayLine(res.potd) } : null,
       faces: res.people.map(face), mine: mine ? dayLine(mine) : '', summary: pwRunSummary(run, res),
+      shareHref: mine && String(run.date) >= addDaysYmd(manilaTodayStr(), -7) ? `/app/papawis/${encodeURIComponent(run.id)}/share?from=home` : '',
       social: extra.social?.[`pw:${run.id}`] || null };
   }
   if (it.kind === 'papawis') {
@@ -8527,7 +8528,9 @@ app.get('/papawis/:id/results', (req, res) => {
   const results = run ? pwResultsFor(run) : null;
   if (!run || !results) return res.redirect('/papawis');
   const summary = pwRunSummaryStart(run);
-  res.send(renderPage(req, { title: `${run.title || 'Papawis'} · Results`, currentPath: '/papawis', body: papawisResultsPage({ run: { id: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '' }, results, summary }) }));
+  const t = pwShareFacts(run, req.session?.playerPlayerId);
+  const share = t ? { ...t, locked: shareCardsLocked(req) } : null;
+  res.send(renderPage(req, { title: `${run.title || 'Papawis'} · Results`, currentPath: '/papawis', body: papawisResultsPage({ run: { id: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '' }, results, summary, share }) }));
 });
 
 // ── Review: an admin checking the live plays, or re-tracking the game from the video ──
@@ -8914,6 +8917,33 @@ app.get('/app/games/:id/share', requireApp, async (req, res) => {
   sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, bare: true, bodyClass: 'is-editor', body: appSharePage({
     back, focus, locked, bgs, phone,
     game: { id: g.id, opp: titleCase(isA ? g.team_b_name : g.team_a_name), day: manilaDayLabel(gameYmd(g.date)), line: statLine(stat) },
+  }) });
+});
+// Share my stats for a Papawis run: the same editor, the run as its "game" (pwShareFacts).
+app.get('/app/papawis/:id/share', requireApp, async (req, res) => {
+  const me = appMe(req);
+  const run = getSetting('papawis_enabled', '0') === '1' ? getPapawisGame(req.params.id) : null;
+  const back = req.query.from === 'home' ? { href: '/app', label: 'Home', tab: 'home' } : { href: run ? `/app/papawis/${encodeURIComponent(run.id)}` : '/app/papawis', label: run ? 'Run' : 'Papawis', tab: 'papawis' };
+  const t = pwShareFacts(run, me.playerId);
+  if (!t) return sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, body: appSharePage({ back, missing: true, missingText: 'Only players with stats in this run can make its card.' }) });
+  const { game, stat } = t;
+  const n = k => Number(stat[k]) || 0;
+  const offense = n('ast') + n('fg3m'), defense = n('stl') + n('blk');
+  const focus = defense >= 4 && defense > offense ? 'defense' : offense >= 6 ? 'offense' : 'all';
+  const cover = papawisCoverUrl(run, getPapawisCourtByName(run.location));
+  const bgs = [
+    cover ? { key: 'game', label: 'Run photo', css: `background-image:url('${cover}')` } : null,
+    { key: 'me', label: 'Your photo', css: `background-image:url('${playerPhotoUrl(me.playerId)}');background-position:center 20%` },
+    { key: 'team', label: 'Amber glow', css: 'background:radial-gradient(90% 70% at 50% 85%, #f5933288 0%, transparent 70%), linear-gradient(160deg, #1b2232, #0a0e16)' },
+    { key: 'none', label: 'None', css: '' },
+  ].filter(Boolean);
+  logApp(req, 'share_open', game.id);
+  const locked = shareCardsLocked(req);
+  const cardData = locked ? null : await phoneShareData(game, stat, me.playerId).catch(err => { console.error('phoneShareData', err); return null; });
+  const phone = cardData ? { keys: SHARE_PHONE_KEYS, data: cardData, photo: playerPhotoUrl(me.playerId, 192) } : null;
+  sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, bare: true, bodyClass: 'is-editor', body: appSharePage({
+    back, focus, locked, bgs, phone,
+    game: { id: game.id, opp: game.team_b_name, day: pwDay(run.date), line: statLine(stat) },
   }) });
 });
 // Before the result: the preview, with the pick card while picks are open (or the pick made).
@@ -9683,7 +9713,8 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
   const played = confirmed.filter(s => !s.attendance), absent = confirmed.filter(s => s.attendance);
   sendTab(res, me, { title: `${g.title || 'Papawis'} · WKND`, tab: 'papawis', body: appPapawisRunPage({ back, admin: appPapawisAdmin(req) ? appPapawisAdminHint(g) : null,
     results: results ? papawisResultsBody(results, { profileHref: id => `/app/players/${encodeURIComponent(id)}` }) : '', summary: results ? pwRunSummary(g, results) : null, saved: req.query.saved === '1',
-    finish: results && pwCanFinish(req, g) ? `/app/papawis/${encodeURIComponent(g.id)}/finish` : '', run: {
+    finish: results && pwCanFinish(req, g) ? `/app/papawis/${encodeURIComponent(g.id)}/finish` : '',
+    share: results?.people.some(p => p.playerId && p.playerId === me.playerId) ? `/app/papawis/${encodeURIComponent(g.id)}/share` : '', run: {
     id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
     place: g.location || 'Papawis', photo: papawisCoverUrl(g, getPapawisCourtByName(g.location)) || '',
     kind, count: kind === 'cancelled' ? confirmed.length : played.length, max: g.max_slots || confirmed.length, price: kind === 'played' ? price : 0,
@@ -13259,7 +13290,7 @@ async function premiumShareData(game, stat, playerId, accentKey, key) {
   const oppScore = Number(isTeamA ? game.team_b_score : game.team_a_score) || 0;
   const oppName = String((isTeamA ? game.team_b_name : game.team_a_name) || '').toUpperCase();
   const date = String(game.date || '').slice(0, 10);
-  const earlier = getPlayerGameLog(playerId).filter(g => String(g.season) === String(game.season) && g.status === 'played'
+  const earlier = game.papawis ? [] : getPlayerGameLog(playerId).filter(g => String(g.season) === String(game.season) && g.status === 'played'
     && g.id !== game.id && (String(g.date).slice(0, 10) < date || (String(g.date).slice(0, 10) === date && String(g.id) < String(game.id))));
   const avg = earlier.length
     ? Object.fromEntries(['pts', 'reb', 'ast', 'stl', 'blk'].map(k => [k, earlier.reduce((a, g) => a + (Number(g[k]) || 0), 0) / earlier.length]))
@@ -13280,7 +13311,9 @@ async function premiumShareData(game, stat, playerId, accentKey, key) {
     mySideScore: myScore, otherSideScore: oppScore, otherTeamName: oppName,
     dateShort: day({ month: 'short', day: 'numeric' }), dateLong: day({ month: 'short', day: 'numeric', year: 'numeric' }),
     stat,
-    season: { label: String(game.season ?? ''), games: earlier.length, avg, high: earlier.length > 0 && pts > 0 && pts >= Math.max(...earlier.map(g => Number(g.pts) || 0)) },
+    season: game.papawis ? game.papawis.season : { label: String(game.season ?? ''), games: earlier.length, avg, high: earlier.length > 0 && pts > 0 && pts >= Math.max(...earlier.map(g => Number(g.pts) || 0)) },
+    // A Papawis run (pwShareFacts): the cards say Papawis, and the day's result.
+    papawis: !!game.papawis, resultText: game.result_text || '',
     accent: resolveAccent(accentKey),
     photo: key === 'bug' && stat.picture_url ? await fetchCoverImageBuffer(stat.picture_url) : null,
   };
@@ -13319,13 +13352,60 @@ function shareCardCached(key, make) {
   return entry.p;
 }
 
+// Share my stats for a Papawis run (Paolo, 2026-10-31): the run goes through the same card
+// routes as a game, id pw_<run id>, with the player's whole day as the line. The card's "game"
+// is Papawis · Light (or Dark) against the other side, and its result is the day's: one game's
+// score, or the games won and lost ("WON 2-0", "SPLIT 1-1"). Averages and highs are against the
+// player's earlier scored runs. Every template reads it as it reads a game; the premium ones
+// say Papawis where a game's card says Season (public/share-cards.js d.papawis).
+const PW_SIDE_NAME = { light: 'LIGHT', dark: 'DARK' };
+function pwShareFacts(run, playerId) {
+  if (!run || !playerId) return null;
+  const res = pwResultsFor(run);
+  const me = res?.people.find(p => p.playerId === playerId);
+  const p = me && getPlayerById(playerId);
+  if (!p) return null;
+  const mine = res.games.filter(g => me.games[g.n]);
+  const score = g => { const s = me.games[g.n].side; return s === 'light' ? [g.a, g.b] : [g.b, g.a]; };
+  let my, opp, resultText;
+  if (mine.length === 1) {
+    [my, opp] = score(mine[0]);
+    resultText = `${my > opp ? 'W' : my < opp ? 'L' : 'T'} ${my}-${opp}`;
+  } else {
+    my = mine.filter(g => { const [x, y] = score(g); return x > y; }).length;
+    opp = mine.filter(g => { const [x, y] = score(g); return x < y; }).length;
+    resultText = `${my > opp ? 'WON' : my < opp ? 'LOST' : 'SPLIT'} ${my}-${opp}`;
+  }
+  const side = me.side === 'dark' ? 'dark' : 'light', other = side === 'light' ? 'dark' : 'light';
+  const team = `PAPAWIS · ${PW_SIDE_NAME[side]}`;
+  // Earlier scored runs (by date): the average day and the best one.
+  const earlier = getPapawisRunLines(playerId).filter(r => r.run_id !== run.id && String(r.date) < String(run.date));
+  const avg = earlier.length ? Object.fromEntries(['pts', 'reb', 'ast', 'stl', 'blk'].map(k => [k, earlier.reduce((a, r) => a + (Number(r[k]) || 0), 0) / earlier.length])) : null;
+  const pts = Number(me.line.pts) || 0;
+  const game = {
+    id: pwScoreId(run.id), date: String(run.date), season: 'Papawis', status: 'final',
+    team_a_id: 'pw_side', team_b_id: 'pw_other', team_a_name: team, team_b_name: PW_SIDE_NAME[other],
+    team_a_score: my, team_b_score: opp, result_text: resultText,
+    papawis: { run, games: mine.length, potd: res.potd?.key === me.key, season: { label: 'Papawis', games: earlier.length, avg, high: earlier.length > 0 && pts > 0 && pts >= Math.max(...earlier.map(r => Number(r.pts) || 0)) } },
+  };
+  const stat = { ...me.line, player_id: playerId, name: p.name, number: p.number, picture_url: p.picture_url, team_id: 'pw_side', team_name: team, team_color: '#f59332' };
+  return { game, stat };
+}
+// The game (or Papawis run) and the signed-in player's line for the card routes, or null.
+function shareTarget(id, playerId) {
+  if (isPwScoreId(id)) return pwShareFacts(pwRunOfScore(id), playerId);
+  const game = getGameById(id);
+  if (!game || game.under_review) return null;
+  const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
+  return stat ? { game, stat } : null;
+}
+
 app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   const playerId = req.session?.playerPlayerId;
   if (!playerId) return res.status(401).end();
-  const game = getGameById(req.params.id);
-  if (!game || game.under_review) return res.status(404).end();
-  const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
-  if (!stat) return res.status(404).end();
+  const target = shareTarget(req.params.id, playerId);
+  if (!target) return res.status(404).end();
+  const { game, stat } = target;
   try {
     const locked = shareCardsLocked(req);
     const q = ['layout', 'align', 'corner', 'stat', 'focus', 'gauges', 'hidezeros', 'badge', 'accent'].map(k => String(req.query[k] ?? '')).join('|');
@@ -13440,10 +13520,9 @@ const SHARE_CARD_ACTION_COOLDOWN_MS = 3000;
 app.post('/api/games/:id/stat-card-action', express.json(), (req, res) => {
   const playerId = req.session?.playerPlayerId;
   if (!playerId) return res.status(401).end();
-  const game = getGameById(req.params.id);
-  if (!game || game.under_review) return res.status(404).end();
-  const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
-  if (!stat) return res.status(404).end();
+  const target = shareTarget(req.params.id, playerId);
+  if (!target) return res.status(404).end();
+  const { game, stat } = target;
 
   const action = ['save', 'copy', 'share'].includes(req.body?.action) ? req.body.action : null;
   if (!action) return res.status(400).json({ error: 'Invalid action.' });
