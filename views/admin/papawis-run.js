@@ -52,8 +52,10 @@ export function paidCell(game, s, candidates = [], reusable = [], { unpaidBadge 
       ${postBtn('Link here too', `${base}/link-payment`, { kind: 'secondary', data: { tx_id: c.id }, done: 'Payment linked.' })}</span>`).join('');
   if (candidates.length === 1) {
     const c = candidates[0];
-    return `<div class="pw-paid">${unpaid}<span class="pw-hint">Possible match: ${peso(c.amount)} paid ${escHtml(fmtDay(c.date))}</span>
-      <span class="aui-row">${postBtn('Link', `${base}/link-payment`, { kind: 'primary', data: { tx_id: c.id }, done: 'Payment linked.' })}${mark('Mark paid instead')}</span>${reuse}</div>`;
+    // Same-day payment under another category (server.js pwPaymentCandidates): linking files it under Papawis.
+    const other = /^papawis/i.test(String(c.category || '')) ? '' : String(c.category || 'no category');
+    return `<div class="pw-paid">${unpaid}<span class="pw-hint">Possible match: ${peso(c.amount)} paid ${escHtml(fmtDay(c.date))}${other ? ` · filed as ${escHtml(other)}` : ''}</span>
+      <span class="aui-row">${postBtn('Link', `${base}/link-payment`, { kind: 'primary', data: { tx_id: c.id }, done: other ? 'Payment linked and filed under Papawis.' : 'Payment linked.' })}${mark('Mark paid instead')}</span>${reuse}</div>`;
   }
   if (candidates.length > 1) {
     return `<div class="pw-paid">${unpaid}<a class="aui-link" href="/admin/ledger/${attr(s.player_id)}" target="_blank" rel="noopener">${candidates.length} unconfirmed payments: check the ledger</a>${mark('Mark paid')}${reuse}</div>`;

@@ -196,8 +196,9 @@ function moneyTab(run, d) {
       sub = s.teamName;
       right = postBtn(`${icons.check}Paid`, `${base}/paid`, { cls: 'adm-pill adm-pill--done', body: { paid: false }, done: `${s.name} marked unpaid`, ask: `Unmark ${s.name} as paid? This voids the recorded payment in the ledger.` });
     } else if (s.match === 1) {
-      sub = `Possible match: ${peso(s.matchAmount)} paid ${s.matchDate}`;
-      right = postBtn('Link', `${base}/link-payment`, { cls: 'adm-pill', body: { tx_id: s.matchId }, done: 'Payment linked' });
+      sub = `Possible match: ${peso(s.matchAmount)} paid ${s.matchDate}${s.matchCat ? ` · filed as ${s.matchCat}` : ''}`;
+      right = postBtn('Link', `${base}/link-payment`, { cls: 'adm-pill', body: { tx_id: s.matchId }, done: 'Payment linked',
+        ask: s.matchCat ? `Link ${s.name}'s ${peso(s.matchAmount)} payment from ${s.matchDate} to this run? It moves from ${s.matchCat} to Papawis in the ledger.` : '' });
     } else {
       sub = s.match > 1 ? `Owes ${peso(run.price)} · ${s.match} payments to check on the full site` : `Owes ${peso(run.price)}`;
       right = postBtn('Mark paid', `${base}/paid`, { cls: 'adm-pill adm-pill--quiet', body: { paid: true }, done: `${s.name} marked paid`, ask: `Mark ${s.name} as paid ${peso(run.price)}? This records the payment in the ledger.` });

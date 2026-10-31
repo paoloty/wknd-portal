@@ -157,7 +157,7 @@ import {
   setGamePick, setGamePickMargin, getGamePickCounts, getPlayerGamePicks,
   getAllGamePicks, getGamePicksWithPlayers, getAllGamePickSettings, setGamePickClosed, setGamePickHideOdds, claimGamePickSettle,
   getGamePreview, saveGamePreview, getGamePreviewIds,
-  getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments,
+  getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments, getSameDayOtherPayments, fileTxUnderPapawis,
   getReusablePapawisPayments, getPapawisSignupsByTxId, getAllUnpaidCompletedPapawisSignups,
   createNotification, getNotificationsForPlayer, getUnreadNotificationCount, markNotificationsRead,
   bumpPageView, prunePageViews, bumpCtaClick, getCtaClickTotals, getGuestPageViews,
@@ -9880,9 +9880,9 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
     // recording a second one (see /admin/papawis/:id for why only on/after the run's date).
     for (const s of d.confirmed) {
       if (s.paid) continue;
-      const c = getUnlinkedPapawisPayments(s.playerId).filter(x => x.date >= g.date);
+      const c = pwPaymentCandidates(s.playerId, g);
       s.match = c.length;
-      if (c.length === 1) Object.assign(s, { matchId: c[0].id, matchAmount: c[0].amount, matchDate: manilaFormat(Date.parse(`${c[0].date}T12:00:00+08:00`), { month: 'short', day: 'numeric' }) });
+      if (c.length === 1) Object.assign(s, { matchId: c[0].id, matchAmount: c[0].amount, matchCat: pwOtherCategory(c[0]), matchDate: manilaFormat(Date.parse(`${c[0].date}T12:00:00+08:00`), { month: 'short', day: 'numeric' }) });
     }
   }
   if (tab === 'messages') {
@@ -25827,7 +25827,7 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
   if (game.status === 'completed') {
     const unpaidPlayerIds = [...new Set(signups.filter(s => s.status === 'confirmed' && !s.paid_at).map(s => s.player_id))];
     for (const pid of unpaidPlayerIds) {
-      const unlinked = getUnlinkedPapawisPayments(pid).filter(c => c.date >= game.date);
+      const unlinked = pwPaymentCandidates(pid, game);
       if (unlinked.length) unlinkedByPlayer[pid] = unlinked;
       const reusable = getReusablePapawisPayments(pid).filter(c => c.date >= game.date);
       if (reusable.length) reusableByPlayer[pid] = reusable;
@@ -26072,6 +26072,14 @@ app.post('/admin/papawis/:id/signups/:signupId/status', requireAuth, express.jso
   res.json({ ok: true });
 });
 
+// A run's possible payment matches for a player: their unlinked Papawis payments from the
+// run's day on, plus any payment recorded under another category on the run's day itself.
+function pwPaymentCandidates(pid, run) {
+  return [...getUnlinkedPapawisPayments(pid).filter(x => x.date >= run.date), ...getSameDayOtherPayments(pid, run.date)];
+}
+// The category a candidate is filed under, when it isn't Papawis ('' otherwise).
+const pwOtherCategory = tx => (/^papawis/i.test(String(tx.category || '')) ? '' : String(tx.category || 'no category'));
+
 // No-show / DNP (Paolo, 2026-10-31): marked on the day or after, also once the run is closed
 // out or locked. Both are still charged; neither counts as a run played (lib/portal-db.js).
 const PW_ATTENDANCE = { noshow: 'no-show', dnp: 'DNP', '': 'played' };
@@ -26295,7 +26303,10 @@ app.post('/admin/papawis/:id/signups/:signupId/link-payment', requireAuth, expre
   const tx = getTransactionById(txId);
   const isPlayersConfirmedPapawisPayment = tx && tx.player_id === signup.player_id
     && tx.type === 'payment' && tx.status === 'confirmed' && String(tx.category || '').toLowerCase() === 'papawis';
-  if (!isPlayersConfirmedPapawisPayment) return res.status(400).json({ error: 'That payment is no longer available to link — refresh and try again.' });
+  // Or the player's payment from the run's day under another category (pwPaymentCandidates):
+  // filed under Papawis as it's linked.
+  const sameDayOther = !isPlayersConfirmedPapawisPayment && getSameDayOtherPayments(signup.player_id, game.date).some(x => x.id === txId);
+  if (!isPlayersConfirmedPapawisPayment && !sameDayOther) return res.status(400).json({ error: 'That payment is no longer available to link — refresh and try again.' });
 
   const alreadyLinked = getPapawisSignupsByTxId(txId);
   if (alreadyLinked.length) {
@@ -26308,6 +26319,10 @@ app.post('/admin/papawis/:id/signups/:signupId/link-payment', requireAuth, expre
     }
   }
 
+  if (sameDayOther) {
+    fileTxUnderPapawis(txId);
+    console.log(`[papawis] ${currentAdminActor(req).name} linked tx=${txId} (was ${tx.category || 'no category'}) to run=${game.id} signup=${signup.id}, filed under Papawis`);
+  }
   markPapawisSignupPaid(signup.id, txId);
   res.json({ ok: true });
 });
