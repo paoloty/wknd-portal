@@ -1121,7 +1121,9 @@
     requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('is-open'); }); });
     return el;
   }
-  var admEsc = function (s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+  // Quotes too: the sheet puts these in attributes (data-adm-body JSON was cut at its first ",
+  // so Mark as DNP and Move to confirmed posted nothing; 2026-10-31).
+  var admEsc = function (s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML.replace(/"/g, '&quot;'); };
   // A yes/no question in the amber bar at the top (the scorer's confirmations, public/scorer.js
   // alertBar): resolves true for the action, false for Not yet.
   var AMBER_ICONS = { up: 'M12 16V4M7 9l5-5 5 5M5 20h14', flag: 'M5 21V4M5 4h11l-2 4 2 4H5' };
