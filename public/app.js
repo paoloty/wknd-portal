@@ -1459,7 +1459,7 @@
         return;
       }
       if ((b = t.closest('[data-adm-add]'))) { var tpl = $('[data-adm-add-tpl]'); if (tpl) admAdd(tpl); return; }
-      if ((b = t.closest('[data-adm-pick]'))) { admPick(b); return; }
+      if ((b = t.closest('[data-adm-picker]'))) { admPick(b); return; }
       if ((b = t.closest('[data-adm-cover-btn]'))) {
         var box = b.closest('[data-adm-cover]'), input = $('[data-adm-cover-input]', box);
         if (!box.hasAttribute('data-has-cover')) { input.click(); return; }

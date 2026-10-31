@@ -21,7 +21,7 @@ function scorerRow(p, { url, what }) {
 
 // Opens the picker sheet (public/app.js admPick): search everyone, pick up to max, send.
 const pickBtn = (label, { title, url, field, max, ids = [], only = '', note = '', done, cls = 'btn btn--ghost' }) =>
-  `<button type="button" class="${cls}" data-adm-pick data-title="${esc(title)}" data-url="${esc(url)}" data-field="${field}" data-max="${max}"
+  `<button type="button" class="${cls}" data-adm-picker data-title="${esc(title)}" data-url="${esc(url)}" data-field="${field}" data-max="${max}"
     data-ids="${attrJson(ids)}"${only ? ` data-skip="${only}"` : ''}${note ? ` data-note="${esc(note)}"` : ''} data-done="${esc(done)}">${label}</button>`;
 
 export function appAdminScorersPage({ can, games, people, gameScorers, pwScorers, papawisOn, back }) {
