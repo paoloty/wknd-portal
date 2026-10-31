@@ -61,7 +61,7 @@ function result(d) { return d.resultText ? d.resultText.replace('-', '–') : `$
 // A Papawis run's card (server.js pwShareFacts) says Papawis where a game's says Season.
 const scope = d => (d.papawis ? 'PAPAWIS' : 'SEASON');
 function footer(d, y, { x0 = 66, x1 = W - 66, color = SOFT, size = 30 } = {}) {
-  return `<text x="${x0}" y="${y}" font-family="${BODY}" font-size="${size}" font-weight="700" letter-spacing="3" fill="${color}">vs ${esc(d.oppName)} · ${esc(result(d))} · ${esc(d.dateShort.toUpperCase())}</text>
+  return `<text x="${x0}" y="${y}" font-family="${BODY}" font-size="${size}" font-weight="700" letter-spacing="3" fill="${color}">${d.papawis ? 'PAPAWIS' : `vs ${esc(d.oppName)}`} · ${esc(result(d))} · ${esc(d.dateShort.toUpperCase())}</text>
   <text x="${x1}" y="${y}" text-anchor="end" font-family="${BODY}" font-size="${size}" font-weight="700" letter-spacing="3" fill="${MUTED}">@WKNDBASKETBALL</text>`;
 }
 const DEFS = `<filter id="txt" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/></filter>`;
@@ -154,8 +154,8 @@ async function receipt(d) {
   const lines = [];
   let y = 0;
   const T = (txt, o = {}) => lines.push({ y, txt, ...o });
-  y += 96; T('WKND', { center: true, font: NUM, size: 96, weight: 900, ls: 8 });
-  y += 48; T(d.papawis ? 'PAPAWIS RECEIPT' : `GAME RECEIPT · S${d.season.label}`, { center: true, size: 27, weight: 700, ls: 5 });
+  y += 96; T(d.papawis ? 'PAPAWIS' : 'WKND', { center: true, font: NUM, size: 96, weight: 900, ls: 8 });
+  y += 48; T(d.papawis ? 'WKND · RUN RECEIPT' : `GAME RECEIPT · S${d.season.label}`, { center: true, size: 27, weight: 700, ls: 5 });
   y += 38; T(`${d.dateLong.toUpperCase()}${stat.minutes ? ` · ${stat.minutes} MIN` : ''}`, { center: true, size: 26, color: '#5b6475' });
   y += 34; lines.push({ y, rule: true });
   y += 58; T('CUSTOMER', { weight: 700, right: d.shortName.toUpperCase() });
@@ -314,7 +314,7 @@ async function bug(d, measure, { photoHref = null, hasPhoto = !!photoHref } = {}
   <circle cx="${x + 42}" cy="${stripY + stripH / 2}" r="9" fill="${esc(d.teamColor)}"/>
   <text x="${x + 64}" y="${stripY + 40}" font-family="${BODY}" font-size="27" font-weight="700" letter-spacing="3" fill="${SOFT}">${esc(strip)}</text>
   <text x="${boxR - 36}" y="${stripY + 40}" text-anchor="end" font-family="${BODY}" font-size="27" font-weight="700" letter-spacing="3" fill="${SOFT}">FINAL · ${esc(d.dateShort.toUpperCase())}</text>
-  <text x="${W - 90}" y="${H - 60}" text-anchor="end" font-family="${NUM}" font-size="54" font-weight="900" letter-spacing="3" fill="${WHITE}" filter="url(#sh)">WKND</text>
+  <text x="${W - 90}" y="${H - 60}" text-anchor="end" font-family="${NUM}" font-size="54" font-weight="900" letter-spacing="3" fill="${WHITE}" filter="url(#sh)">${d.papawis ? 'PAPAWIS' : 'WKND'}</text>
   <circle cx="${W - 66}" cy="${H - 78}" r="11" fill="${accent.bg}"/>
 </svg>`;
   return { svg, photoBox };

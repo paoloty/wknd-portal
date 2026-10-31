@@ -3629,7 +3629,7 @@ async function generateGameStatCardPng(game, stat, align = 'center', heroKey = '
   const chipW      = Math.max(160, Math.round(estTextW(chipText, chipFsz, 2) + 76));
   const chipX      = boxX(chipW);
 
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
 
   const ribbonFsz  = 22;
   const ribbonH    = 40;
@@ -3822,7 +3822,7 @@ async function generateGameStatGridPng(game, stat, align = 'center', opts = {}) 
   const chipW      = Math.max(160, Math.round(estTextW(chipText, chipFsz, 2) + 76));
   const chipX      = boxX(chipW);
 
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
 
   // Fixed box-score order (not "best stat first" like the default template's
   // secondary row) — this layout's whole point is an even, familiar box-score
@@ -4130,7 +4130,7 @@ async function generateGameStatGaugesPng(game, stat, align = 'center', focus = '
   // long, at which point 40px alone ran off the canvas edge entirely.
   const nameFsz = displayName.length > 34 ? 30 : displayName.length > 28 ? 34
     : displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
   const chipFsz = 20, chipH = 46;
 
@@ -4343,7 +4343,7 @@ async function generateGameStatNewsPng(game, stat, focus = 'all', opts = {}) {
   // hypothetical, no real roster name is this long) name at 36px still ran
   // off the right edge, so there's now one tier below that too.
   const nameFsz = displayName.length > 35 ? 28 : displayName.length > 30 ? 36 : displayName.length > 24 ? 44 : displayName.length > 18 ? 58 : displayName.length > 13 ? 70 : 84;
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const contextFsz = 17;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
   const chipFsz = 20, chipH = 46;
@@ -4478,7 +4478,7 @@ async function generateGameStatStackedPng(game, stat, focus = 'all', opts = {}) 
   // long, at which point 40px alone ran off the canvas edge entirely.
   const nameFsz = displayName.length > 34 ? 30 : displayName.length > 28 ? 34
     : displayName.length > 24 ? 40 : displayName.length > 18 ? 52 : displayName.length > 13 ? 62 : 72;
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const chipText = `${myTeamName} · #${stat.number ?? ''}`;
   const chipFsz = 20, chipH = 46;
 
@@ -4695,7 +4695,7 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = `@WKNDBASKETBALL`;
 
   // Jersey number + a separator lead the rotated name now ("#34 · GIANNIS
@@ -4835,7 +4835,9 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   // stats, the accent line, AND the player name below them — not just the
   // stats on their own.
   const wkndFont = `Georgia, 'Times New Roman', serif`;
-  const wkndFsz = 380;
+  // A Papawis run's card says PAPAWIS down the side (longer: a smaller size keeps it in the column).
+  const wkndWord = game.papawis ? 'PAPAWIS' : 'WKND';
+  const wkndFsz = game.papawis ? 250 : 380;
   const wkndSpan = nameY - statBlockTop;
   const wkndCapHeight = wkndFsz * 0.72;
   const wkndX = right ? W - 4 : wkndCapHeight + 4;
@@ -4865,7 +4867,7 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   <rect x="${right ? W - 480 : 0}" y="0" width="480" height="${H}" fill="url(#scrim)"/>
   <rect x="${right ? W - 480 : 0}" y="0" width="480" height="${H}" fill="url(#glowbg)"/>
 
-  <text x="${wkndX}" y="${wkndY}" transform="rotate(-90 ${wkndX} ${wkndY})" font-family="${wkndFont}" font-size="${wkndFsz}" font-weight="700" textLength="${wkndSpan}" lengthAdjust="spacing" fill="none" stroke="${accent.bg}" stroke-width="3" stroke-opacity="0.26">WKND</text>
+  <text x="${wkndX}" y="${wkndY}" transform="rotate(-90 ${wkndX} ${wkndY})" font-family="${wkndFont}" font-size="${wkndFsz}" font-weight="700" textLength="${wkndSpan}" lengthAdjust="spacing" fill="none" stroke="${accent.bg}" stroke-width="3" stroke-opacity="0.26">${wkndWord}</text>
 
   <line x1="${lineX}" y1="${lineTop}" x2="${lineX}" y2="${lineBottom}" stroke="${accent.bg}" stroke-width="2" opacity="0.55"/>
 
@@ -4907,7 +4909,7 @@ async function generateGameStatHeroPng(game, stat, opts = {}) {
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = '@WKNDBASKETBALL';
 
   const hero = SHARE_STAT_DEFS
@@ -4995,7 +4997,7 @@ async function generateGameStatTradingCardPng(game, stat, opts = {}) {
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = '@WKNDBASKETBALL';
 
   const ranked = SHARE_STAT_DEFS
@@ -5097,7 +5099,7 @@ async function generateGameStatScoreboardPng(game, stat, opts = {}) {
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = '@WKNDBASKETBALL';
 
   const ranked = SHARE_STAT_DEFS
@@ -13309,7 +13311,7 @@ async function premiumShareData(game, stat, playerId, accentKey, key) {
     shortName: `${first ? first[0] + '. ' : ''}${last} #${stat.number ?? ''}`,
     initials: ((first[0] || '') + (last[0] || '')).toUpperCase(),
     number: stat.number ?? '',
-    teamName: String(stat.team_name || '').toUpperCase(), teamColor: stat.team_color || '#8a93a4',
+    teamName: `${game.papawis ? 'PAPAWIS · ' : ''}${String(stat.team_name || '').toUpperCase()}`, teamColor: stat.team_color || '#8a93a4',
     oppName, myScore, oppScore, won: myScore > oppScore,
     mySideScore: myScore, otherSideScore: oppScore, otherTeamName: oppName,
     dateShort: day({ month: 'short', day: 'numeric' }), dateLong: day({ month: 'short', day: 'numeric', year: 'numeric' }),
@@ -13380,7 +13382,9 @@ function pwShareFacts(run, playerId) {
     resultText = `${my > opp ? 'WON' : my < opp ? 'LOST' : 'SPLIT'} ${my}-${opp}`;
   }
   const side = me.side === 'dark' ? 'dark' : 'light', other = side === 'light' ? 'dark' : 'light';
-  const team = `PAPAWIS · ${PW_SIDE_NAME[side]}`;
+  // The side alone on the chip; the result line says PAPAWIS on every template (contextText),
+  // and the premium cards carry it in their team line (premiumShareData).
+  const team = PW_SIDE_NAME[side];
   // Earlier scored runs (by date): the average day and the best one.
   const earlier = getPapawisRunLines(playerId).filter(r => r.run_id !== run.id && String(r.date) < String(run.date));
   const avg = earlier.length ? Object.fromEntries(['pts', 'reb', 'ast', 'stl', 'blk'].map(k => [k, earlier.reduce((a, r) => a + (Number(r[k]) || 0), 0) / earlier.length])) : null;
