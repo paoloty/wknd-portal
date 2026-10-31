@@ -16,8 +16,9 @@ const peso = n => `₱${Math.round(Number(n) || 0).toLocaleString('en-PH')}`;
 
 // One seat. f: { ini, first, color, me, photoUrl, playerId, pending } · ring: '' = neutral
 // (teams: Light / Dark say the side, so the league ring stays out of it).
+// f.att: a no-show or DNP on a past run: greyed, the mark under the name.
 function seat(f, { ring = f.color } = {}) {
-  return `<div class="pw-seat${f.me ? ' is-me' : ''}"${f.playerId ? ` data-pid="${esc(f.playerId)}"` : ''}>${appAvatar({ playerId: f.playerId, initials: f.ini, ring: f.me ? 'var(--amber)' : ring, photoUrl: f.photoUrl })}<span class="pw-seat__n">${esc(f.me ? 'You' : f.first)}</span></div>`;
+  return `<div class="pw-seat${f.me ? ' is-me' : ''}${f.att ? ' is-out' : ''}"${f.playerId ? ` data-pid="${esc(f.playerId)}"` : ''}>${appAvatar({ playerId: f.playerId, initials: f.ini, ring: f.me ? 'var(--amber)' : ring, photoUrl: f.photoUrl })}<span class="pw-seat__n">${esc(f.me ? 'You' : f.first)}</span>${f.att ? `<span class="pw-seat__x">${f.att === 'noshow' ? 'No-show' : 'DNP'}</span>` : ''}</div>`;
 }
 const emptySeat = n => `<div class="pw-seat is-empty"><span class="pw-seat__av" aria-hidden="true"></span><span class="pw-seat__n">${n}</span></div>`;
 const youSeat = () => `<div class="pw-seat is-you"><span class="pw-seat__av" aria-hidden="true">${icons.plus}</span><span class="pw-seat__n">You?</span></div>`;
@@ -28,7 +29,7 @@ function seats(r, { you = false } = {}) {
   if (r.teamsOut) {
     const side = (key, label) => {
       const list = r.faces.filter(f => f.team === key);
-      return `<div class="pw-team"><div class="pw-team__h"><span class="pw-shirt pw-shirt--${key}" aria-hidden="true"></span>${label}<small>${list.length}</small></div>
+      return `<div class="pw-team"><div class="pw-team__h"><span class="pw-shirt pw-shirt--${key}" aria-hidden="true"></span>${label}<small>${list.filter(f => !f.att).length}</small></div>
         <div class="pw-seats">${list.map(f => seat(f, { ring: '' })).join('')}</div></div>`;
     };
     const unsorted = r.faces.filter(f => f.team !== 'light' && f.team !== 'dark');
@@ -195,7 +196,7 @@ export function appPapawisRunPage({ missing = false, run = null, back = { href: 
       ${results ? `<div class="pw-who pw-who--gap"><span class="pw-who__t">Results</span>${finish ? `<a class="pw-who__n" href="${esc(finish)}">Edit</a>` : ''}</div>${summary ? `<div class="pw-week pw-recap"><span class="kick">${esc(summary.kicker || 'Papawis recap')}</span>${summary.headline ? `<p class="pw-week__h">${marked(summary.headline)}</p>` : ''}${summary.body ? `<p>${esc(summary.body.replace(/\*\*/g, ''))}</p>` : ''}</div>` : ''}${results}` : ''}
       <div class="pw-who pw-who--gap"><span class="pw-who__t">${run.teamsOut ? 'Teams' : run.kind === 'cancelled' ? 'Who was listed' : 'Who played'}</span><span class="pw-who__n"><b>${run.count}</b></span></div>
       ${run.faces.length ? seats({ ...run, max: run.faces.length, scheduled: false }) : '<p class="pwr__note">Nobody was listed.</p>'}
-      ${run.absent?.length ? `<div class="pw-team pw-absent"><div class="pw-team__h">Didn’t play<small>${run.absent.length}</small></div><div class="pw-seats">${run.absent.map(f => seat(f, { ring: '' }).replace('</div>', `<span class="pw-seat__x">${f.att === 'noshow' ? 'No-show' : 'DNP'}</span></div>`)).join('')}</div></div>` : ''}
+      ${run.absent?.length ? `<div class="pw-team pw-absent"><div class="pw-team__h">Didn’t play<small>${run.absent.length}</small></div><div class="pw-seats">${run.absent.map(f => seat(f, { ring: '' })).join('')}</div></div>` : ''}
     </div>
     ${admin ? papawisAdminStrip(admin) : ''}
   </section>`;

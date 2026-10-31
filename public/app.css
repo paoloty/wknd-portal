@@ -868,7 +868,11 @@ a.sx:active { transform: scale(.99); }
 .pw-seat.is-you .pw-seat__av { border-color: var(--amber); background: rgba(245,147,50,.08); color: var(--amber-text); }
 .pw-seat.is-you svg { width: 16px; height: 16px; }
 /* Didn't play (no-show / DNP) on a past run: faded faces, the mark under the name. */
-.pw-absent .avatar { opacity: .5; }
+.pw-absent .avatar, .pw-seat.is-out .avatar { opacity: .4; filter: grayscale(1); }
+.pw-seat.is-out .pw-seat__n { color: var(--muted); }
+/* Box score: a no-show / DNP row (views/papawis-results.js). */
+.pwx-tbl tr.is-out th, .pwx-tbl tr.is-out td { color: var(--muted); }
+.pwx-tbl td.pwx-out { text-align: right; font: 600 11px/1 var(--font-num); letter-spacing: .06em; text-transform: uppercase; }
 /* Manage run: No-show / DNP pill beside the name (views/app/admin-papawis.js). */
 .adm-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .adm-att { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 20px; padding: 0 8px; border-radius: 999px; font: 600 11px/1 var(--font-num); letter-spacing: .06em; text-transform: uppercase; background: var(--surface-2); color: var(--muted); }

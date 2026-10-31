@@ -10811,6 +10811,9 @@ html.ppop-lock { overflow: hidden; }
 .pwx-tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .pwx-tbl th, .pwx-tbl td { padding: 0 8px; height: 44px; border-top: 1px solid var(--border); text-align: right; white-space: nowrap; }
 .pwx-tbl thead th { height: 32px; border-top: 0; font: 600 11px/1 var(--font-num); letter-spacing: .08em; color: var(--muted); }
+/* A no-show / DNP row: muted, the mark in place of the line. */
+.pwx-tbl tr.is-out th, .pwx-tbl tr.is-out td { color: var(--text-muted); }
+.pwx-tbl td.pwx-out { font: 600 11px/1 var(--font-num); letter-spacing: .06em; text-transform: uppercase; }
 .pwx-tbl th[scope="row"], .pwx-tbl thead th:first-child { text-align: left; padding-left: 0; }
 .pwx-tbl td { font: 600 16px/1 var(--font-num); }
 .pwx-tbl tbody tr { cursor: pointer; }

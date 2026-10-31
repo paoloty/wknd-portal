@@ -34,14 +34,19 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
   };
   const cols = full ? ['PTS', 'REB', 'AST', 'STL', 'BLK', 'FG'] : ['PTS', 'REB', 'AST'];
   const cells = L => [L.pts || 0, L.reb || 0, L.ast || 0, ...(full ? [L.stl || 0, L.blk || 0, fgLine(L)] : [])];
-  const table = (title, rows) => `<div class="pwx-box"><div class="pwx-box__h">${title}</div>
+  // out: no-shows and DNPs on this side, at the bottom with their mark in place of a line.
+  const outRow = a => `<tr class="is-out"><th scope="row"><span class="pwx-who">${esc(a.name)}</span></th><td colspan="${cols.length}" class="pwx-out">${a.mark === 'noshow' ? 'No-show' : 'DNP'}</td></tr>`;
+  const table = (title, rows, out = []) => `<div class="pwx-box"><div class="pwx-box__h">${title}</div>
     <div class="table-scroll"><table class="pwx-tbl"><thead><tr><th scope="col">Player</th>${cols.map(c => `<th scope="col" class="num">${c}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(r => `<tr data-pcard="${esc(r.key)}" tabindex="0"${r.key === potd?.key ? ' class="is-potd"' : ''}><th scope="row"><span class="pwx-who">${r.number ? `<i class="num">${esc(r.number)}</i>` : ''}${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ''}</span></th>${cells(r.L).map(v => `<td class="num">${v}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+    <tbody>${rows.map(r => `<tr data-pcard="${esc(r.key)}" tabindex="0"${r.key === potd?.key ? ' class="is-potd"' : ''}><th scope="row"><span class="pwx-who">${r.number ? `<i class="num">${esc(r.number)}</i>` : ''}${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ''}</span></th>${cells(r.L).map(v => `<td class="num">${v}</td>`).join('')}</tr>`).join('')}${out.map(outRow).join('')}</tbody></table></div></div>`;
   // The whole day, each player under the side he finished on.
   const day = ['light', 'dark'].map(s => {
     const rows = people.filter(p => p.side === s).sort((x, y) => (y.line.pts || 0) - (x.line.pts || 0)).map(p => ({ key: p.key, name: p.name, number: p.number, L: p.line, note: Object.values(p.games).some(r => r.side !== s) ? `also played ${s === 'light' ? 'Dark' : 'Light'}` : p.n < games.length ? `${p.n} of ${games.length} games` : '' }));
-    return rows.length ? table(`<span class="pw-shirt pw-shirt--${s}" aria-hidden="true"></span>${SIDE[s]} · whole day`, rows) : '';
+    const out = absent.filter(a => a.side === s);
+    return rows.length || out.length ? table(`<span class="pw-shirt pw-shirt--${s}" aria-hidden="true"></span>${SIDE[s]} · whole day`, rows, out) : '';
   }).join('');
+  // Marked players with no side: their own short table.
+  const noSide = absent.filter(a => a.side !== 'light' && a.side !== 'dark');
   const perGame = games.map(g => ['light', 'dark'].map(s => {
     const rows = people.filter(p => p.games[g.n] && p.games[g.n].side === s).map(p => ({ key: p.key, name: p.name, number: p.number, L: p.games[g.n] })).sort((x, y) => (y.L.pts || 0) - (x.L.pts || 0));
     return rows.length ? table(`Game ${g.n} · ${SIDE[s]} <b class="num">${s === 'light' ? g.a : g.b}</b>`, rows) : '';
@@ -50,9 +55,7 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
     <div class="pwx-games">${games.map(result).join('')}</div>
     ${topThreeCards(cards, { firstLabel: 'Player of the Day', label: 'Player of the Day · top 3' })}
     ${day}
-    ${absent.length ? `<div class="pwx-box"><div class="pwx-box__h">Didn’t play</div>
-      <div class="table-scroll"><table class="pwx-tbl"><thead><tr><th scope="col">Player</th><th scope="col">Status</th></tr></thead>
-      <tbody>${absent.map(a => `<tr><th scope="row"><span class="pwx-who">${esc(a.name)}${a.side ? `<small>${SIDE[a.side]}</small>` : ''}</span></th><td>${a.mark === 'noshow' ? 'No-show' : 'DNP'}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+    ${noSide.length ? table('Didn’t play', [], noSide) : ''}
     <details class="pwx-more"><summary>Each game</summary>${perGame}</details>
     <p class="pwx-note">Papawis stats count in Papawis careers and leaders, separate from league totals.${full ? '' : ' Basic stats: points, rebounds and assists.'}</p>
     ${playerCardTemplates(cards)}

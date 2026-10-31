@@ -40,12 +40,15 @@ function rowActs(run, s, canManage, full) {
   ].filter(Boolean);
 }
 
+// No-show / DNP pill beside a name (Roster and Money).
+const attPill = s => (s.att ? `<span class="adm-att adm-att--${esc(s.att)}">${s.att === 'noshow' ? 'No-show' : 'DNP'}</span>` : '');
+
 // One player row. Drag by the grip to reorder or move between lists; tap for the sheet.
 function row(run, s, { canManage, full, n, drag = true, right = '' }) {
   const acts = rowActs(run, s, canManage, full);
   const sub = [s.guest ? `Guest of ${s.sponsor}` : s.teamName, run.open && s.status === 'confirmed' && s.team ? sideLabel(s.team) : ''].filter(Boolean).join(' · ');
   // No-show / DNP as a pill beside the name, so the roster reads at a glance.
-  const att = s.att ? `<span class="adm-att adm-att--${esc(s.att)}">${s.att === 'noshow' ? 'No-show' : 'DNP'}</span>` : '';
+  const att = attPill(s);
   const face = appAvatar({ playerId: s.face.playerId, initials: s.face.ini, ring: s.face.color, photoUrl: s.face.photoUrl });
   const who = `${face}<span class="cell__t"><span class="adm-name">${esc(s.name)}${att}</span><small>${esc(sub || ' ')}</small></span>`;
   return `<div class="cell adm-row" data-id="${esc(s.id)}">
@@ -205,7 +208,7 @@ function moneyTab(run, d) {
     }
     return `<div class="cell adm-pay">
       ${appAvatar({ playerId: s.face.playerId, initials: s.face.ini, ring: s.face.color, photoUrl: s.face.photoUrl })}
-      <span class="cell__t">${esc(s.name)}<small class="${s.paid ? '' : s.match === 1 ? 'adm-amber' : 'adm-due'}">${esc(s.guest ? [sub, `Guest of ${s.sponsor}`].filter(Boolean).join(' · ') : sub || ' ')}</small></span>
+      <span class="cell__t"><span class="adm-name">${esc(s.name)}${attPill(s)}</span><small class="${s.paid ? '' : s.match === 1 ? 'adm-amber' : 'adm-due'}">${esc(s.guest ? [sub, `Guest of ${s.sponsor}`].filter(Boolean).join(' · ') : sub || ' ')}</small></span>
       ${right}
     </div>`;
   }).join('');

@@ -4695,7 +4695,8 @@ async function generateGameStatPremiumPng(game, stat, focus = 'all', opts = {}) 
   const dateShort = game.date
     ? new Date(game.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const contextText = `${game.papawis ? 'PAPAWIS · ' : ''}vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
+  // Premium says PAPAWIS down the side already (wkndWord), so not again here.
+  const contextText = `vs ${escXml(oppTeamName)} · ${escXml(game.result_text || `${won ? 'W' : 'L'} ${myScore}-${oppScore}`)} · ${escXml(dateShort)}`;
   const handleText = `@WKNDBASKETBALL`;
 
   // Jersey number + a separator lead the rotated name now ("#34 · GIANNIS
@@ -9718,6 +9719,7 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
   const status = pwMine(kind, mineS, price);
   // No-shows and DNPs sit apart, under "Didn't play" (they're still on the bill).
   const played = confirmed.filter(s => !s.attendance), absent = confirmed.filter(s => s.attendance);
+  const onSide = s => s.team === 'light' || s.team === 'dark', sidesOut = played.some(onSide);
   sendTab(res, me, { title: `${g.title || 'Papawis'} · WKND`, tab: 'papawis', body: appPapawisRunPage({ back, admin: appPapawisAdmin(req) ? appPapawisAdminHint(g) : null,
     results: results ? papawisResultsBody(results, { profileHref: id => `/app/players/${encodeURIComponent(id)}` }) : '', summary: results ? pwRunSummary(g, results) : null, saved: req.query.saved === '1',
     finish: results && pwCanFinish(req, g) ? `/app/papawis/${encodeURIComponent(g.id)}/finish` : '',
@@ -9725,9 +9727,11 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
     id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
     place: g.location || 'Papawis', photo: papawisCoverUrl(g, getPapawisCourtByName(g.location)) || '',
     kind, count: kind === 'cancelled' ? confirmed.length : played.length, max: g.max_slots || confirmed.length, price: kind === 'played' ? price : 0,
-    faces: (kind === 'cancelled' ? confirmed : played).map(s => pwFace(s, teams, me.playerId)),
-    absent: kind === 'cancelled' ? [] : absent.map(s => pwFace(s, teams, me.playerId)),
-    teamsOut: played.some(s => s.team === 'light' || s.team === 'dark'),
+    // Teams out: a no-show or DNP stays in their side, greyed with the mark (Paolo, 2026-10-31);
+    // with no teams (or no side) they sit under Didn't play.
+    faces: (kind === 'cancelled' ? confirmed : sidesOut ? confirmed.filter(s => !s.attendance || onSide(s)) : played).map(s => pwFace(s, teams, me.playerId)),
+    absent: kind === 'cancelled' ? [] : absent.filter(s => !(sidesOut && onSide(s))).map(s => pwFace(s, teams, me.playerId)),
+    teamsOut: sidesOut,
     mine: status ? { status, amount: price, att: mineS.attendance || '', team: mineS.team === 'light' || mineS.team === 'dark' ? mineS.team : '' } : null,
   } }) });
 });
@@ -13321,7 +13325,7 @@ async function premiumShareData(game, stat, playerId, accentKey, key) {
     shortName: `${first ? first[0] + '. ' : ''}${last} #${stat.number ?? ''}`,
     initials: ((first[0] || '') + (last[0] || '')).toUpperCase(),
     number: stat.number ?? '',
-    teamName: `${game.papawis ? 'PAPAWIS · ' : ''}${String(stat.team_name || '').toUpperCase()}`, teamColor: stat.team_color || '#8a93a4',
+    teamName: String(stat.team_name || '').toUpperCase(), teamColor: stat.team_color || '#8a93a4',
     oppName, myScore, oppScore, won: myScore > oppScore,
     mySideScore: myScore, otherSideScore: oppScore, otherTeamName: oppName,
     dateShort: day({ month: 'short', day: 'numeric' }), dateLong: day({ month: 'short', day: 'numeric', year: 'numeric' }),
