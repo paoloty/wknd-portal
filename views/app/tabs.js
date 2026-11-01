@@ -3,7 +3,6 @@
 // site" in Settings (layout.js isAppHref): site-only things show as information.
 import { esc, appAvatar, chev, icons, backChev, isAppHref, soonTag, lazyList, ballSvg } from './layout.js';
 import { upNextCard, todoCard } from './home.js';
-import { papawisStatsBlock } from './papawis.js';
 
 // Large title; right: optional HTML on the right (Me's gear).
 const lt = (title, right = '') => `<header class="lt"><h1>${esc(title)}</h1>${right}</header>`;
@@ -47,57 +46,64 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
 // scoring: { games } for scorers, anyone picked to score, and admins (server.js scoringMenuFor), else null.
 // cover: { own } — the profile's cover is the player's own photo (else their team's colours).
 // Its buttons sit under Change photo (Paolo, 2026-10-29: not over the cover, too big there).
-// scoring: server.js appScoringMenu, or null. One row here; the Scoring screen (appScoringPage)
-// has the rest (Paolo, 2026-11-01: Me's Scoring list was crowded).
-export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null, papawis = null, pwRecord = null }) {
+// Me, today first (Paolo, 2026-11-01, mockup claude.ai/artifact/79gtR9oxJh42xnh29PLn7d, B): a
+// greeting, the one thing that needs you now, your week, the rest of the to-dos, how you're
+// doing (season and Papawis, each with a points line), recent games and runs, Scoring, then
+// the profile rows. Data: server.js /app/me.
+// now: { kick, title, sub, red, actions: [{ label, href, ghost }] } | null
+// week: [{ dow, day, today, game, run }] (7 days from today)
+// doing: { season: { label, gp, ppg, sub, spark, href }, papawis: same | null }
+// recent: [{ date, title, res, won, line, href, share? }]
+// scoring: server.js appScoringMenu, or null (one row; the Scoring screen has the rest).
+const spark = (pts, color) => {
+  if (pts.length < 2) return '<span class="me-spark me-spark--none"></span>';
+  const max = Math.max(...pts, 1), w = 100, h = 26;
+  const xy = pts.map((v, i) => `${((i / (pts.length - 1)) * w).toFixed(1)},${(h - 3 - (v / max) * (h - 6)).toFixed(1)}`);
+  const last = xy[xy.length - 1].split(',');
+  return `<svg class="me-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" points="${xy.join(' ')}"/><circle cx="${last[0]}" cy="${last[1]}" r="2.6" fill="${color}"/></svg>`;
+};
+export function appMePage({ me, positions, todos = [], scoring = null, cover = null, now = null, week = [], doing = null, recent = [], things = 0 }) {
+  // Given names ("Jose Paolo TY" → "Jose Paolo"); the team in title case.
+  const words = String(me.name || '').split(' ').filter(Boolean);
+  const first = (words.length > 1 ? words.slice(0, -1).join(' ') : words[0]) || 'there';
+  const teamName = String(me.teamName || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  const mini = (k, c, color) => c ? `<a class="me-mini" href="${esc(c.href)}"><span class="me-mini__k">${esc(k)}</span><span class="me-mini__v"><b class="num">${esc(c.ppg)}</b><small>PPG</small></span>${spark(c.spark || [], color)}<span class="me-mini__s">${esc(c.sub)}</span></a>` : '';
+  const recentRow = r => {
+    const main = `<a class="me-rec__a" href="${esc(r.href)}"><span class="date">${esc(r.date)}</span><span class="cell__t">${esc(r.title)}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span><span class="res ${r.won ? 'res--w' : r.even ? 'res--e' : 'res--l'}">${esc(r.res)}</span><span class="line">${esc(r.line)}</span>${r.share ? '' : chev}</a>`;
+    return `<div class="cell me-rec">${main}${r.share ? `<a class="pwp-share" href="${esc(r.share)}" aria-label="Share my stats from this run">${icons.share}</a>` : ''}</div>`;
+  };
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
-  <div class="card glow prof">
-    ${appAvatar({ ...me, size: 'lg' })}
-    <div style="flex:1;min-width:0"><h2>${esc(me.name)}</h2>
-      <div class="prof__sub"><span class="dot" style="--c:${esc(me.ring)}"></span>${esc([me.teamName || 'No team', me.number !== '' ? `#${me.number}` : '', positions].filter(Boolean).join(' · '))}</div></div>
+  <div class="me-hi">
+    <a class="me-hi__av" href="/app/players/${encodeURIComponent(me.playerId)}?from=me" aria-label="My profile">${appAvatar({ ...me, size: 'lg' })}</a>
+    <span class="me-hi__t"><b>Hey ${esc(first)}</b><small><span class="dot" style="--c:${esc(me.ring)}"></span>${esc([teamName || 'No team', me.number !== '' ? `#${me.number}` : '', things ? `${things} thing${things === 1 ? '' : 's'} for you` : 'All caught up'].filter(Boolean).join(' · '))}</small></span>
     <a class="prof__edit" href="/app/setup/details">Edit</a>
   </div>
+  ${now ? `<section class="me-now${now.red ? ' me-now--red' : ''}" aria-label="${esc(now.kick)}">
+    <span class="me-now__k">${esc(now.kick)}</span>
+    <b class="me-now__t">${esc(now.title)}</b>
+    ${now.sub ? `<span class="me-now__s">${esc(now.sub)}</span>` : ''}
+    <div class="me-now__b">${now.actions.map(a => `<a class="me-now__btn${a.ghost ? ' me-now__btn--ghost' : ''}" href="${esc(a.href)}">${esc(a.label)}</a>`).join('')}</div>
+  </section>` : ''}
+  ${week.length ? `<div class="sec">This week</div>
+  <div class="me-week" role="list">${week.map(d => `<div class="me-day${d.today ? ' is-today' : ''}" role="listitem" aria-label="${esc(d.dow)} ${d.day}${d.game ? ', a game' : ''}${d.run ? ', a Papawis run' : ''}"><span>${esc(d.dow)}</span><b class="num">${d.day}</b><i class="${d.game ? 'is-game' : ''}${d.run ? ' is-run' : ''}"></i></div>`).join('')}</div>
+  <p class="foot-note me-legend"><i class="is-game"></i>Your games <i class="is-run"></i>Your Papawis runs</p>` : ''}
   ${todos.length ? `<div class="sec">To do</div>${todoCard(todos)}` : ''}
+  ${doing ? `<div class="sec">How you’re doing</div>
+  <div class="me-minis${doing.papawis ? '' : ' me-minis--one'}">${mini(doing.season.label, doing.season, 'var(--blue, #3b82f6)')}${mini('Papawis', doing.papawis, 'var(--amber)')}</div>` : ''}
+  ${recent.length ? `<div class="sec">Recent</div>
+  <div class="group">${recent.map(recentRow).join('')}</div>
+  <p class="foot-note">Points · rebounds · assists</p>` : ''}
   ${scoring ? `<div class="group group--icons me-scoring">
     <a class="cell" href="/app/scoring"><span class="ico ico--amber">${icons.ball}</span><span class="cell__t">${scoring.league || scoring.admin ? 'Scoring' : 'Learn to score Papawis'}<small>${scoring.games ? `${scoring.games} to score now` : scoring.league || scoring.admin ? 'Games to score, practice, guides' : 'A practice run and the guide'}</small></span>${scoring.games ? `<span class="count">${scoring.games}</span>` : ''}${chev}</a>
   </div>` : ''}
-  <div class="sec">${esc(season.label)}</div>
-  <div class="tiles" style="margin-top:0">
-    <div><b>${season.ppg}</b><small>PTS</small></div><div><b>${season.rpg}</b><small>REB</small></div>
-    <div><b>${season.apg}</b><small>AST</small></div><div><b>${season.gp}</b><small>GP</small></div>
-  </div>
-  <div class="sec">Your games</div>
-  ${games.length ? `<div class="group">${games.map(g => `
-    <a class="cell" href="${esc(g.href)}"><span class="date">${esc(g.date)}</span><span class="cell__t">vs ${esc(g.opp)}</span>
-      ${resCell(g)}<span class="line">${esc(g.line)}</span>${chev}</a>`).join('')}</div>
-  <p class="foot-note">Points · rebounds · assists</p>` : '<div class="empty">No games played yet this season.</div>'}
-  ${papawisStatsBlock(papawis, { share: true })}
-  ${pwRecordBlock(pwRecord)}
   <div class="sec">Profile</div>
   <div class="group group--icons">
-    <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?from=me"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>As other players see it</small></span>${chev}</a>
+    <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?from=me"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>${esc([teamName, me.number !== '' ? `#${me.number}` : '', positions].filter(Boolean).join(' · ') || 'As other players see it')}</small></span>${chev}</a>
     <a class="cell" href="/app/setup/photo"><span class="ico">${icons.camera}</span><span class="cell__t">Change photo</span>${chev}</a>
     ${cover ? `<button type="button" class="cell" data-cover-pick><span class="ico">${icons.image}</span><span class="cell__t">${cover.own ? 'Change cover photo' : 'Add a cover photo'}<small>${cover.own ? 'The wide photo at the top of your profile' : 'For now it’s your team’s colours'}</small></span>${chev}</button>
     ${cover.own ? `<button type="button" class="cell" data-cover-remove><span class="ico">${icons.close}</span><span class="cell__t">Remove cover photo<small>Go back to your team’s colours</small></span></button>` : ''}
     <input type="file" accept="image/*" data-cover-input hidden>` : ''}
-    <a class="cell" href="/app/setup/details"><span class="ico">${icons.user}</span><span class="cell__t">Edit details</span>${chev}</a>
   </div>`;
-}
-
-// Your Papawis record (server.js getPapawisRecord; late drops, 2026-11-01): runs kept vs late
-// drops and no-shows, and how close you are to having your joins held.
-function pwRecordBlock(r) {
-  if (!r) return '';
-  const late = r.replaced + r.charged + r.open, missed = late + r.noShows;
-  if (r.played + missed === 0) return '';
-  const pct = Math.round((r.played / (r.played + missed)) * 100);
-  const row = (k, v) => `<div class="cell"><span class="cell__t">${k}</span><span class="cell__v num">${v}</span></div>`;
-  return `<div class="sec">Papawis record</div>
-  <div class="group">
-    <div class="cell"><span class="cell__t">${pct}% of runs kept<small>${r.played} of ${r.played + missed} runs</small></span>${r.strikes >= r.limit ? '<span class="pill pill--solid">On hold</span>' : ''}</div>
-    ${row('Late drops · slot taken', r.replaced)}${row('Late drops · paid', r.charged + r.open)}${row('No-shows', r.noShows)}
-  </div>
-  <p class="foot-note">${r.strikes >= r.limit ? `Your joins wait on the waitlist until an admin moves you in. They drop off ${r.days} days after the run.` : `${r.strikes} of ${r.limit} late drops or no-shows in the last ${r.days} days. At ${r.limit}, your joins wait on the waitlist until an admin moves you in.`}</p>`;
 }
 
 // Under Me (gear). rows: [{ icon, title, value, href, count, soon }] — a row without an

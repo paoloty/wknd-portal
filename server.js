@@ -9467,11 +9467,49 @@ app.get('/app/me', requireApp, (req, res) => {
   const meP = getPlayerById(me.playerId);
   if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: meP?.is_scorer || meP?.is_pw_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
   const scoring = appScoringMenu(req, me, toScore);
+  // Me, today first (Paolo, 2026-11-01, mockup claude.ai/artifact/79gtR9oxJh42xnh29PLn7d, B):
+  // the one thing that needs you now, your week, how you're doing, recent games and runs.
+  const pwOn = getSetting('papawis_enabled', '0') === '1';
+  const myRuns = pwOn ? appPapawisRuns(me).filter(r => ['in', 'waitlist', 'pending'].includes(r.state.kind)) : [];
+  const today = manilaTodayStr();
+  const teamId = me.player.team_id;
+  const upcoming = teamId ? getAllGames().filter(g => (g.team_a_id === teamId || g.team_b_id === teamId) && !gameFinalSet(g) && gameYmd(g.date) >= today)
+    .sort((x, y) => gameYmd(x.date).localeCompare(gameYmd(y.date))) : [];
+  const week = Array.from({ length: 7 }, (_, i) => addDaysYmd(today, i)).map(d => ({
+    dow: manilaFormat(Date.parse(`${d}T12:00:00+08:00`), { weekday: 'short' }), day: Number(d.slice(8)), today: d === today,
+    game: upcoming.some(g => gameYmd(g.date) === d), run: myRuns.some(r => r.date === d),
+  }));
+  // Right now: a locked-in run first; else the first to-do (taken out of the list below); else
+  // what's coming (your next run, then your team's next game).
+  let now = null;
+  const lk = pwOn ? pwLockedSlotFor(me.playerId) : null;
+  if (lk) now = { kick: 'Right now · locked in', title: `${lk.title.charAt(0).toUpperCase() + lk.title.slice(1)}${lk.clock ? ` at ${lk.clock}` : ''}${lk.waiting ? `: ${lk.waiting} waiting for your slot` : ''}.`,
+    sub: lk.price ? `${lk.price} is yours to pay unless someone takes it.` : '', red: true,
+    actions: [{ label: 'See the run', href: `/app/papawis#run-${encodeURIComponent(lk.id)}` }, { label: 'Can’t make it', href: `/app/papawis?giveback=${encodeURIComponent(lk.id)}#run-${encodeURIComponent(lk.id)}`, ghost: true }] };
+  else if (todos.length) { const t = todos.shift(); now = { kick: 'Right now', title: t.amount ? `${t.amount} due` : t.title, sub: t.sub || '', actions: [{ label: t.pill || 'Open', href: t.href }] }; }
+  else if (myRuns[0]) { const r = myRuns[0]; now = { kick: 'Coming up', title: `${r.title} · ${r.today ? 'today' : r.day}${r.startClock ? ` at ${r.startClock}` : ''}`, sub: r.state.kind === 'in' ? `You’re in · ${r.place}` : `On the waitlist · ${r.place}`, actions: [{ label: 'See the run', href: `/app/papawis#run-${encodeURIComponent(r.id)}` }] }; }
+  else if (upcoming[0]) { const g = upcoming[0]; now = { kick: 'Coming up', title: `${titleCase(g.team_a_name)} vs ${titleCase(g.team_b_name)}`, sub: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), actions: [{ label: 'See the game', href: `/app/games/${encodeURIComponent(g.id)}?from=me` }] }; }
+  // How you're doing: this season (regular season, as before) and Papawis, each with a line of
+  // points game by game (oldest first).
+  const wins = inSeason.filter(g => { const a = g.team_a_id === g.player_team_id; return Number(a ? g.team_a_score : g.team_b_score) > Number(a ? g.team_b_score : g.team_a_score); }).length;
+  const pw = pwOn ? papawisProfileFor(me.playerId) : null;
+  const rec = pwOn ? getPapawisRecord(me.playerId, Date.now() - PW_STRIKE_DAYS * 86400000) : null;
+  const missed = rec ? rec.replaced + rec.charged + rec.open + rec.noShows : 0;
+  const doing = {
+    season: { label: `Season ${season}`, gp: inSeason.length, ppg: per('pts'), sub: inSeason.length ? `${per('reb')} REB · ${per('ast')} AST · ${wins}–${inSeason.length - wins}` : 'No games yet this season',
+      spark: inSeason.slice().reverse().map(g => Number(g.pts) || 0), href: `/app/players/${encodeURIComponent(me.playerId)}?from=me` },
+    papawis: pw ? { ppg: pw.per.pts, sub: [`${pw.runs.length} run${pw.runs.length === 1 ? '' : 's'}`, `${pw.w}–${pw.l}`, rec && rec.played + missed ? `${Math.round((rec.played / (rec.played + missed)) * 100)}% kept` : '', rec && rec.strikes >= PW_STRIKE_LIMIT ? 'joins on hold' : ''].filter(Boolean).join(' · '),
+      spark: pw.runs.slice().reverse().map(r => (r.games ? r.pts / r.games : 0)), href: `/app/players/${encodeURIComponent(me.playerId)}?from=me#pp-papawis` } : null,
+  };
+  // Recent: league games and Papawis runs together, newest first.
+  const recent = [
+    ...log.slice(0, 5).map(g => { const x = games.find(y => y.href.includes(encodeURIComponent(g.game_id || g.id))); return x ? { ymd: gameYmd(g.date), ...x, title: `vs ${x.opp}`, res: `${x.won ? 'W' : 'L'} ${x.my}–${x.oppScore}`, won: x.won } : null; }).filter(Boolean),
+    ...(pw ? pw.runs.slice(0, 5).map(r => ({ ymd: r.date, date: shortDate(r.date), title: 'Papawis', sub: r.side === 'dark' ? 'Dark' : 'Light', res: r.result.replace(/^(Won|Lost|Split|Tied)/, m => m.toUpperCase()), won: r.won, even: r.w === r.l, line: `${r.pts}·${r.reb}·${r.ast}`,
+      href: `/app/papawis/${encodeURIComponent(r.id)}?from=me`, share: `/app/papawis/${encodeURIComponent(r.id)}/share?from=me` })) : []),
+  ].sort((x, y) => String(y.ymd).localeCompare(String(x.ymd))).slice(0, 4);
+  const things = todos.length + (now ? 1 : 0);
   sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
-    me, positions: parsePositions(me.player.positions).join(' · '), todos,
-    season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
-    games, papawis: papawisProfileFor(me.playerId),
-    pwRecord: getSetting('papawis_enabled', '0') === '1' ? { ...getPapawisRecord(me.playerId, Date.now() - PW_STRIKE_DAYS * 86400000), limit: PW_STRIKE_LIMIT, days: PW_STRIKE_DAYS } : null,
+    me, positions: parsePositions(me.player.positions).join(' · '), todos, now, week, doing, recent, things,
   }) });
 });
 
@@ -9703,7 +9741,7 @@ function appPapawisRuns(me) {
     const teamsOut = papawisTeamsSent(confirmed);
     const opensDay = pwDay(new Date(opensAt + 8 * 3600e3).toISOString().slice(0, 10));
     return {
-      id: g.id, title: g.title || `${manilaFormat(Date.parse(`${g.date}T12:00:00+08:00`), { weekday: 'long' })} run`,
+      id: g.id, date: String(g.date), title: g.title || `${manilaFormat(Date.parse(`${g.date}T12:00:00+08:00`), { weekday: 'long' })} run`,
       day: pwDay(g.date), today: dLeft === 0, time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
       place: g.location || 'Court to be announced', photo: papawisCoverUrl(g, court) || '',
       tipAt: Date.parse(`${g.date}T${g.start_time || '00:00'}:00+08:00`), opensAt, scheduled,

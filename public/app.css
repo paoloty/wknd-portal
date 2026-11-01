@@ -2914,3 +2914,48 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 
 /* Me: the one Scoring row (views/app/tabs.js; the rest is on the Scoring screen). */
 .me-scoring { margin-top: 16px; }
+
+/* Me, today first (views/app/tabs.js appMePage, 2026-11-01). One rhythm with the rest of the
+   app: 16px side margins, section labels via .sec, 8px gaps inside a row of cards. */
+.me-hi { display: flex; align-items: center; gap: 14px; margin: 4px 16px 0; }
+.me-hi__av { flex: none; border-radius: 50%; }
+.me-hi__t { flex: 1; min-width: 0; }
+.me-hi__t b { display: block; font-size: 20px; font-weight: 600; line-height: 1.2; }
+.me-hi__t small { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; color: var(--muted); }
+.me-hi__t .dot { flex: none; }
+.me-now { display: flex; flex-direction: column; gap: 6px; margin: 16px 16px 0; padding: 16px; border-radius: var(--r-card); background: linear-gradient(135deg, #11151d, #1e2a40); color: #fff; box-shadow: var(--shadow); }
+.me-now--red { background: linear-gradient(135deg, #8e1f1f, #c53030); }
+.me-now__k { font: 600 11px/1 var(--font-num); letter-spacing: .14em; text-transform: uppercase; color: #f8b06a; }
+.me-now--red .me-now__k { color: rgba(255,255,255,.85); }
+.me-now__t { font-size: 18px; font-weight: 600; line-height: 1.3; }
+.me-now__s { font-size: 13px; line-height: 1.4; color: rgba(255,255,255,.78); }
+.me-now__b { display: flex; gap: 8px; margin-top: 6px; }
+.me-now__btn { flex: 1; display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 12px; border-radius: var(--r-in); background: var(--amber); color: #111; font-size: 15px; font-weight: 600; line-height: 1; text-decoration: none; }
+.me-now--red .me-now__btn { background: #fff; color: #9b2222; }
+.me-now__btn--ghost, .me-now--red .me-now__btn--ghost { background: rgba(255,255,255,.14); color: #fff; }
+.me-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 0 16px; }
+.me-day { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 7px; border-radius: var(--r-in); background: var(--card-bg); border: 1px solid var(--border); font-size: 11px; line-height: 1; color: var(--muted); }
+.me-day b { font-size: 18px; line-height: 1; color: var(--text); }
+.me-day.is-today { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
+.me-day i, .me-legend i { display: block; width: 7px; height: 7px; border-radius: 50%; background: transparent; }
+.me-day i.is-game, .me-legend i.is-game { background: var(--blue, #3b82f6); }
+.me-day i.is-run, .me-legend i.is-run { background: var(--amber); }
+.me-day i.is-game.is-run { background: linear-gradient(90deg, var(--blue, #3b82f6) 50%, var(--amber) 50%); }
+.me-legend { display: flex; align-items: center; gap: 6px; }
+.me-legend i { display: inline-block; }
+.me-legend i + * , .me-legend i.is-run { margin-left: 8px; }
+.me-minis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 16px; }
+.me-minis--one { grid-template-columns: minmax(0, 1fr); }
+.me-mini { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px; border-radius: var(--r-card); background: var(--card-bg); border: 1px solid var(--border); box-shadow: var(--shadow), var(--card-hi); color: inherit; text-decoration: none; }
+.me-mini__k { font: 600 11px/1 var(--font-num); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.me-mini__v { display: flex; align-items: baseline; gap: 4px; }
+.me-mini__v b { font-size: 30px; line-height: 1; }
+.me-mini__v small { font: 600 12px/1 var(--font-num); letter-spacing: .1em; color: var(--muted); }
+.me-spark { display: block; width: 100%; height: 26px; }
+.me-mini__s { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.me-rec { padding: 0; gap: 0; }
+.me-rec__a { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 14px; color: inherit; text-decoration: none; }
+.me-rec .res { width: auto; min-width: 66px; padding: 4px 7px; }
+.me-rec .pwp-share { margin-right: 6px; }
+.me-scoring { margin-top: 20px; }
+.res--e { color: var(--muted); background: var(--surface-2); }
