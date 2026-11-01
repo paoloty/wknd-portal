@@ -714,6 +714,39 @@
       } catch (x) {}
     });
   }
+  // Facebook posts in the feed (views/app/feed.js annCard): Facebook's own player, loaded only
+  // when a card comes near the screen (its script is heavy), once per card. Videos play inline.
+  // With Facebook blocked, the card keeps its "Open on Facebook" link.
+  var fbSdk = null, fbSeen = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(function (es) {
+    es.forEach(function (e) { if (e.isIntersecting) { fbSeen.unobserve(e.target); fbMount(e.target); } });
+  }, { rootMargin: '600px 0px' }) : null;
+  function fbLoad() {
+    if (!fbSdk) fbSdk = new Promise(function (ok, no) {
+      if (window.FB) return ok(window.FB);
+      window.fbAsyncInit = function () { window.FB.init({ xfbml: false, version: 'v19.0' }); ok(window.FB); };
+      var s = document.createElement('script'); s.async = true; s.defer = true; s.crossOrigin = 'anonymous';
+      s.src = 'https://connect.facebook.net/en_US/sdk.js';
+      s.onerror = function () { fbSdk = null; no(); };
+      document.head.appendChild(s);
+    });
+    return fbSdk;
+  }
+  function fbMount(box) {
+    if (box._fb) return; box._fb = true;
+    var href = box.getAttribute('data-fb-embed'), video = box.getAttribute('data-fb-video') === '1';
+    var w = Math.max(320, Math.min(750, Math.round(box.clientWidth)));
+    var el = document.createElement('div');
+    el.className = video ? 'fb-video' : 'fb-post';
+    el.setAttribute('data-href', href); el.setAttribute('data-width', video ? 'auto' : String(w));
+    if (video) { el.setAttribute('data-allowfullscreen', 'true'); el.setAttribute('data-show-text', 'false'); }
+    else el.setAttribute('data-show-text', 'true');
+    box.insertBefore(el, box.firstChild);
+    fbLoad().then(function (FB) { FB.XFBML.parse(box, function () { box.classList.add('is-loaded'); }); }, function () { box.classList.add('is-blocked'); });
+  }
+  function initFbEmbeds() {
+    $$('[data-fb-embed]').forEach(function (box) { if (box._fbWatch) return; box._fbWatch = true; if (fbSeen) fbSeen.observe(box); else fbMount(box); });
+  }
+
   // Practice a Papawis run (views/app/practice.js appPwPracticePage): Carry on from this phone's
   // note of the last one, and the tips switch (their progress starts again with each new one).
   function initPwPractice() {
@@ -780,7 +813,7 @@
     initScorer();
     initLive(); initChat();
     initGameRecap();
-    initPractice(); initPwPractice(); initGuide(); initBarkadahan(); initOnlineSwitch(); initProfile();
+    initPractice(); initPwPractice(); initGuide(); initFbEmbeds(); initBarkadahan(); initOnlineSwitch(); initProfile();
     if (window.wkndBkSync) window.wkndBkSync();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s

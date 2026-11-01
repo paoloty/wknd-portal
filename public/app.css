@@ -2961,3 +2961,11 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .me-rec .pwp-share { margin: 0 6px 0 12px; }
 .me-scoring { margin-top: 20px; }
 .res--e { color: var(--muted); background: var(--surface-2); }
+
+/* Facebook posts in the feed (views/app/feed.js annCard, public/app.js initFbEmbeds): Facebook's
+   own embed, full card width; the link stays under it (and is all there is if Facebook is blocked). */
+.ax__fb { margin: 4px -16px 0; overflow: hidden; }
+.ax__fb .fb-post, .ax__fb .fb-video, .ax__fb iframe { display: block; width: 100% !important; max-width: 100%; }
+.ax__fb:not(.is-loaded) { min-height: 120px; background: var(--surface-2); }
+.ax__fb.is-video:not(.is-loaded) { aspect-ratio: 16 / 9; min-height: 0; }
+.ax__fb-open { display: flex; align-items: center; justify-content: center; height: 40px; margin: 8px 16px 0; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; text-decoration: none; }

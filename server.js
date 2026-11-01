@@ -6206,7 +6206,7 @@ import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthen
 import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey, deletePasskeysForReg } from './lib/portal-db.js';
 import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
 import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
-import { getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, deleteAppAnnouncement } from './lib/portal-db.js';
+import { getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, setAppAnnouncementDate, deleteAppAnnouncement } from './lib/portal-db.js';
 import { adminAnnouncementsBody } from './views/admin/app-announcements.js';
 import { savePushSubscription, deletePushSubscription, deletePushSubscriptionsForReg, getPushSubscriptionsForReg, getAllPushSubscriptions, getPushPrefs, setPushPref, claimPushLog, onNotificationCreated } from './lib/portal-db.js';
 import { vapidKeys, pushToPlayer, pushKindOf, PUSH_KINDS } from './lib/push.js';
@@ -6729,7 +6729,7 @@ const gameAtMs = g => { const y = gameYmd(g.date); const t = /^\d{2}:\d{2}$/.tes
 function appFeedIndex() {
   const now = Date.now();
   const items = [];
-  for (const a of getAppAnnouncements()) if (!(a.pinned_until > now)) items.push({ kind: 'ann', id: a.id, at: a.created_at, src: a });
+  for (const a of getAppAnnouncements()) if (!(a.pinned_until > now)) items.push({ kind: 'ann', id: a.id, at: a.shown_at || a.created_at, src: a });
   for (const g of getAllGames()) if (isPlayedGame(g)) items.push({ kind: 'game', id: g.id, at: gameAtMs(g), src: g });
   // Posts and Papawis follow the same switches as the site's homepage and /papawis.
   if (getSetting('posts_enabled', '0') === '1') for (const p of getPublicPosts()) items.push({ kind: 'post', id: p.id, at: p.publish_at || p.created_at, src: p });
@@ -6754,9 +6754,10 @@ function feedDay(ms) {
 const feedWhen = ms => manilaFormat(ms, { hour: 'numeric', minute: '2-digit' });
 
 function appAnnItem(a, pinned = false) {
-  return { kind: 'ann', id: a.id, day: pinned ? '' : feedDay(a.created_at), pinned, when: pinned ? feedDay(a.created_at) : feedWhen(a.created_at),
+  const at = a.shown_at || a.created_at;
+  return { kind: 'ann', id: a.id, day: pinned ? '' : feedDay(at), pinned, when: pinned ? feedDay(at) : feedWhen(at),
     by: a.created_by && a.created_by !== 'WKND' ? a.created_by : 'WKND League',
-    title: a.title, body: a.body, yt: ytId(a.youtube_url),
+    title: a.title, body: a.body, yt: ytId(a.youtube_url), fb: fbEmbedOf(a.fb_url),
     media: a.has_image ? sizedSrc(`/app/announcements/${encodeURIComponent(a.id)}/image?v=${a.updated_at}`) : {} };
 }
 // Admin-written text (the editor's HTML, legacy **Title** or plain) → plain paragraphs,
@@ -10360,20 +10361,45 @@ app.get('/admin/app/announcements', requireAuth, (req, res) => {
 });
 app.get('/admin/app/announcements/:id/image', requireAuth, sendAnnImage);
 const annPinUntil = days => { const d = Math.min(30, Math.max(0, Number(days) || 0)); return d ? Date.now() + d * 24 * 60 * 60 * 1000 : 0; };
+// Facebook posts in the feed (Paolo, 2026-11-01): a public post, video or reel on our page,
+// shown as Facebook's own embed (public/app.js initFbEmbeds). { url, video } or null.
+function fbEmbedOf(raw) {
+  let u;
+  try { u = new URL(String(raw || '').trim()); } catch { return null; }
+  if (!/(^|\.)facebook\.com$|(^|\.)fb\.watch$/i.test(u.hostname)) return null;
+  u.hash = '';
+  const video = /fb\.watch$/i.test(u.hostname) || /\/(videos|watch|reel|reels)\b/i.test(u.pathname) || u.searchParams.has('v');
+  return { url: u.toString(), video };
+}
+// "2026-11-01T18:30" in Manila → ms, or null.
+const manilaInputMs = v => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(v || '')) ? Date.parse(`${v}:00+08:00`) : null);
 app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' }), (req, res) => {
   const b = req.body || {};
   const image = String(b.image || '');
   if (b.image) req.body.image = '(photo)'; // keep the admin log small
   const title = String(b.title || '').trim().slice(0, 120), body = String(b.body || '').trim().slice(0, 2000);
   const youtube = String(b.youtube || '').trim();
-  if (!title && !body) return res.status(400).json({ error: 'Add a title or a message.' });
+  const facebook = String(b.facebook || '').trim();
+  if (facebook && !fbEmbedOf(facebook)) return res.status(400).json({ error: 'That doesn\'t look like a Facebook post or video link.' });
+  if (!title && !body && !facebook) return res.status(400).json({ error: 'Add a title, a message or a Facebook link.' });
   if (youtube && !ytId(youtube)) return res.status(400).json({ error: 'That doesn\'t look like a YouTube link.' });
+  const shownAt = manilaInputMs(b.date);
   if (image && !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) return res.status(400).json({ error: 'That photo couldn\'t be read. Try another.' });
   const by = req.session.isElevatedPlayer ? (req.session.playerName || 'admin') : 'WKND';
   const id = crypto.randomUUID();
-  addAppAnnouncement({ id, title, body, image, youtubeUrl: youtube, pinnedUntil: annPinUntil(b.pinDays), createdBy: by });
-  const notified = notifyAnnouncement({ id, title, body });
+  addAppAnnouncement({ id, title, body, image, youtubeUrl: youtube, fbUrl: facebook ? fbEmbedOf(facebook).url : '', shownAt, pinnedUntil: annPinUntil(b.pinDays), createdBy: by });
+  // Notify unless switched off (an old Facebook post added with its own date usually is).
+  const notified = b.notify === false ? 0 : notifyAnnouncement({ id, title: title || (facebook ? (fbEmbedOf(facebook).video ? 'New video from WKND' : 'New post from WKND') : ''), body: body || (facebook ? 'Watch it in the app.' : '') });
   res.json({ ok: true, notified });
+});
+// Move a post in the feed: { date: "YYYY-MM-DDTHH:mm" } in Manila, or empty for when it was posted.
+app.post('/admin/app/announcements/:id/date', requireAuth, express.json(), (req, res) => {
+  if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  const v = String(req.body?.date || '');
+  const ms = manilaInputMs(v);
+  if (v && !ms) return res.status(400).json({ error: 'Pick a date and time.' });
+  setAppAnnouncementDate(req.params.id, ms);
+  res.json({ ok: true });
 });
 app.post('/admin/app/announcements/:id/pin', requireAuth, express.json(), (req, res) => {
   if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });

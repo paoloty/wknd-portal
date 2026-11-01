@@ -80,10 +80,11 @@ function gameCard(g) {
 
 function annCard(a) {
   return `<article class="sx ax${a.pinned ? ' is-pinned' : ''}"><div class="sx__body">
-    <div class="ax__head"><span class="ax__ico" aria-hidden="true">${icons.megaphone}</span><div><b>${esc(a.by || 'WKND League')}</b><small>Announcement · ${esc(a.when)}</small></div>${a.pinned ? `<span class="sx__chip sx__chip--amber">${icons.pinned}Pinned</span>` : ''}</div>
+    <div class="ax__head"><span class="ax__ico" aria-hidden="true">${icons.megaphone}</span><div><b>${esc(a.fb ? 'WKND Basketball' : a.by || 'WKND League')}</b><small>${a.fb ? 'Facebook' : 'Announcement'} · ${esc(a.when)}</small></div>${a.pinned ? `<span class="sx__chip sx__chip--amber">${icons.pinned}Pinned</span>` : ''}</div>
     ${a.media?.img || a.yt ? `<div class="ax__media">${media({ ...a.media, yt: a.yt })}</div>` : ''}
     ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
     ${a.body ? `<div class="ax__body">${paras(a.body)}</div>` : ''}
+    ${a.fb ? `<div class="ax__fb${a.fb.video ? ' is-video' : ''}" data-fb-embed="${esc(a.fb.url)}" data-fb-video="${a.fb.video ? '1' : ''}"><a class="ax__fb-open" href="${esc(a.fb.url)}" target="_blank" rel="noopener">${a.fb.video ? 'Watch on Facebook' : 'Open on Facebook'}</a></div>` : ''}
   </div>${appSocialBar(a.social)}</article>`;
 }
 
