@@ -9503,7 +9503,8 @@ app.get('/app/me', requireApp, (req, res) => {
   };
   // Recent: league games and Papawis runs together, newest first.
   const recent = [
-    ...log.slice(0, 5).map(g => { const x = games.find(y => y.href.includes(encodeURIComponent(g.game_id || g.id))); return x ? { ymd: gameYmd(g.date), ...x, title: `vs ${x.opp}`, res: `${x.won ? 'W' : 'L'} ${x.my}–${x.oppScore}`, won: x.won } : null; }).filter(Boolean),
+    ...log.slice(0, 5).map(g => { const x = games.find(y => y.href.includes(encodeURIComponent(g.game_id || g.id))); return x ? { ymd: gameYmd(g.date), ...x, title: `vs ${x.opp}`, res: `${x.won ? 'W' : 'L'} ${x.my}–${x.oppScore}`, won: x.won,
+      share: `/app/games/${encodeURIComponent(g.game_id || g.id)}/share?from=me` } : null; }).filter(Boolean),
     ...(pw ? pw.runs.slice(0, 5).map(r => ({ ymd: r.date, date: shortDate(r.date), title: 'Papawis', sub: r.side === 'dark' ? 'Dark' : 'Light', res: r.result.replace(/^(Won|Lost|Split|Tied)/, m => m.toUpperCase()), won: r.won, even: r.w === r.l, line: `${r.pts}·${r.reb}·${r.ast}`,
       href: `/app/papawis/${encodeURIComponent(r.id)}?from=me`, share: `/app/papawis/${encodeURIComponent(r.id)}/share?from=me` })) : []),
   ].sort((x, y) => String(y.ymd).localeCompare(String(x.ymd))).slice(0, 4);

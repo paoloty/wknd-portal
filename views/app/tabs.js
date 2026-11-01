@@ -69,8 +69,10 @@ export function appMePage({ me, positions, todos = [], scoring = null, cover = n
   const teamName = String(me.teamName || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   const mini = (k, c, color) => c ? `<a class="me-mini" href="${esc(c.href)}"><span class="me-mini__k">${esc(k)}</span><span class="me-mini__v"><b class="num">${esc(c.ppg)}</b><small>PPG</small></span>${spark(c.spark || [], color)}<span class="me-mini__s">${esc(c.sub)}</span></a>` : '';
   const recentRow = r => {
-    const main = `<a class="me-rec__a" href="${esc(r.href)}"><span class="date">${esc(r.date)}</span><span class="cell__t">${esc(r.title)}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span><span class="res ${r.won ? 'res--w' : r.even ? 'res--e' : 'res--l'}">${esc(r.res)}</span><span class="line">${esc(r.line)}</span>${r.share ? '' : chev}</a>`;
-    return `<div class="cell me-rec">${main}${r.share ? `<a class="pwp-share" href="${esc(r.share)}" aria-label="Share my stats from this run">${icons.share}</a>` : ''}</div>`;
+    // The line under the name ("16 PTS · 6 REB · 5 AST"), not a column of its own.
+    const [pts, reb, ast] = String(r.line || '').split('·');
+    const main = `<a class="me-rec__a" href="${esc(r.href)}"><span class="date">${esc(r.date)}</span><span class="cell__t">${esc(r.sub ? `${r.title} · ${r.sub}` : r.title)}<small>${esc(`${pts || 0} PTS · ${reb || 0} REB · ${ast || 0} AST`)}</small></span><span class="res ${r.won ? 'res--w' : r.even ? 'res--e' : 'res--l'}">${esc(r.res)}</span>${r.share ? '' : `<span class="me-rec__end">${chev}</span>`}</a>`;
+    return `<div class="cell me-rec">${main}${r.share ? `<a class="pwp-share" href="${esc(r.share)}" aria-label="Share my stats from ${r.title.startsWith('Papawis') ? 'this run' : 'this game'}">${icons.share}</a>` : ''}</div>`;
   };
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
   <div class="me-hi">
@@ -91,8 +93,7 @@ export function appMePage({ me, positions, todos = [], scoring = null, cover = n
   ${doing ? `<div class="sec">How you’re doing</div>
   <div class="me-minis${doing.papawis ? '' : ' me-minis--one'}">${mini(doing.season.label, doing.season, 'var(--blue, #3b82f6)')}${mini('Papawis', doing.papawis, 'var(--amber)')}</div>` : ''}
   ${recent.length ? `<div class="sec">Recent</div>
-  <div class="group">${recent.map(recentRow).join('')}</div>
-  <p class="foot-note">Points · rebounds · assists</p>` : ''}
+  <div class="group">${recent.map(recentRow).join('')}</div>` : ''}
   ${scoring ? `<div class="group group--icons me-scoring">
     <a class="cell" href="/app/scoring"><span class="ico ico--amber">${icons.ball}</span><span class="cell__t">${scoring.league || scoring.admin ? 'Scoring' : 'Learn to score Papawis'}<small>${scoring.games ? `${scoring.games} to score now` : scoring.league || scoring.admin ? 'Games to score, practice, guides' : 'A practice run and the guide'}</small></span>${scoring.games ? `<span class="count">${scoring.games}</span>` : ''}${chev}</a>
   </div>` : ''}
