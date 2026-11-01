@@ -10414,8 +10414,12 @@ async function fbResolve(raw) {
     if (!loc) return s;
     const to = new URL(loc, s);
     if (!/(^|\.)facebook\.com$/i.test(to.hostname) || /^\/(login|share)\b/i.test(to.pathname)) return s;
-    const v = to.pathname.startsWith('/watch') ? to.searchParams.get('v') : '';
-    return `https://www.facebook.com${to.pathname}${v ? `?v=${encodeURIComponent(v)}` : ''}`;
+    // Keep the parts that name the post (story_fbid & id for permalink.php / story.php, fbid for
+    // photos, v for watch, set for albums); drop the tracking ones Facebook adds.
+    const keep = new URLSearchParams();
+    for (const k of ['story_fbid', 'id', 'fbid', 'v', 'set']) if (to.searchParams.get(k)) keep.set(k, to.searchParams.get(k));
+    const q = keep.toString();
+    return `https://www.facebook.com${to.pathname}${q ? `?${q}` : ''}`;
   } catch { return s; }
 }
 // "2026-11-01T18:30" in Manila → ms, or null.
