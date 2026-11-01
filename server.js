@@ -177,7 +177,7 @@ import {
   db as portalDb,
   getBirthdayEmail, saveBirthdayDraft, getBirthdayEmailsForYears, getSentBirthdayEmails, getBirthdayLog,
   papawisProbationHold, getPapawisSlotAlerts, cancelPapawisAnnounce, setPapawisEmailOptout, setPicksEmailOptout,
-  markPapawisLateDrop, setPapawisLateOutcome, getPapawisLateDrops, reconcilePapawisLateDrops, getPapawisRecord, getPapawisLockedSlots,
+  isPapawisActive, markPapawisLateDrop, setPapawisLateOutcome, getPapawisLateDrops, reconcilePapawisLateDrops, getPapawisRecord, getPapawisLockedSlots,
   getEmailsForAddress, getLatestEmailsByRef, getLatestEmailForRef,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
@@ -7461,7 +7461,13 @@ app.post('/api/practice/:id', requireAppData, express.json(), (req, res) => {
 // ── Papawis practice and guide (2026-11-01) ──
 // Papawis scorers and Papawis admins (the run's scorer screen asks the same: pwScoreAccess).
 const pwScoringFor = req => !!req.session?.playerPlayerId && (!!getPlayerById(req.session.playerPlayerId)?.is_pw_scorer || pwIsAdmin(req));
-function requirePwScoring(req, res, next) { if (!pwScoringFor(req) && !scoringMenuFor(req.session?.playerPlayerId)) return res.redirect('/app/me'); next(); }
+// The practice and the guide are for every Papawis-active player too (Paolo, 2026-11-01): played
+// a run in the last PW_ACTIVE_DAYS days, or listed for one coming up; hidden otherwise.
+const PW_ACTIVE_DAYS = 60;
+const pwActiveFor = playerId => getSetting('papawis_enabled', '0') === '1' && !!playerId && !getPlayerById(playerId)?.banned_at
+  && isPapawisActive(playerId, addDaysYmd(manilaTodayStr(), -PW_ACTIVE_DAYS), manilaTodayStr());
+const pwLearnFor = req => getSetting('papawis_enabled', '0') === '1' && (pwScoringFor(req) || pwActiveFor(req.session?.playerPlayerId));
+function requirePwScoring(req, res, next) { if (!pwLearnFor(req)) return res.redirect('/app/me'); next(); }
 // The practice's players: the last scored run's, on the sides they finished on; else the last
 // played run's list on its sides; else twelve active players, split.
 function pwPracticePlayers() {
@@ -9447,8 +9453,9 @@ app.get('/app/me', requireApp, (req, res) => {
   if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: meP?.is_scorer || meP?.is_pw_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
   // Admins who pick scorers (games or Papawis) get the Scoring menu with its Scorers screen.
   const scorersAdmin = appScorersAdmin(req);
-  const scoring = scoringMenuFor(me.playerId) || scorersAdmin ? { games: toScore, admin: scorersAdmin, pw: pwScoringFor(req) } : null;
-  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
+  const pwLearn = pwLearnFor(req);
+  const scoring = scoringMenuFor(me.playerId) || scorersAdmin ? { games: toScore, admin: scorersAdmin, pw: pwLearn } : null;
+  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, pwLearn: !scoring && pwLearn, cover: { own: !!getPlayerCoverAt(me.playerId) },
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
     games, papawis: papawisProfileFor(me.playerId),

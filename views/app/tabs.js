@@ -47,7 +47,9 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
 // scoring: { games } for scorers, anyone picked to score, and admins (server.js scoringMenuFor), else null.
 // cover: { own } — the profile's cover is the player's own photo (else their team's colours).
 // Its buttons sit under Change photo (Paolo, 2026-10-29: not over the cover, too big there).
-export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null, papawis = null, pwRecord = null }) {
+// pwLearn: a Papawis-active player who isn't a scorer: the Papawis scoring practice and guide
+// (the Scoring group has them for scorers).
+export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null, papawis = null, pwRecord = null, pwLearn = false }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
   <div class="card glow prof">
     ${appAvatar({ ...me, size: 'lg' })}
@@ -65,6 +67,11 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
     ${scoring.pw ? `<a class="cell" href="/app/papawis/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice a Papawis run<small>A past run’s players, only on this phone</small></span>${chev}</a>
     <a class="cell" href="/app/help/papawis"><span class="ico">${icons.book}</span><span class="cell__t">How to score Papawis<small>Light and Dark, switching sides, Finish the run</small></span>${chev}</a>` : ''}
     ${scoring.admin ? `<a class="cell" href="/app/admin/scorers"><span class="ico">${icons.user}</span><span class="cell__t">Scorers<small>Admin: who scores ${scoring.admin.games && scoring.admin.papawis ? 'games and Papawis' : scoring.admin.games ? 'the games' : 'Papawis'}</small></span>${chev}</a>` : ''}
+  </div>` : ''}
+  ${pwLearn ? `<div class="sec">Papawis scoring</div>
+  <div class="group group--icons">
+    <a class="cell" href="/app/papawis/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice scoring a run<small>A past run’s players, only on this phone</small></span>${chev}</a>
+    <a class="cell" href="/app/help/papawis"><span class="ico">${icons.book}</span><span class="cell__t">How to score Papawis<small>Light and Dark, switching sides, Finish the run</small></span>${chev}</a>
   </div>` : ''}
   <div class="sec">${esc(season.label)}</div>
   <div class="tiles" style="margin-top:0">
