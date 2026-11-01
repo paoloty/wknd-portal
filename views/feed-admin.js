@@ -114,6 +114,9 @@ const FA_CSS = `<style>
 .fa-f--wide, .fa-check { grid-column: 1 / -1; }
 .fa-in { width: 100%; min-height: 36px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--fa-line); background: var(--card-bg, var(--surface, #fff)); color: inherit; font: inherit; font-size: 14px; box-sizing: border-box; }
 textarea.fa-in { min-height: 72px; resize: vertical; }
+/* iPhone gives date fields their own minimum width and centred text: keep them to the column, text on the left. */
+.fa-in[type="datetime-local"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
+.fa-in[type="datetime-local"]::-webkit-date-and-time-value { text-align: left; }
 .fa-bulk { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
 .fa-check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .fa-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
