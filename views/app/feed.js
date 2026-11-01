@@ -92,8 +92,10 @@ function annCard(a) {
   const chip = a.pinned ? `<span class="sx__chip sx__chip--amber">${icons.pinned}Pinned</span>`
     : !ann && FEED_CHIP[a.type] ? `<span class="sx__chip sx__chip--${FEED_CHIP[a.type][0]}">${esc(FEED_CHIP[a.type][1] || `📷 ${a.photos.length} photo${a.photos.length === 1 ? '' : 's'}`)}</span>` : '';
   const who = ann ? (a.by || 'WKND League') : 'WKND Basketball';
-  // Media: the gallery, else the Facebook embed, else the YouTube video or the photo.
-  const mediaHtml = a.photos?.length ? feedGallery(a.photos)
+  // Media: an uploaded video (plays in the card, iPhone too: public/app.js initFeedVideos), the
+  // gallery, the Facebook embed, else the YouTube video or the photo.
+  const mediaHtml = a.video ? `<div class="ax__vid"><video data-feed-video playsinline webkit-playsinline muted loop preload="metadata"${a.video.poster ? ` poster="${esc(a.video.poster)}"` : ''}><source src="${esc(a.video.src)}" type="${esc(a.video.type === 'video/quicktime' ? 'video/mp4' : a.video.type)}"></video><button type="button" class="ax__vid-snd" data-feed-sound aria-label="Turn the sound on">🔇 Tap for sound</button></div>`
+    : a.photos?.length ? feedGallery(a.photos)
     : a.fb ? `<div class="ax__fb${a.fb.video ? ' is-video' : ''}" data-fb-embed="${esc(a.fb.url)}" data-fb-video="${a.fb.video ? '1' : ''}"><a class="ax__fb-open" href="${esc(a.fb.url)}" target="_blank" rel="noopener">${a.fb.video ? 'Watch on Facebook' : 'Open on Facebook'}</a></div>`
     : a.media?.img || a.yt ? `<div class="ax__media">${media({ ...a.media, yt: a.yt })}</div>` : '';
   return `<article class="sx ax ax--${esc(a.type || 'announcement')}${a.pinned ? ' is-pinned' : ''}"><div class="sx__body">

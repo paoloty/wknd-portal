@@ -3001,3 +3001,9 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 
 /* Me → Feed posts (views/feed-admin.js inside the app). */
 .fa-app { padding: 4px 16px 24px; }
+
+/* Uploaded feed videos (views/app/feed.js annCard, public/app.js initFeedVideos). */
+.ax__vid { position: relative; margin: 10px -16px 0; background: #000; }
+.ax__vid video { display: block; width: 100%; max-height: 78vh; background: #000; }
+.ax__vid-snd { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; height: 32px; padding: 0 12px; border: 0; border-radius: 16px; background: rgba(0,0,0,.62); color: #fff; font-size: 13px; font-weight: 600; line-height: 1; }
+.ax__vid-snd[hidden] { display: none; }

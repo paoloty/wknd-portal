@@ -8,6 +8,7 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt, scryptSync } from 'crypto';
 import { statSync, existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import fs from 'fs';
 import express from 'express';
 import compression from 'compression';
 import { resendWebhookEnabled, verifyResendSignature, handleResendEvent } from './lib/resend-webhook.js';
@@ -6207,7 +6208,7 @@ import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey,
 import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
 import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
 import { getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, setAppAnnouncementDate, deleteAppAnnouncement,
-  editAppAnnouncement, setAppAnnouncementHidden, addAppPostPhoto, getAppPostPhotoNumbers, getAppPostPhoto } from './lib/portal-db.js';
+  editAppAnnouncement, setAppAnnouncementHidden, setAppAnnouncementVideo, addAppPostPhoto, getAppPostPhotoNumbers, getAppPostPhoto } from './lib/portal-db.js';
 import { adminAnnouncementsBody, feedThumb } from './views/admin/app-announcements.js';
 import { feedAdminBody } from './views/feed-admin.js';
 import { savePushSubscription, deletePushSubscription, deletePushSubscriptionsForReg, getPushSubscriptionsForReg, getAllPushSubscriptions, getPushPrefs, setPushPref, claimPushLog, onNotificationCreated } from './lib/portal-db.js';
@@ -6764,6 +6765,7 @@ function appAnnItem(a, pinned = false) {
     type, label: type === 'throwback' ? `Throwback · ${manilaFormat(at, { month: 'short', day: 'numeric', year: 'numeric' })}` : FEED_TYPES[type],
     photos: a.photos ? getAppPostPhotoNumbers(a.id).map(n => sizedSrc(`/app/announcements/${encodeURIComponent(a.id)}/photos/${n}?v=${a.updated_at}`)) : [],
     ref: feedRefOf(a.ref), link: a.link_url || '',
+    video: a.video ? { src: `/app/announcements/${encodeURIComponent(a.id)}/video.mp4?v=${a.updated_at}`, poster: a.has_image ? `/app/announcements/${encodeURIComponent(a.id)}/image?v=${a.updated_at}&w=720` : '', type: a.video } : null,
     title: a.title, body: a.body, yt: ytId(a.youtube_url), fb: fbEmbedOf(a.fb_url),
     media: a.has_image ? sizedSrc(`/app/announcements/${encodeURIComponent(a.id)}/image?v=${a.updated_at}`) : {} };
 }
@@ -10452,7 +10454,7 @@ function feedRefOptions() {
 }
 const feedMediaOf = (facebook, youtube) => ({ fb: facebook ? fbEmbedOf(facebook) : null, yt: youtube ? ytId(youtube) : null });
 // Checks one post's fields. Returns an error string, or the cleaned fields.
-function feedPostFields(b, { photosComing = false } = {}) {
+function feedPostFields(b, { photosComing = false, videoComing = false } = {}) {
   const type = feedType(b.type);
   const title = String(b.title || '').trim().slice(0, 120), body = String(b.body || '').trim().slice(0, 2000);
   const facebook = String(b.facebook || '').trim(), youtube = String(b.youtube || '').trim(), link = String(b.link || '').trim().slice(0, 500);
@@ -10463,10 +10465,10 @@ function feedPostFields(b, { photosComing = false } = {}) {
   if (!feedRefOk(ref)) return 'Pick the game or run from the list.';
   const fb = facebook ? fbEmbedOf(facebook) : null;
   if (type === 'announcement' && !title && !body) return 'Add a title or a message.';
-  if (type === 'highlight' && !(fb?.video || youtube)) return 'A highlight needs a Facebook video or reel, or a YouTube link.';
+  if (type === 'highlight' && !(fb?.video || youtube || videoComing)) return 'A highlight needs a video: a file, a Facebook video or reel, or a YouTube link.';
   if (type === 'facebook' && !fb) return 'Paste the Facebook post’s link.';
   if (type === 'photos' && !photosComing) return 'Add at least one photo.';
-  if (type === 'throwback' && !fb && !youtube && !photosComing) return 'A throwback needs a Facebook or YouTube link, or photos.';
+  if (type === 'throwback' && !fb && !youtube && !photosComing && !videoComing) return 'A throwback needs a video, a Facebook or YouTube link, or photos.';
   return { type, title, body, facebook: fb ? fb.url : '', youtube, link, ref };
 }
 app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' }), async (req, res) => {
@@ -10474,7 +10476,7 @@ app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' })
   if (b.facebook) b.facebook = await fbResolve(b.facebook);
   const image = String(b.image || '');
   if (b.image) req.body.image = '(photo)'; // keep the admin log small
-  const f = feedPostFields(b, { photosComing: !!b.draft });
+  const f = feedPostFields(b, { photosComing: !!b.draft && !b.video, videoComing: !!b.draft && !!b.video });
   if (typeof f === 'string') return res.status(400).json({ error: f });
   if (image && !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) return res.status(400).json({ error: 'That photo couldn\'t be read. Try another.' });
   const shownAt = manilaInputMs(b.date);
@@ -10509,7 +10511,7 @@ app.post('/admin/app/announcements/:id/edit', requireAuth, express.json(), (req,
   const a = getAppAnnouncement(req.params.id);
   if (!a) return res.status(404).json({ error: 'Not found.' });
   const b = { facebook: a.fb_url, youtube: a.youtube_url, ...req.body };
-  const f = feedPostFields(b, { photosComing: a.photos > 0 || !!a.has_image });
+  const f = feedPostFields(b, { photosComing: a.photos > 0 || !!a.has_image, videoComing: !!a.video });
   if (typeof f === 'string') return res.status(400).json({ error: f });
   editAppAnnouncement(a.id, { type: f.type, title: f.title, body: f.body, ref: f.ref, linkUrl: f.link });
   res.json({ ok: true });
@@ -10568,7 +10570,45 @@ app.post('/admin/app/announcements/:id/pin', requireAuth, express.json(), (req, 
 });
 app.post('/admin/app/announcements/:id/delete', requireAuth, (req, res) => {
   deleteAppAnnouncement(req.params.id);
+  fs.promises.unlink(feedVideoPath(req.params.id)).catch(() => {});
   res.json({ ok: true });
+});
+// Uploaded videos (Highlight, Throwback): the phone's own player plays them in the card (iPhone
+// included), muted as they scroll into view. Sent in pieces of up to 4 MB (Cloudflare refuses
+// one request over 100 MB): POST …/video?offset=N with the raw bytes, then …/video/done with
+// the type and a still frame for the cover. Up to FEED_VIDEO_MAX. Files: data/feed-videos/.
+const FEED_VIDEO_DIR = path.join(__dirname, 'data', 'feed-videos');
+const FEED_VIDEO_MAX = 150 * 1024 * 1024;
+const feedVideoPath = id => path.join(FEED_VIDEO_DIR, `${String(id).replace(/[^\w-]/g, '')}.mp4`);
+app.post('/admin/app/announcements/:id/video', requireAuth, express.raw({ type: () => true, limit: '5mb' }), async (req, res) => {
+  if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  const offset = Number(req.query.offset) || 0, chunk = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  if (!chunk.length) return res.status(400).json({ error: 'Nothing was sent.' });
+  if (offset + chunk.length > FEED_VIDEO_MAX) return res.status(400).json({ error: 'Videos can be up to 150 MB.' });
+  try {
+    await fs.promises.mkdir(FEED_VIDEO_DIR, { recursive: true });
+    const file = feedVideoPath(req.params.id);
+    const size = offset ? (await fs.promises.stat(file).catch(() => ({ size: -1 }))).size : 0;
+    if (size !== offset) return res.status(409).json({ error: 'The upload got out of step. Try again.', size });
+    await (offset ? fs.promises.appendFile(file, chunk) : fs.promises.writeFile(file, chunk));
+    res.json({ ok: true, size: offset + chunk.length });
+  } catch (e) { console.error('[feed video]', e.message); res.status(500).json({ error: 'Couldn’t save the video.' }); }
+});
+app.post('/admin/app/announcements/:id/video/done', requireAuth, express.json({ limit: '3mb' }), async (req, res) => {
+  if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  const type = req.body?.type === 'video/quicktime' ? 'video/quicktime' : 'video/mp4';
+  const poster = String(req.body?.poster || '');
+  if (req.body?.poster) req.body.poster = '(frame)';
+  const st = await fs.promises.stat(feedVideoPath(req.params.id)).catch(() => null);
+  if (!st || !st.size) return res.status(400).json({ error: 'The video didn’t arrive. Try again.' });
+  setAppAnnouncementVideo(req.params.id, type, /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(poster) ? poster : '');
+  res.json({ ok: true });
+});
+// The video itself (Range requests, for seeking). Ends in .mp4 so Cloudflare can keep a copy near players.
+app.get('/app/announcements/:id/video.mp4', requireAppData, (req, res) => {
+  const a = getAppAnnouncement(req.params.id);
+  if (!a?.video) return res.status(404).end();
+  res.sendFile(feedVideoPath(a.id), { maxAge: '7d', headers: { 'Content-Type': a.video } }, err => { if (err && !res.headersSent) res.status(404).end(); });
 });
 // The bell for a new feed post: an announcement by its title; the rest by type and caption.
 function notifyFeedPost(id, f) {

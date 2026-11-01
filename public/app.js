@@ -746,8 +746,33 @@
   function initFbEmbeds() {
     $$('[data-fb-embed]').forEach(function (box) { if (box._fbWatch) return; box._fbWatch = true; if (fbSeen) fbSeen.observe(box); else fbMount(box); });
     initGalleries();
+    initFeedVideos();
     // Me → Feed posts: the shared Feed posts script (public/feed-admin.js), run for each new screen.
     if ($('[data-fa]') && !$('[data-fa]')._fa) { var s = document.createElement('script'); s.src = '/feed-admin.js?v=' + ver + '&t=' + Date.now(); document.body.appendChild(s); }
+  }
+  // Uploaded videos (views/app/feed.js annCard): play muted while at least 60% on screen and
+  // pause when they leave; a tap turns the sound on and shows the player's controls (full
+  // screen is there). One plays with sound at a time.
+  var vidSeen = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(function (es) {
+    es.forEach(function (e) {
+      var v = e.target;
+      if (e.isIntersecting && e.intersectionRatio >= 0.6) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+      else if (!v.paused) v.pause();
+    });
+  }, { threshold: [0, 0.6] }) : null;
+  function initFeedVideos() {
+    $$('[data-feed-video]').forEach(function (v) {
+      if (v._fv) return; v._fv = true;
+      if (vidSeen) vidSeen.observe(v);
+      var box = v.parentNode, snd = $('[data-feed-sound]', box);
+      var loud = function () {
+        $$('[data-feed-video]').forEach(function (o) { if (o !== v && !o.muted) { o.muted = true; } });
+        v.muted = false; v.controls = true; if (snd) snd.hidden = true;
+        var p = v.play(); if (p && p.catch) p.catch(function () {});
+      };
+      if (snd) snd.addEventListener('click', loud);
+      v.addEventListener('click', function () { if (v.muted) loud(); });
+    });
   }
   // Photos posts (views/app/feed.js feedGallery): "3 / 12" follows the swipe; a tap opens the
   // photos full screen (swipe between them, pinch to zoom), larger copies than in the card.

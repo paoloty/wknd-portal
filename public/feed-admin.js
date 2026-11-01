@@ -57,16 +57,52 @@
       img.src = url;
     });
   };
+  // A still from about a second in, as the video's cover (720px JPEG); none if the browser can't.
+  var frameOf = function (file) {
+    return new Promise(function (ok) {
+      var v = document.createElement('video'), url = URL.createObjectURL(file), finished = false;
+      var end = function (d) { if (finished) return; finished = true; URL.revokeObjectURL(url); ok(d || ''); };
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+      v.onloadeddata = function () { try { v.currentTime = Math.min(1, (v.duration || 2) / 2); } catch (x) { end(''); } };
+      v.onseeked = function () {
+        try {
+          var k = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas');
+          c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          end(c.toDataURL('image/jpeg', 0.8));
+        } catch (x) { end(''); }
+      };
+      v.onerror = function () { end(''); };
+      setTimeout(function () { end(''); }, 8000);
+    });
+  };
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     var f = form.elements, t = type(), btn = form.querySelector('button[type=submit]');
     var many = $('[data-fa-photos]').files, one = $('[data-fa-photo]').files[0];
+    var video = (t === 'highlight' || t === 'throwback') ? $('[data-fa-video]').files[0] : null;
+    if (video && video.size > 150 * 1024 * 1024) return say('Videos can be up to 150 MB.');
     var photos = (t === 'photos' || t === 'throwback') ? Array.prototype.slice.call(many || []) : [];
     if (photos.length > 30) return say('Up to 30 photos a post.');
     var data = { type: t, title: f.title.value, body: f.body.value, facebook: f.facebook.value, youtube: f.youtube.value, ref: f.ref.value, link: f.link.value, date: f.date.value, pinDays: f.pinDays.value, notify: f.notify.checked };
     btn.disabled = true; say('Posting…');
     var done = function () { say('Posted.'); location.reload(); };
     var fail = function (err) { btn.disabled = false; say(err.message); };
+    if (video) {
+      data.draft = true; data.video = true;
+      post('/admin/app/announcements', data).then(function (r) {
+        var base = '/admin/app/announcements/' + encodeURIComponent(r.id) + '/video', CH = 4 * 1024 * 1024, off = 0;
+        var next = function () {
+          if (off >= video.size) return frameOf(video).then(function (poster) { return post(base + '/done', { type: video.type || 'video/mp4', poster: poster }); })
+            .then(function () { return post('/admin/app/announcements/' + encodeURIComponent(r.id) + '/publish', { notify: data.notify }); });
+          say('Uploading the video… ' + Math.round(off / video.size * 100) + '%');
+          return fetch(base + '?offset=' + off, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream' }, body: video.slice(off, off + CH) })
+            .then(function (res) { return res.json().catch(function () { return {}; }).then(function (j) { if (!res.ok) throw new Error(j.error || 'The upload stopped. Try again.'); off = j.size; return next(); }); });
+        };
+        return next();
+      }).then(done, fail);
+      return;
+    }
     if (photos.length) {
       data.draft = true;
       post('/admin/app/announcements', data).then(function (r) {
