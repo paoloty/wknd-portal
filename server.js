@@ -6182,7 +6182,7 @@ import { appScorerGuidePage, appScorerChapterPage, PW_GUIDE_OPTS } from './views
 import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
-import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince, addBarkadahanGreeting, getBarkadahanGreeting, getBarkadahanGreetedIds, getBarkadahanGreets, toggleBarkadahanGreet, addBarkadahanGreets } from './lib/portal-db.js';
+import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince, addBarkadahanGreeting, getBarkadahanGreeting, getBarkadahanGreetedIds, getBarkadahanGreets, toggleBarkadahanGreet, addBarkadahanGreets, hasOpenedBarkadahan } from './lib/portal-db.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
@@ -7750,7 +7750,8 @@ const BK_CARD = /^(pw|pick|hi):[\w.-]{1,80}$/;
 // ── Welcomes and birthdays (2026-11-01, mockup claude.ai/artifact/55vBHqHBfJUwk6dznXuQiY) ──
 // Admins see a chip above the message box while someone is due: a birthday today (active
 // players, the birthday emails' rule) or a member approved in the last 14 days who hasn't had a
-// welcome. The chip (or the + sheet) attaches 'hi:bday' / 'hi:welcome'; posting it makes one
+// welcome, and only once they're really here (Paolo, 2026-11-01): an active account that has
+// signed in and has opened the Barkadahan. The chip (or the + sheet) attaches 'hi:bday' / 'hi:welcome'; posting it makes one
 // card for everyone due ('hi:<greeting id>'), and each of them gets one bell. Everyone greets
 // each person on the card (or all at once); greets don't notify one by one.
 const BK_NEW_DAYS = 14;
@@ -7759,7 +7760,10 @@ function bkHiDue() {
   const bdayDone = getBarkadahanGreetedIds('bday', today), welDone = getBarkadahanGreetedIds('welcome');
   const bday = birthdaysAround(today, { back: 0, forward: 1 }).filter(e => e.inDays === 0 && e.activity.active && !bdayDone.has(e.player.id)).map(e => e.player.id);
   const welcome = [...new Set(getRecentlyApprovedMembers(BK_NEW_DAYS, 60).members.map(m => m.player_id).filter(Boolean))]
-    .filter(pid => { const p = getPlayerById(pid); return p && p.status !== 'inactive' && !p.banned_at && !welDone.has(pid); });
+    .filter(pid => {
+      const p = getPlayerById(pid), reg = getRegistrationByPlayerId(pid);
+      return p && p.status !== 'inactive' && !p.banned_at && !welDone.has(pid) && reg?.status === 'approved' && Number(reg.last_login_at) > 0 && hasOpenedBarkadahan(pid);
+    });
   return { bday, welcome };
 }
 const bkFirst = pid => bkPerson(pid).full.split(' ')[0] || 'Someone';
