@@ -3,6 +3,7 @@
 // site" in Settings (layout.js isAppHref): site-only things show as information.
 import { esc, appAvatar, chev, icons, backChev, isAppHref, soonTag, lazyList, ballSvg } from './layout.js';
 import { upNextCard, todoCard } from './home.js';
+import { papawisStatsBlock } from './papawis.js';
 
 // Large title; right: optional HTML on the right (Me's gear).
 const lt = (title, right = '') => `<header class="lt"><h1>${esc(title)}</h1>${right}</header>`;
@@ -46,7 +47,7 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
 // scoring: { games } for scorers, anyone picked to score, and admins (server.js scoringMenuFor), else null.
 // cover: { own } — the profile's cover is the player's own photo (else their team's colours).
 // Its buttons sit under Change photo (Paolo, 2026-10-29: not over the cover, too big there).
-export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null }) {
+export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null, papawis = null }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
   <div class="card glow prof">
     ${appAvatar({ ...me, size: 'lg' })}
@@ -73,6 +74,7 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
     <a class="cell" href="${esc(g.href)}"><span class="date">${esc(g.date)}</span><span class="cell__t">vs ${esc(g.opp)}</span>
       ${resCell(g)}<span class="line">${esc(g.line)}</span>${chev}</a>`).join('')}</div>
   <p class="foot-note">Points · rebounds · assists</p>` : '<div class="empty">No games played yet this season.</div>'}
+  ${papawisStatsBlock(papawis, { share: true })}
   <div class="sec">Profile</div>
   <div class="group group--icons">
     <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?from=me"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>As other players see it</small></span>${chev}</a>

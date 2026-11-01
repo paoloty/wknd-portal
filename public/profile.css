@@ -219,3 +219,15 @@ a.prf-line:hover b { color: var(--amber); }
   .prf-join__actions { align-items: stretch; }
   .prf-join__links { justify-content: center; }
 }
+
+/* Papawis (views/player.js prfPapawis) */
+.prf-pw-facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.prf-pw-fact { font-weight: 500; letter-spacing: 0; color: var(--text-muted); }
+.prf-pw-fact b { color: var(--text); font-weight: 700; }
+.prf-pw-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); }
+.prf-pw-table td { vertical-align: middle; }
+.prf-pw-table th:nth-child(2), .prf-pw-table td:nth-child(2), .prf-pw-table th:nth-child(3), .prf-pw-table td:nth-child(3) { text-align: left; }
+.prf-pw-side .pw-shirt { width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
+.prf-pw-won { color: var(--text); font-weight: 700; }
+.prf-pw-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 18px; border-top: 1px solid var(--border); }
+.prf-pw-all { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }

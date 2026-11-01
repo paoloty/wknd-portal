@@ -8952,7 +8952,8 @@ app.get('/app/games/:id/share', requireApp, async (req, res) => {
 app.get('/app/papawis/:id/share', requireApp, async (req, res) => {
   const me = appMe(req);
   const run = getSetting('papawis_enabled', '0') === '1' ? getPapawisGame(req.params.id) : null;
-  const back = req.query.from === 'home' ? { href: '/app', label: 'Home', tab: 'home' } : { href: run ? `/app/papawis/${encodeURIComponent(run.id)}` : '/app/papawis', label: run ? 'Run' : 'Papawis', tab: 'papawis' };
+  const back = req.query.from === 'home' ? { href: '/app', label: 'Home', tab: 'home' } : req.query.from === 'me' ? { href: '/app/me', label: 'Me', tab: 'me' }
+    : { href: run ? `/app/papawis/${encodeURIComponent(run.id)}` : '/app/papawis', label: run ? 'Run' : 'Papawis', tab: 'papawis' };
   const t = pwShareFacts(run, me.playerId);
   if (!t) return sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, body: appSharePage({ back, missing: true, missingText: 'Only players with stats in this run can make its card.' }) });
   const { game, stat } = t;
@@ -9244,6 +9245,7 @@ app.get('/app/players/:id', requireApp, (req, res) => {
     })),
     awards: getPlayerAwards(p.id).map(a => ({ icon: AWARD_META[a.award_type]?.icon || '🏅', label: AWARD_META[a.award_type]?.label || a.award_type, season: a.season, top: APP_TOP_AWARDS.has(a.award_type) })),
     papawis: getSetting('papawis_enabled', '0') === '1' ? (getPapawisTotalsForPlayer(p.id)?.played || 0) : 0,
+    pwStats: papawisProfileFor(p.id),
   }) });
 });
 
@@ -9366,7 +9368,7 @@ app.get('/app/me', requireApp, (req, res) => {
   sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
-    games,
+    games, papawis: papawisProfileFor(me.playerId),
   }) });
 });
 
@@ -9733,7 +9735,9 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
   // A scored run shows its results here, even on the day (Papawis scoring, 2026-10-30).
   const results = g ? pwResultsFor(g) : null;
   if (g && !results && g.status === 'open' && pwDaysUntil(g.date) >= 0) return res.redirect(`/app/papawis#run-${encodeURIComponent(g.id)}`);
-  const back = req.query.from === 'notifications' ? { href: '/app/notifications', label: 'Notifications' } : req.query.from === 'home' ? { href: '/app', label: 'Home' } : { href: '/app/papawis', label: 'Papawis' };
+  const back = req.query.from === 'notifications' ? { href: '/app/notifications', label: 'Notifications' } : req.query.from === 'home' ? { href: '/app', label: 'Home' }
+    : req.query.from === 'me' ? { href: '/app/me', label: 'Me' }
+    : req.query.from === 'player' && getPlayerById(String(req.query.pid || '')) ? { href: `/app/players/${encodeURIComponent(req.query.pid)}`, label: 'Player' } : { href: '/app/papawis', label: 'Papawis' };
   if (!g) return sendTab(res, me, { title: 'Papawis · WKND', tab: 'papawis', body: appPapawisRunPage({ missing: true, back }) });
   const teams = getAllTeams();
   const confirmed = getPapawisSignups(g.id).filter(s => s.status === 'confirmed');
@@ -13468,7 +13472,7 @@ function pwShareFacts(run, playerId) {
     wl: { w: games.filter(g => g.my > g.opp).length, l: games.filter(g => g.my < g.opp).length },
     sideTotals: { pts: games.reduce((a, g) => a + g.my, 0), reb: sum(sideLines, 'reb'), ast: sum(sideLines, 'ast') },
     rank, of: res.people.length, potd: res.potd?.key === me.key,
-    court: String(run.location || '').split(',')[0].replace(/\s+(basketball\s+)?court$/i, '').trim(), place: String(run.location || '').trim(), tip: String(run.start_time || ''),
+    court: pwCourtName(run.location), place: String(run.location || '').trim(), tip: String(run.start_time || ''),
     runNo: getPapawisRunNumber(playerId, run), positions: positions.slice(0, 3), fact,
   };
   const game = {
@@ -13480,6 +13484,49 @@ function pwShareFacts(run, playerId) {
   const stat = { ...me.line, player_id: playerId, name: p.name, number: p.number, picture_url: p.picture_url, team_id: 'pw_side', team_name: team, team_color: '#f59332' };
   return { game, stat };
 }
+// "Reyes Gym Basketball Court, Makati" → "Reyes Gym" (cards and profile rows).
+function pwCourtName(location) { return String(location || '').split(',')[0].replace(/\s+(basketball\s+)?court$/i, '').trim(); }
+
+// A player's Papawis on their profile (site and app, 2026-11-01): per-game numbers, the games
+// won and lost, best days, Player of the Day count and every scored run, newest first, as day
+// totals. Only PTS/REB/AST/3PM, since Basic runs record nothing else. null when Papawis is off
+// or they have no scored run (no-shows and DNPs have no line, getPapawisRunLines).
+function papawisProfileFor(playerId) {
+  if (!playerId || getSetting('papawis_enabled', '0') !== '1') return null;
+  const runs = [];
+  for (const l of getPapawisRunLines(playerId)) {
+    const run = getPapawisGame(l.run_id);
+    const res = run && pwResultsFor(run);
+    const me = res?.people.find(p => p.playerId === playerId);
+    if (!me) continue;
+    const scores = res.games.filter(g => me.games[g.n]).map(g => (me.games[g.n].side === 'light' ? [g.a, g.b] : [g.b, g.a]));
+    const w = scores.filter(([x, y]) => x > y).length, lost = scores.filter(([x, y]) => x < y).length;
+    const result = scores.length === 1
+      ? `${scores[0][0] > scores[0][1] ? 'Won' : scores[0][0] < scores[0][1] ? 'Lost' : 'Tied'} ${scores[0][0]}–${scores[0][1]}`
+      : `${w > lost ? 'Won' : w < lost ? 'Lost' : 'Split'} ${w}–${lost}`;
+    runs.push({
+      id: run.id, date: String(run.date), court: pwCourtName(run.location), side: me.side === 'dark' ? 'dark' : 'light',
+      games: scores.length, w, l: lost, result, won: w > lost, potd: res.potd?.key === me.key,
+      pts: Number(l.pts) || 0, reb: Number(l.reb) || 0, ast: Number(l.ast) || 0, fg3m: Number(l.fg3m) || 0,
+    });
+  }
+  if (!runs.length) return null;
+  runs.reverse();
+  const sum = k => runs.reduce((a, r) => a + r[k], 0);
+  const games = sum('games');
+  const best = k => runs.reduce((b, r) => (r[k] > (b?.[k] ?? 0) ? r : b), null);
+  const courts = {};
+  for (const r of runs) if (r.court) courts[r.court] = (courts[r.court] || 0) + 1;
+  const [court, courtRuns] = Object.entries(courts).sort((a, b) => b[1] - a[1])[0] || [];
+  return {
+    runs, games, w: sum('w'), l: sum('l'), threes: sum('fg3m'), potd: runs.filter(r => r.potd).length,
+    per: Object.fromEntries(['pts', 'reb', 'ast'].map(k => [k, games ? (sum(k) / games).toFixed(1) : '0.0'])),
+    best: Object.fromEntries(['pts', 'reb', 'ast'].map(k => { const r = best(k); return [k, r ? { v: r[k], date: r.date } : null]; })),
+    sides: { light: runs.filter(r => r.side === 'light').length, dark: runs.filter(r => r.side === 'dark').length },
+    court: runs.length > 1 && courtRuns > 1 ? court : '',
+  };
+}
+
 // The game (or Papawis run) and the signed-in player's line for the card routes, or null.
 function shareTarget(id, playerId) {
   if (isPwScoreId(id)) return pwShareFacts(pwRunOfScore(id), playerId);
@@ -22042,7 +22089,7 @@ app.get('/players/:ref', async (req, res) => {
     isOwnProfile,
     metaTags: `${buildPlayerOgTags(req, player, totals)}\n  <link rel="stylesheet" href="/profile.css?v=${PROFILE_CSS_VER}">`,
     body: playerPage({
-      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, badges, pickRecord,
+      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, badges, pickRecord, papawis: papawisProfileFor(resolved.id),
       isAdmin: !!req.session?.isAdmin, isOwnProfile, viewPublic: isOwnProfile && req.query.view === 'public',
       // Guests only (mostly people who searched the player's name): join / Papawis / Facebook card.
       showGcInvite: isOwnProfile && !playerCtaDone(resolved.id, 'gc'),

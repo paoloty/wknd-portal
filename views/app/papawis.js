@@ -203,3 +203,30 @@ export function appPapawisRunPage({ missing = false, run = null, back = { href: 
     ${admin ? papawisAdminStrip(admin) : ''}
   </section>`;
 }
+
+// A player's Papawis on Me and on their player page (server.js papawisProfileFor, 2026-11-01):
+// per-game numbers and the games won and lost, then their latest runs as day totals. share:
+// each run gets its Share my stats button (your own, on Me). from / pid: where a run's screen
+// goes back to.
+const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+export function papawisStatsBlock(pw, { id = '', share = false, from = 'me', pid = '', max = 3 } = {}) {
+  if (!pw) return '';
+  const q = from === 'player' ? `?from=player&pid=${encodeURIComponent(pid)}` : `?from=${from}`;
+  const note = [`Per game · ${pw.games} game${pw.games === 1 ? '' : 's'}`, pw.potd ? `★ ${pw.potd}× Player of the Day` : '', pw.threes ? `${pw.threes} three${pw.threes === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+  const row = r => {
+    const [, m, d] = r.date.split('-');
+    const main = `<a class="pwp-run__a" href="/app/papawis/${encodeURIComponent(r.id)}${q}">
+      <span class="pw-cal"><b>${Number(d)}</b><span>${MON[Number(m) - 1] || ''}</span></span>
+      <span class="cell__t">${esc(r.result)} · ${r.side === 'dark' ? 'Dark' : 'Light'}<small>${esc([r.court, r.potd ? 'Player of the Day' : `${r.games} game${r.games === 1 ? '' : 's'}`].filter(Boolean).join(' · '))}</small></span>
+      <span class="line">${r.pts}·${r.reb}·${r.ast}</span>${share ? '' : chev}</a>`;
+    return `<div class="cell pwp-run">${main}${share ? `<a class="pwp-share" href="/app/papawis/${encodeURIComponent(r.id)}/share?from=me" aria-label="Share my stats from this run">${icons.share}</a>` : ''}</div>`;
+  };
+  return `<div class="sec"${id ? ` id="${esc(id)}"` : ''}>Papawis · ${pw.runs.length} run${pw.runs.length === 1 ? '' : 's'}</div>
+  <div class="tiles" style="margin-top:0">
+    <div><b>${pw.per.pts}</b><small>PTS</small></div><div><b>${pw.per.reb}</b><small>REB</small></div>
+    <div><b>${pw.per.ast}</b><small>AST</small></div><div><b>${pw.w}–${pw.l}</b><small>W–L</small></div>
+  </div>
+  <p class="foot-note">${esc(note)}</p>
+  <div class="group pwp-runs">${pw.runs.slice(0, max).map(row).join('')}</div>
+  <p class="foot-note">Day totals: points · rebounds · assists</p>`;
+}

@@ -1768,6 +1768,54 @@ function prfMySeason(o) {
   });
 }
 
+// ── Papawis (own and public, 2026-11-01) ─────────────────────────────────────────
+// o.papawis: server.js papawisProfileFor. Per-game numbers and the games won and lost, a row of
+// facts, then every scored run as day totals (the latest 5, the rest behind "Show all").
+// Your own rows get Share my stats (the run's results page opens its editor, ?share=1).
+const PRF_PW_SHOWN = 5;
+function prfPapawis(o, own) {
+  const pw = o.papawis;
+  if (!pw) return '';
+  // Every tile keeps its second line, so the row lines up (a stat never recorded says so).
+  const best = (b, w) => (!b ? 'None yet' : pw.runs.length > 1 ? `Best day ${b.v}${w} · ${prfDay(b.date)}` : `${pw.games} game${pw.games === 1 ? '' : 's'}`);
+  const pct = pw.w + pw.l ? Math.round((pw.w / (pw.w + pw.l)) * 100) : null;
+  const tiles = [
+    prfTile({ label: 'POINTS', value: pw.per.pts, sub: best(pw.best.pts, '') }),
+    prfTile({ label: 'REBOUNDS', value: pw.per.reb, sub: best(pw.best.reb, '') }),
+    prfTile({ label: 'ASSISTS', value: pw.per.ast, sub: best(pw.best.ast, '') }),
+    prfTile({ label: 'RECORD', value: `${pw.w}–${pw.l}`, sub: pct != null ? `${pct}% of games won` : '' }),
+  ];
+  const facts = [
+    pw.potd ? `<span class="prf-chip prf-chip--amber">★ ${pw.potd}× Player of the Day</span>` : '',
+    pw.threes ? `<span class="prf-chip prf-pw-fact"><b>${pw.threes}</b> three${pw.threes === 1 ? '' : 's'} made</span>` : '',
+    `<span class="prf-chip prf-pw-fact">${[['light', 'Light'], ['dark', 'Dark']].filter(([k]) => pw.sides[k]).map(([k, l], i) => `<b>${pw.sides[k]}</b> ${i ? '' : `run${pw.sides[k] === 1 ? '' : 's'} `}on ${l}`).join(' · ')}</span>`,
+    pw.court ? `<span class="prf-chip prf-pw-fact">Most played at <b>${escHtml(pw.court)}</b></span>` : '',
+  ].filter(Boolean).join('');
+  const rows = pw.runs.map((r, i) => {
+    const href = `/papawis/${encodeURIComponent(r.id)}/results`;
+    return `<tr${i >= PRF_PW_SHOWN ? ' class="prf-pw-more" hidden' : ''}>
+      <td><a href="${href}" class="prf-table__game">${escHtml(prfDay(r.date))}</a>${r.potd ? ' <span class="prf-tag" title="Player of the Day">POTD</span>' : ''}<span class="prf-pw-sub">${escHtml([r.court, `${r.games} game${r.games === 1 ? '' : 's'}`].filter(Boolean).join(' · '))}</span></td>
+      <td class="prf-pw-side"><span class="pw-shirt pw-shirt--${r.side}" aria-hidden="true"></span>${r.side === 'dark' ? 'Dark' : 'Light'}</td>
+      <td class="prf-table__res${r.won ? ' prf-pw-won' : ''}">${escHtml(r.result)}</td>
+      <td class="font-condensed">${r.pts}</td><td class="font-condensed">${r.reb}</td><td class="font-condensed">${r.ast}</td><td class="font-condensed">${r.fg3m}</td>
+      ${own ? `<td class="prf-table__act"><a class="prf-share-btn" href="${href}?share=1" aria-label="Share my stats from the ${escHtml(prfDay(r.date))} run" title="Share my stats">${PRF_ICON.share}</a></td>` : ''}
+    </tr>`;
+  }).join('');
+  const more = pw.runs.length > PRF_PW_SHOWN;
+  return prfSection('papawis', 'Papawis', {
+    sub: `${pw.runs.length} run${pw.runs.length === 1 ? '' : 's'} · ${pw.games} game${pw.games === 1 ? '' : 's'} · per game`,
+    body: `<div class="prf-kpis">${tiles.join('')}</div>
+      <div class="prf-pw-facts">${facts}</div>
+      <div class="card">
+        <div class="card-label"><span>${more ? 'RECENT RUNS' : 'RUNS'}</span><span class="card-label__count">DAY TOTALS</span></div>
+        <div class="prf-table-wrap"><table class="prf-table prf-table--wide prf-pw-table">
+          <thead><tr><th>Run</th><th>Side</th><th>Day</th><th>PTS</th><th>REB</th><th>AST</th><th>3PM</th>${own ? '<th><span class="sr-only">Share</span></th>' : ''}</tr></thead>
+          <tbody>${rows}</tbody></table></div>
+        <div class="prf-pw-foot"><span class="prf-small">Scored runs only. No-shows and DNPs don’t count.</span>${more ? `<button type="button" class="prf-small-link prf-pw-all" onclick="this.closest('.card').querySelectorAll('.prf-pw-more').forEach(function(r){r.hidden=false});this.remove()">Show all ${pw.runs.length} runs</button>` : ''}</div>
+      </div>`,
+  });
+}
+
 // ── Public: this season vs career + recent games ───────────────────────────────
 // Guests' card (views/player.js playerPage): people who found a player by searching their name.
 // Registration open → join; closed → the next Papawis run; neither → follow on Facebook.
@@ -1933,15 +1981,15 @@ export function playerPage(o) {
     const poll = d.latestPoll;
     const pollInToday = !!(poll && poll.status === 'open' && poll.canVote && !poll.myVote);
     sections = [
-      prfToday(d), prfThisWeek(d), prfMySeason(d), prfBadges(d, true),
+      prfToday(d), prfThisWeek(d), prfMySeason(d), prfPapawis(d, true), prfBadges(d, true),
       prfCommunity(d, true, pollInToday), prfCareer(d), prfAccount(d),
     ];
   } else {
-    sections = [prfPublicSeason(d), prfJoinCard(d), prfRecentGames(d), prfBadges(d, false), prfCommunity(d, false, false), prfCareer(d)];
+    sections = [prfPublicSeason(d), prfJoinCard(d), prfRecentGames(d), prfPapawis(d, false), prfBadges(d, false), prfCommunity(d, false, false), prfCareer(d)];
   }
   const NAV = own
-    ? { today: 'Today', 'this-week': 'This week', 'my-season': 'My season', badges: 'Badges', community: 'Community', career: 'Career', account: 'Account' }
-    : { season: 'Season', recent: 'Recent games', badges: 'Badges', community: 'What players say', career: 'Career' };
+    ? { today: 'Today', 'this-week': 'This week', 'my-season': 'My season', papawis: 'Papawis', badges: 'Badges', community: 'Community', career: 'Career', account: 'Account' }
+    : { season: 'Season', recent: 'Recent games', papawis: 'Papawis', badges: 'Badges', community: 'What players say', career: 'Career' };
   // Same sticky section nav as /games/:slug and /teams/:slug (views/section-nav.js):
   // scroll-spy, glide on click, mini title once it pins.
   const navItems = sections.filter(Boolean).map(s => s.match(/id="([^"]+)"/)[1]).filter(id => NAV[id]);

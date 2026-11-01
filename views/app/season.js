@@ -4,6 +4,7 @@
 // the Season screen"), so the app can't disagree with the site.
 import { esc, appAvatar, chev, icons, backChev } from './layout.js';
 import { AWARD_META } from '../player.js';
+import { papawisStatsBlock } from './papawis.js';
 
 // back: { href, label } — the screen it came from; data-hist-back lets app.js go back in
 // history when there is an app screen behind it (a face tapped in the chat goes back there).
@@ -38,9 +39,9 @@ function teamCover(p) {
 }
 
 // mine: your own profile — a camera on the photo changes it (the cover is changed in Settings).
-export function appPlayerPage({ back, p, cover, mine = false, season, stats, games, badges = [], career, awards, papawis }) {
+export function appPlayerPage({ back, p, cover, mine = false, season, stats, games, badges = [], career, awards, papawis, pwStats = null }) {
   const first = p.name.split(' ')[0];
-  const parts = [stats && ['pp-stats', 'Stats'], ['pp-games', 'Games'], badges.length && ['pp-badges', 'Badges'], career.length && ['pp-career', 'Career'], awards.length && ['pp-awards', 'Awards']].filter(Boolean);
+  const parts = [stats && ['pp-stats', 'Stats'], ['pp-games', 'Games'], badges.length && ['pp-badges', 'Badges'], career.length && ['pp-career', 'Career'], pwStats && ['pp-papawis', 'Papawis'], awards.length && ['pp-awards', 'Awards']].filter(Boolean);
   const shown = badges.slice(0, 8), more = badges.slice(8);
   const badgeTile = b => `<div class="pp-bdg">${medal(b)}<span>${esc(b.name)}<small>${esc([b.tier && b.tier !== 'legendary' ? b.tier.charAt(0).toUpperCase() + b.tier.slice(1) : '', b.meta].filter(Boolean).join(' · '))}</small></span></div>`;
   return `<div class="pp" data-pp>
@@ -75,10 +76,11 @@ export function appPlayerPage({ back, p, cover, mine = false, season, stats, gam
     <thead><tr><th>Season</th><th>GP</th><th>PTS</th><th>REB</th><th>AST</th></tr></thead>
     <tbody>${career.map(c => `<tr${c.current ? ' class="is-cur"' : ''}><td>Season ${esc(c.season)}</td><td class="num">${c.gp}</td><td class="num">${c.ppg}</td><td class="num">${c.rpg}</td><td class="num">${c.apg}</td></tr>`).join('')}</tbody>
   </table></div>` : ''}
+  ${papawisStatsBlock(pwStats, { id: 'pp-papawis', from: 'player', pid: p.id, max: 5 })}
   ${awards.length ? `<div class="sec" id="pp-awards">Awards</div>
   <div class="group group--icons">${awards.map(a => `<div class="cell"><span class="ico">${esc(a.icon)}</span><span class="cell__t">${esc(a.label)}<small>Season ${esc(a.season)}</small></span></div>`).join('')}</div>` : ''}
   ${p.writeup ? `<div class="sec">About</div><div class="card pp-about">${esc(p.writeup).replace(/\n+/g, '<br>')}</div>` : ''}
-  ${papawis ? `<div class="sec">Papawis</div><div class="group"><div class="cell"><span class="ico">${icons.ball}</span><span class="cell__t">${papawis} run${papawis === 1 ? '' : 's'} played</span></div></div>` : ''}
+  ${papawis && !pwStats ? `<div class="sec">Papawis</div><div class="group"><div class="cell"><span class="ico">${icons.ball}</span><span class="cell__t">${papawis} run${papawis === 1 ? '' : 's'} played</span></div></div>` : ''}
   <div style="height:12px"></div>
   </div>`;
 }
