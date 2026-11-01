@@ -734,14 +734,28 @@
   function fbMount(box) {
     if (box._fb) return; box._fb = true;
     var href = box.getAttribute('data-fb-embed'), video = box.getAttribute('data-fb-video') === '1';
-    var w = Math.max(320, Math.min(750, Math.round(box.clientWidth)));
+    // Facebook's post plugin won't draw narrower than 350px (a phone card is ~285–360), so it's
+    // drawn at least that wide and scaled down to the card (fbFit).
+    var w = Math.max(350, Math.min(750, Math.round(box.clientWidth)));
     var el = document.createElement('div');
     el.className = video ? 'fb-video' : 'fb-post';
     el.setAttribute('data-href', href); el.setAttribute('data-width', video ? 'auto' : String(w));
     if (video) { el.setAttribute('data-allowfullscreen', 'true'); el.setAttribute('data-show-text', 'false'); }
     else el.setAttribute('data-show-text', 'true');
     box.insertBefore(el, box.firstChild);
-    fbLoad().then(function (FB) { FB.XFBML.parse(box, function () { box.classList.add('is-loaded'); }); }, function () { box.classList.add('is-blocked'); });
+    fbLoad().then(function (FB) { FB.XFBML.parse(box, function () { box.classList.add('is-loaded'); if (!video) fbFit(box, el); }); }, function () { box.classList.add('is-blocked'); });
+  }
+  // Scale a post embed drawn wider than its card down to fit, and keep the card's height in step
+  // as Facebook resizes it (its height changes once the post's media loads).
+  function fbFit(box, el) {
+    var fit = function () {
+      var fw = el.offsetWidth, bw = box.clientWidth, k = fw > bw ? bw / fw : 1;
+      el.style.transform = k < 1 ? 'scale(' + k + ')' : '';
+      el.style.marginBottom = k < 1 ? (-(1 - k) * el.offsetHeight) + 'px' : '';
+    };
+    fit();
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(el);
+    else [500, 1500, 4000].forEach(function (t) { setTimeout(fit, t); });
   }
   function initFbEmbeds() {
     $$('[data-fb-embed]').forEach(function (box) { if (box._fbWatch) return; box._fbWatch = true; if (fbSeen) fbSeen.observe(box); else fbMount(box); });

@@ -6759,7 +6759,9 @@ const feedWhen = ms => manilaFormat(ms, { hour: 'numeric', minute: '2-digit' });
 function appAnnItem(a, pinned = false) {
   const at = a.shown_at || a.created_at;
   const type = FEED_TYPES[a.type] ? a.type : 'announcement';
-  return { kind: 'ann', id: a.id, day: pinned ? '' : feedDay(at), pinned, when: pinned ? feedDay(at) : feedWhen(at),
+  // A post dated back (to when it was on Facebook) shows no time: that's when it was added here.
+  const backdated = a.shown_at && a.shown_at < a.created_at - 12 * 3600e3;
+  return { kind: 'ann', id: a.id, day: pinned ? '' : feedDay(at), pinned, when: pinned ? feedDay(at) : backdated ? '' : feedWhen(at),
     by: a.created_by && a.created_by !== 'WKND' ? a.created_by : 'WKND League',
     // Feed post types: the label and chip on the card; a throwback names its original date.
     type, label: type === 'throwback' ? `Throwback · ${manilaFormat(at, { month: 'short', day: 'numeric', year: 'numeric' })}` : FEED_TYPES[type],

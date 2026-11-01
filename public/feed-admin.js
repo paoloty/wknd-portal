@@ -76,6 +76,17 @@
       setTimeout(function () { end(''); }, 8000);
     });
   };
+  // Send a video in 4 MB pieces, then its cover still (Server: …/video, …/video/done).
+  var sendVideo = function (id, video, tell) {
+    var base = '/admin/app/announcements/' + encodeURIComponent(id) + '/video', CH = 4 * 1024 * 1024, off = 0;
+    var next = function () {
+      if (off >= video.size) return frameOf(video).then(function (poster) { return post(base + '/done', { type: video.type || 'video/mp4', poster: poster }); });
+      (tell || say)('Uploading the video… ' + Math.round(off / video.size * 100) + '%');
+      return fetch(base + '?offset=' + off, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream' }, body: video.slice(off, off + CH) })
+        .then(function (res) { return res.json().catch(function () { return {}; }).then(function (j) { if (!res.ok) throw new Error(j.error || 'The upload stopped. Try again.'); off = j.size; return next(); }); });
+    };
+    return next();
+  };
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     var f = form.elements, t = type(), btn = form.querySelector('button[type=submit]');
@@ -91,15 +102,7 @@
     if (video) {
       data.draft = true; data.video = true;
       post('/admin/app/announcements', data).then(function (r) {
-        var base = '/admin/app/announcements/' + encodeURIComponent(r.id) + '/video', CH = 4 * 1024 * 1024, off = 0;
-        var next = function () {
-          if (off >= video.size) return frameOf(video).then(function (poster) { return post(base + '/done', { type: video.type || 'video/mp4', poster: poster }); })
-            .then(function () { return post('/admin/app/announcements/' + encodeURIComponent(r.id) + '/publish', { notify: data.notify }); });
-          say('Uploading the video… ' + Math.round(off / video.size * 100) + '%');
-          return fetch(base + '?offset=' + off, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream' }, body: video.slice(off, off + CH) })
-            .then(function (res) { return res.json().catch(function () { return {}; }).then(function (j) { if (!res.ok) throw new Error(j.error || 'The upload stopped. Try again.'); off = j.size; return next(); }); });
-        };
-        return next();
+        return sendVideo(r.id, video).then(function () { return post('/admin/app/announcements/' + encodeURIComponent(r.id) + '/publish', { notify: data.notify }); });
       }).then(done, fail);
       return;
     }
@@ -150,7 +153,13 @@
     else if (act === 'delete') { if (confirm('Delete this post? It disappears from the app.')) go(post(base + '/delete')); }
     else if (act === 'edit') {
       var g = function (n) { var el = item.querySelector('.fa-edit [name="' + n + '"]'); return el ? el.value : ''; };
-      go(post(base + '/edit', { type: g('type'), title: g('title'), body: g('body'), ref: g('ref'), link: g('link') }));
+      var vid = (item.querySelector('[data-fa-editvideo]') || {}).files;
+      vid = vid && vid[0];
+      if (vid && vid.size > 150 * 1024 * 1024) return alert('Videos can be up to 150 MB.');
+      // The video goes first, so a post switched to Highlight already has its video when it's checked.
+      go((vid ? sendVideo(item.getAttribute('data-fa-post'), vid, function (t) { b.textContent = t; }) : Promise.resolve()).then(function () {
+        return post(base + '/edit', { type: g('type'), title: g('title'), body: g('body'), ref: g('ref'), link: g('link') });
+      }));
     }
   });
 })();

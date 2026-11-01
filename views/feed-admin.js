@@ -46,6 +46,7 @@ export function feedAdminBody({ list = [], refOptions = [], now = Date.now(), th
           <label class="fa-f"><span>From a game or run</span>${refSelect('ref', a.ref || '')}</label>
           <label class="fa-f fa-f--wide"><span>Title or caption</span><input class="fa-in" name="title" value="${esc(a.title || '')}" maxlength="120"></label>
           <label class="fa-f fa-f--wide"><span>Message</span><textarea class="fa-in" name="body" rows="3" maxlength="2000">${esc(a.body || '')}</textarea></label>
+          <label class="fa-f fa-f--wide"><span>${a.video ? 'Replace the video' : 'Video file'}</span><input class="fa-in" type="file" accept="video/mp4,video/quicktime,video/*" data-fa-editvideo><small>Plays in the card, iPhone too, instead of the Facebook player. Up to 150 MB.</small></label>
           <label class="fa-f fa-f--wide"><span>Extra link (e.g. the Facebook album)</span><input class="fa-in" name="link" value="${esc(a.link_url || '')}" placeholder="https://www.facebook.com/media/set/…"></label>
         </div>
         <button type="button" class="fa-btn fa-btn--primary" data-fa-act="edit">Save changes</button>
