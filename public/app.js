@@ -748,13 +748,17 @@
   // Scale a post embed drawn wider than its card down to fit, and keep the card's height in step
   // as Facebook resizes it (its height changes once the post's media loads).
   function fbFit(box, el) {
+    // Measured on Facebook's own frame: a video post comes back ~552px wide whatever width was asked.
+    var frame = function () { return el.querySelector('iframe') || el.querySelector('span') || el; };
     var fit = function () {
-      var fw = el.offsetWidth, bw = box.clientWidth, k = fw > bw ? bw / fw : 1;
+      var f = frame(), fw = f.offsetWidth, fh = f.offsetHeight, bw = box.clientWidth, k = fw > bw ? bw / fw : 1;
+      el.style.width = fw + 'px';
       el.style.transform = k < 1 ? 'scale(' + k + ')' : '';
-      el.style.marginBottom = k < 1 ? (-(1 - k) * el.offsetHeight) + 'px' : '';
+      el.style.marginBottom = k < 1 ? (-(1 - k) * fh) + 'px' : '';
+      el.style.height = fh + 'px';
     };
     fit();
-    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(el);
+    if (typeof ResizeObserver !== 'undefined') { var ro = new ResizeObserver(fit); ro.observe(el); ro.observe(frame()); }
     else [500, 1500, 4000].forEach(function (t) { setTimeout(fit, t); });
   }
   function initFbEmbeds() {
