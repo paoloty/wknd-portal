@@ -530,7 +530,7 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
       <p>If you drop out late, someone else could have played in your place. Only claim it if you’re sure.</p>
       <div class="pwx-cf__game">${ICON.pin}<span><b id="pwx-cf-when"></b> · <span id="pwx-cf-court"></span> · slot <span id="pwx-cf-slot"></span></span></div>
       <div class="pwx-tl">
-        <div class="pwx-tl__r pwx-tl__r--free" id="pwx-cf-free"><i></i><span>Cancel for free<small>Right here, no questions asked</small></span><b id="pwx-cf-until"></b></div>
+        <div class="pwx-tl__r pwx-tl__r--free" id="pwx-cf-free"><i></i><span>Cancel for free<small id="pwx-cf-untilt"></small></span><b id="pwx-cf-until"></b></div>
         <div class="pwx-tl__r pwx-tl__r--lock"><i></i><span id="pwx-cf-lockt">Locked in<small>Your share, about <span id="pwx-cf-price"></span>, is yours to pay even if you can’t make it, unless someone takes your slot</small></span><b id="pwx-cf-from"></b></div>
       </div>
       <label class="pwx-check" for="pwx-cf-ok"><input type="checkbox" id="pwx-cf-ok"><span id="pwx-cf-oktext"></span></label>
@@ -546,8 +546,8 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
       <h3 id="pwx-gb-title">Give your slot back?</h3>
       <p id="pwx-gb-lead"></p>
       <div class="pwx-tl">
-        <div class="pwx-tl__r pwx-tl__r--free"><i></i><span>Someone takes it<small>You pay nothing. It still counts as a late drop.</small></span><b>₱0</b></div>
-        <div class="pwx-tl__r pwx-tl__r--lock"><i></i><span>No one takes it before the run<small>You pay for the slot you held</small></span><b id="pwx-gb-price"></b></div>
+        <div class="pwx-tl__r pwx-tl__r--free"><i></i><span>Someone takes it<small>You pay nothing. It still counts as a late drop.</small></span><b class="pwx-num">₱0</b></div>
+        <div class="pwx-tl__r pwx-tl__r--lock"><i></i><span>No one takes it before the run<small>You pay for the slot you held</small></span><b class="pwx-num" id="pwx-gb-price"></b></div>
       </div>
       <div class="pwx-cf__btns">
         <button class="pwx-btn pwx-btn--outline" type="button" id="pwx-gb-no">${lbl('I’ll be there')}</button>
@@ -626,7 +626,10 @@ function papawisScript(viewer) {
     setText('pwx-cf-price', price); setText('pwx-cf-when', btn.dataset.when); setText('pwx-cf-court', btn.dataset.court);
     setText('pwx-cf-slot', btn.dataset.slot + ' of ' + btn.dataset.max); setText('pwx-cf-max', btn.dataset.max);
     document.getElementById('pwx-cf-free').hidden = locked;
-    setText('pwx-cf-until', 'Until ' + btn.dataset.freeUntil);
+    // "Wed, Nov 4, 11:59 PM": the date on the right, the time in the line under.
+    var parts = String(btn.dataset.freeUntil || '').split(', ');
+    setText('pwx-cf-until', 'Until ' + parts.slice(0, -1).join(', '));
+    setText('pwx-cf-untilt', 'Right here, until ' + parts.slice(-1)[0] + ' that day');
     setText('pwx-cf-from', locked ? 'From now' : 'After that');
     setText('pwx-cf-oktext', locked ? 'I’ll show up, or pay my share if no one takes my slot.' : 'I’ll show up, or pay my share if I drop out after ' + btn.dataset.freeUntil + ' and no one takes my slot.');
     cfOk.checked = false; cfYes.disabled = true;

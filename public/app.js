@@ -1025,7 +1025,8 @@
     var share = price ? 'your ' + price + ' share' : 'your share';
     var el = admSheet('You’re taking 1 of ' + b.getAttribute('data-pw-max') + ' slots',
       '<div class="pw-commit"><p>If you drop out late, someone else could have played in your place. Only claim it if you’re sure.</p>' +
-      '<div class="pw-tl">' + (locked ? '' : '<div class="pw-tl__r pw-tl__r--free"><i></i><span>Cancel for free<small>In the app, no questions asked</small></span><b>Until ' + admEsc(until) + '</b></div>') +
+      // "Wed, Nov 4, 11:59 PM": the date on the right, the time in the line under.
+      '<div class="pw-tl">' + (locked ? '' : '<div class="pw-tl__r pw-tl__r--free"><i></i><span>Cancel for free<small>In the app, until ' + admEsc(until.split(', ').slice(-1)[0]) + ' that day</small></span><b>Until ' + admEsc(until.split(', ').slice(0, -1).join(', ')) + '</b></div>') +
       '<div class="pw-tl__r pw-tl__r--lock"><i></i><span>Locked in<small>' + admEsc(share.charAt(0).toUpperCase() + share.slice(1)) + ' is yours to pay even if you can’t make it, unless someone takes your slot</small></span><b>' + (locked ? 'From now' : 'After that') + '</b></div></div>' +
       '<label class="pw-check"><input type="checkbox" data-pw-ok><span>' + admEsc(locked ? 'I’ll show up, or pay my share if no one takes my slot.' : 'I’ll show up, or pay my share if I drop out after ' + until + ' and no one takes my slot.') + '</span></label>' +
       '<button type="button" class="btn" data-pw-go disabled>Confirm slot ' + admEsc(b.getAttribute('data-pw-slot')) + '</button></div>');
@@ -1038,8 +1039,8 @@
     var n = Number(b.getAttribute('data-pw-waiting')) || 0, price = b.getAttribute('data-pw-price');
     var el = admSheet('Give your slot back?',
       '<div class="pw-commit"><p>' + (n ? 'We’ll offer it to the <b>' + n + ' player' + (n === 1 ? '' : 's') + ' on the waitlist</b> right away.' : 'Nobody is on the waitlist yet. The next player to join takes it.') + '</p>' +
-      '<div class="pw-tl"><div class="pw-tl__r pw-tl__r--free"><i></i><span>Someone takes it<small>You pay nothing. It still counts as a late drop.</small></span><b>₱0</b></div>' +
-      '<div class="pw-tl__r pw-tl__r--lock"><i></i><span>No one takes it before the run<small>You pay for the slot you held</small></span><b>' + admEsc(price || 'Your share') + '</b></div></div>' +
+      '<div class="pw-tl"><div class="pw-tl__r pw-tl__r--free"><i></i><span>Someone takes it<small>You pay nothing. It still counts as a late drop.</small></span><b class="num">₱0</b></div>' +
+      '<div class="pw-tl__r pw-tl__r--lock"><i></i><span>No one takes it before the run<small>You pay for the slot you held</small></span><b' + (price ? ' class="num"' : '') + '>' + admEsc(price || 'Your share') + '</b></div></div>' +
       '<button type="button" class="btn btn--red" data-pw-go>Give my slot back</button><button type="button" class="btn btn--ghost" data-sheet-x>I’ll be there</button></div>');
     $('[data-pw-go]', el).addEventListener('click', function () { closeSheet(); go(); });
   }
