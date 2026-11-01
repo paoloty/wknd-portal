@@ -10393,8 +10393,28 @@ function fbEmbedOf(raw) {
   try { u = new URL(String(raw || '').trim()); } catch { return null; }
   if (!/(^|\.)facebook\.com$|(^|\.)fb\.watch$/i.test(u.hostname)) return null;
   u.hash = '';
-  const video = /fb\.watch$/i.test(u.hostname) || /\/(videos|watch|reel|reels)\b/i.test(u.pathname) || u.searchParams.has('v');
+  const video = /fb\.watch$/i.test(u.hostname) || /\/(videos|watch|reel|reels)\b/i.test(u.pathname) || /^\/share\/[vr]\//i.test(u.pathname) || u.searchParams.has('v');
   return { url: u.toString(), video };
+}
+// Facebook's share links (facebook.com/share/v/…, /share/r/…, /share/p/…, fb.watch/…, what the
+// app's Share button copies) only redirect to the real address for Facebook's own link-preview
+// crawler, and its embed needs the real one (e.g. facebook.com/reel/<id>). Resolved once when a
+// post is saved; anything else, or a failure, comes back as it was.
+async function fbResolve(raw) {
+  const s = String(raw || '').trim();
+  let u;
+  try { u = new URL(s); } catch { return s; }
+  const share = /(^|\.)facebook\.com$/i.test(u.hostname) && /^\/share\//i.test(u.pathname);
+  if (!share && !/(^|\.)fb\.watch$/i.test(u.hostname)) return s;
+  try {
+    const r = await fetch(s, { redirect: 'manual', headers: { 'User-Agent': 'facebookexternalhit/1.1' }, signal: AbortSignal.timeout(6000) });
+    const loc = r.headers.get('location');
+    if (!loc) return s;
+    const to = new URL(loc, s);
+    if (!/(^|\.)facebook\.com$/i.test(to.hostname) || /^\/(login|share)\b/i.test(to.pathname)) return s;
+    const v = to.pathname.startsWith('/watch') ? to.searchParams.get('v') : '';
+    return `https://www.facebook.com${to.pathname}${v ? `?v=${encodeURIComponent(v)}` : ''}`;
+  } catch { return s; }
 }
 // "2026-11-01T18:30" in Manila → ms, or null.
 const manilaInputMs = v => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(v || '')) ? Date.parse(`${v}:00+08:00`) : null);
@@ -10449,8 +10469,9 @@ function feedPostFields(b, { photosComing = false } = {}) {
   if (type === 'throwback' && !fb && !youtube && !photosComing) return 'A throwback needs a Facebook or YouTube link, or photos.';
   return { type, title, body, facebook: fb ? fb.url : '', youtube, link, ref };
 }
-app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' }), (req, res) => {
+app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' }), async (req, res) => {
   const b = req.body || {};
+  if (b.facebook) b.facebook = await fbResolve(b.facebook);
   const image = String(b.image || '');
   if (b.image) req.body.image = '(photo)'; // keep the admin log small
   const f = feedPostFields(b, { photosComing: !!b.draft });
@@ -10500,8 +10521,13 @@ app.post('/admin/app/announcements/:id/hide', requireAuth, express.json(), (req,
 });
 // Bulk add (past Facebook and YouTube links): { lines: "link, YYYY-MM-DD[, type]\n…", dry }.
 // Every line is checked first; with dry it only answers the preview. Nobody is notified.
-app.post('/admin/app/announcements/bulk', requireAuth, express.json({ limit: '200kb' }), (req, res) => {
-  const lines = String(req.body?.lines || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(0, 100);
+app.post('/admin/app/announcements/bulk', requireAuth, express.json({ limit: '200kb' }), async (req, res) => {
+  const raw = String(req.body?.lines || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(0, 100);
+  // Share links become their real addresses first (fbResolve), a few at a time.
+  const lines = [];
+  for (let i = 0; i < raw.length; i += 6) {
+    lines.push(...await Promise.all(raw.slice(i, i + 6).map(async l => { const [u = '', ...rest] = l.split(','); return [await fbResolve(u.trim()), ...rest].join(','); })));
+  }
   const sixMonths = Date.now() - 183 * 86400e3;
   const rows = lines.map((l, i) => {
     const [url = '', date = '', t = ''] = l.split(',').map(x => x.trim());
