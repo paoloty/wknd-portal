@@ -92,7 +92,7 @@ import {
   updateGameRecap, updateGameYoutube, updateGameCover, getGameCoverWrites, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
   importGameResults, markGameFinal, setGameOvertime, createGame, setGameReviewLocked, setGameFinalScore,
   getGamePlayerStat, updateGamePlayerStat, getStatCorrectionsForGame, EDITABLE_STAT_FIELDS,
-  updatePlayerPhoto, updatePlayer,
+  updatePlayerPhoto, updatePlayer, getRecentPlayerUploads,
   getPlayerPhotoOriginal, updatePlayerPhotoOriginal,
   getAwardPhotoOverrides, upsertAwardPhotoOverride, deleteAwardPhotoOverride,
   getAwardPhotoOverridesForPlayer, deleteAwardPhotoOverridesFromSlot, getMvpPhotoMeta, getPlayerAwardPhotoKeys,
@@ -246,7 +246,7 @@ import {
 import { COURT_SEEDS } from './lib/court-seeds.js';
 import { joinPage, joinFaq } from './views/join.js';
 import { adminPicksBody } from './views/admin/picks.js';
-import { adminPlayersBody } from './views/admin/players.js';
+import { adminPlayersBody, adminPlayerUploadsBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
 import { adminCoachNotesBody } from './views/admin/coach-notes.js';
@@ -10927,7 +10927,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
         if (!imgRes.ok) return;
         const buf  = Buffer.from(await imgRes.arrayBuffer());
         const mime = imgRes.headers.get('content-type') || 'image/jpeg';
-        updatePlayerPhoto(playerId, `data:${mime};base64,${buf.toString('base64')}`);
+        updatePlayerPhoto(playerId, `data:${mime};base64,${buf.toString('base64')}`, 'facebook');
       } catch (e) {
         console.error('[fb photo]', e.message);
       }
@@ -13126,6 +13126,14 @@ app.get('/admin/players', requireAuth, (req, res) => {
   }));
 });
 
+// Recent uploads (Paolo, 2026-11-01): who changed their profile photo or cover, newest first.
+// Photos are recorded from 2026-11-01 on; covers have always had their date.
+app.get('/admin/players/uploads', requireAuth, (req, res) => {
+  const teams = getAllTeams();
+  const rows = getRecentPlayerUploads().map(u => ({ ...u, display: displayPlayerName(u.name || ''), color: teamColorById(teams, u.team_id) }));
+  res.send(renderAdminPage(req, { title: 'Recent uploads', currentPath: '/admin/players', body: adminPlayerUploadsBody({ rows, query: req.query }) }));
+});
+
 app.get('/admin/players/:id', requireAuth, (req, res) => {
   const player = getPlayerWithTeam(req.params.id);
   if (!player) return res.status(404).send(renderAdminPage(req, {
@@ -13212,7 +13220,7 @@ app.post('/admin/players/:id/photo', requireAuth, express.json({ limit: '20mb' }
   if (!player) return res.status(404).json({ error: 'Not found' });
   const dataUrl = String(req.body.dataUrl || '');
   if (!dataUrl.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image data' });
-  updatePlayerPhoto(player.id, dataUrl);
+  updatePlayerPhoto(player.id, dataUrl, `admin:${req.session?.playerName || 'Admin'}`);
   const originalDataUrl = String(req.body.originalDataUrl || '');
   const originalBuf = originalDataUrl ? parseDataUrl(originalDataUrl) : null;
   if (originalBuf) {
@@ -16355,7 +16363,7 @@ app.post('/admin/player/:id/photo', requireAuth, jsonLarge, async (req, res) => 
       .jpeg({ quality: 85, progressive: true })
       .toBuffer();
 
-    updatePlayerPhoto(player.id, 'data:image/jpeg;base64,' + compressed.toString('base64'));
+    updatePlayerPhoto(player.id, 'data:image/jpeg;base64,' + compressed.toString('base64'), `admin:${req.session?.playerName || 'Admin'}`);
 
     const originalBuf = parseDataUrl(req.body.originalDataUrl);
     if (originalBuf) {
@@ -16391,7 +16399,7 @@ app.post('/me/photo', jsonLarge, async (req, res) => {
       .jpeg({ quality: 85, progressive: true })
       .toBuffer();
 
-    updatePlayerPhoto(playerId, 'data:image/jpeg;base64,' + compressed.toString('base64'));
+    updatePlayerPhoto(playerId, 'data:image/jpeg;base64,' + compressed.toString('base64'), 'self');
 
     const originalBuf = parseDataUrl(req.body.originalDataUrl);
     if (originalBuf) {

@@ -5,7 +5,7 @@
 // public/admin-players.js.
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
-import { pageHeader, dataGrid, badge, button, avatar } from './ui.js';
+import { pageHeader, dataGrid, badge, button, avatar, ago } from './ui.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
@@ -70,8 +70,40 @@ export function adminPlayersBody({ players = [], seasons = [], season = '', team
   const recompute = button('Recompute ratings', { kind: 'secondary', attrs: `data-apl-recompute-all data-season="${attr(season)}" data-title="Recompute ratings for ${attr(seasonLabel)}?" data-body="Rebuilds every player’s ratings from their games. Overrides you set stay as they are."` });
 
   return `<div class="aui-page">
-    ${pageHeader({ title: 'Players', sub: `${active} active · ${rows.length} in all · ratings for ${seasonLabel}`, actionsHtml: recompute })}
+    ${pageHeader({ title: 'Players', sub: `${active} active · ${rows.length} in all · ratings for ${seasonLabel}`, actionsHtml: button('Recent uploads', { kind: 'secondary', href: '/admin/players/uploads' }) + recompute })}
     ${grid}
   </div>
   <script src="/admin-players.js${ver ? `?v=${ver}` : ''}" defer></script>`;
+}
+
+
+// Recent uploads (server.js /admin/players/uploads, 2026-11-01): profile photos and covers,
+// newest first, with who did it. rows: { player_id, display, color, kind, by, at, status }.
+// Photos are only known from 2026-11-01 (nothing was recorded before); covers always were.
+const BY = by => (by === 'self' ? 'The player' : by === 'facebook' ? 'Facebook sign-in' : String(by || '').startsWith('admin:') ? `Admin · ${by.slice(6)}` : '—');
+const when = ms => new Date(ms).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+export function adminPlayerUploadsBody({ rows = [], query = {} } = {}) {
+  const enc = encodeURIComponent;
+  const grid = dataGrid({
+    id: 'uploads', baseUrl: '/admin/players/uploads', query,
+    rows, rowKey: r => `${r.kind}:${r.player_id}`, noun: ['upload', 'uploads'], perPage: 50, minimal: true,
+    views: [
+      { key: 'all', label: 'All', test: () => true },
+      { key: 'photo', label: 'Profile photos', test: r => r.kind === 'photo' },
+      { key: 'cover', label: 'Covers', test: r => r.kind === 'cover' },
+    ],
+    search: { placeholder: 'Search name', text: r => r.display },
+    defaultSort: '-at',
+    columns: [
+      { key: 'name', label: 'Player', primary: true, sort: r => r.display.toLowerCase(), cell: r => `<span class="aui-who">${avatar(r.display, r.color || '', { size: 32, playerId: r.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.display)}</span><span class="aui-cell__sub">${escHtml(BY(r.by))}</span></span></span>` },
+      { key: 'kind', label: 'What', bare: true, sort: r => r.kind, cell: r => badge(r.kind === 'cover' ? 'Cover' : 'Profile photo', r.kind === 'cover' ? 'blue' : 'gray') },
+      { key: 'at', label: 'When', nowrap: true, sort: r => r.at, cell: r => `<span class="aui-cell__stack"><span>${escHtml(ago(r.at))}</span><span class="aui-cell__sub">${escHtml(when(r.at))}</span></span>` },
+    ],
+    rowHref: r => `/admin/players/${enc(r.player_id)}`,
+    empty: { title: 'No uploads yet', sub: 'Profile photos show here from Nov 1, 2026 on, when the app started recording them. Covers show from when they were added.' },
+  });
+  return `<div class="aui-page">
+    ${pageHeader({ eyebrow: 'Players', title: 'Recent uploads', sub: 'Profile photos and covers, newest first. Profile photos are recorded from Nov 1, 2026; earlier ones have no date.', actionsHtml: button('All players', { kind: 'secondary', href: '/admin/players' }) })}
+    ${grid}
+  </div>`;
 }
