@@ -2445,8 +2445,9 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 
 /* Cards an admin shares (views/app/barkadahan.js bkCardHtml, 2026-10-28): a compact .card
    inside the message, with the pick bars of Who wins? (.pick__opt) and one amber action. */
-/* Cards an admin shares (Papawis, Who wins?, welcomes, birthdays) are for everyone: full width, not a chat bubble (Paolo, 2026-11-01). */
-.bk-m:has(.bk-cardw) { width: 100%; max-width: 100%; }
+/* Cards an admin shares (Papawis, Who wins?, welcomes, birthdays) are for everyone, not a chat
+   bubble: one width for all, set in from the edges, with room between them (Paolo, 2026-11-01). */
+.bk-m:has(.bk-cardw) { align-self: stretch; width: auto; max-width: none; margin: 6px 8px; }
 .bk-m:has(.bk-cardw) > .bk-av { display: none; }
 .bk-m.is-cont:has(.bk-cardw) { padding-left: 0; }
 .bk-m:has(.bk-cardw) .bk-m__b { flex: 1; }
@@ -2455,8 +2456,8 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .bk-cardw.is-held { opacity: .6; transform: scale(.98); transition: opacity .12s ease, transform .12s ease; }
 .bkc { border-radius: 14px; border: 1px solid var(--border); background: var(--card-bg); box-shadow: var(--card-hi), var(--shadow); overflow: hidden; }
 .bkc.is-loading { height: 104px; background: var(--surface-2); }
-.bkc.is-gone { padding: 12px 14px; font-size: 12px; color: var(--muted); }
-.bkc__top { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.bkc.is-gone { padding: 14px; font-size: 12px; color: var(--muted); }
+.bkc__top { display: flex; align-items: center; gap: 12px; padding: 14px 14px 12px; }
 .bkc__ic { flex: none; width: 44px; height: 44px; border-radius: var(--r-in); background: var(--surface-2); color: var(--muted); display: flex; align-items: center; justify-content: center; }
 .bkc__ic svg { width: 22px; height: 22px; }
 .bkc__t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -2468,7 +2469,7 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .bkc__seats i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .bkc__seats i.is-open { background: none; box-shadow: inset 0 0 0 1.5px var(--subtle); }
 .bkc__seats em { font-style: normal; font-size: 13px; font-weight: 700; color: var(--amber-text); margin-left: 5px; line-height: 1; }
-.bkc__act { display: flex; align-items: center; gap: 10px; padding: 0 12px 12px; }
+.bkc__act { display: flex; align-items: center; gap: 12px; padding: 0 14px 14px; }
 .bkc__btn { flex: 1; min-height: 40px; }
 .bkc__more { flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; margin-left: auto; font-size: 13px; font-weight: 600; color: var(--amber-text); white-space: nowrap; line-height: 1; }
 .bkc__more .chev { width: 7px; height: 11px; }
@@ -2479,10 +2480,10 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .bkc__top--pick { justify-content: space-between; padding-bottom: 8px; }
 .bkc__state { flex: none; font-size: 12px; font-weight: 600; color: var(--muted); }
 .bkc__state.is-open { color: var(--amber-text); }
-.bkc__score { padding: 0 12px 8px; font-size: 18px; font-weight: 700; }
-.bkc__opts { padding: 0 12px; gap: 6px; }
+.bkc__score { padding: 0 14px 8px; font-size: 18px; font-weight: 700; }
+.bkc__opts { padding: 0 14px; gap: 8px; }
 .bkc__opts .pick__opt { min-height: 44px; font-size: 14px; }
-.bkc__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 12px 2px; min-height: 40px; font-size: 12px; color: var(--muted); }
+.bkc__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 14px 6px; min-height: 40px; font-size: 12px; color: var(--muted); }
 .bkc__foot .num { font-size: 13px; color: var(--text); }
 .bkc__win { color: var(--win); font-weight: 600; }
 /* Admins: + beside the emoji button opens the share list; the card waits above the box. */
