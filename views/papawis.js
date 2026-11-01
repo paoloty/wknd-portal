@@ -177,9 +177,37 @@ function faceStack(confirmed, maxSlots, { kind }) {
   });
 }
 
+// Late drops (server.js): who gave their slot back inside the window, and whether it was taken.
+// Excused ones aren't shown.
+export const PW_STRIKE_NOTE = '3 late drops or no-shows in 60 days, so an admin moves you in';
+function lateLine(drops) {
+  const shown = drops.filter(d => d.late_outcome && d.late_outcome !== 'excused');
+  if (!shown.length) return '';
+  const who = d => escHtml(d.guest_name || firstWordOf(d.player_name) || 'A player');
+  return `<p class="pwx-late">${ICON.lock}<span><b>Gave their slot back late:</b> ${shown.map(d => `${who(d)} <span class="pwx-late__o">${d.late_outcome === 'open' ? 'slot open' : d.late_outcome === 'charged' ? 'not taken' : 'slot taken'}</span>`).join(', ')}</span></p>`;
+}
+
+// The red "You're locked in" bar on every page (server.js pwLockedSlotFor; Paolo, 2026-11-01:
+// red on purpose, the one red sticky). x: { id, title, day, place, clock, waiting, price }.
+export function papawisLockedBar(x) {
+  if (!x) return '';
+  const when = x.clock ? `at ${x.clock}` : '';
+  const cost = x.price ? `If no one takes it, you pay ${escHtml(x.price)}.` : 'If no one takes it, you pay your share.';
+  const lead = x.waiting
+    ? (x.waiting === 1 ? 'Your slot could have gone to the player on the waitlist. Show up, or give it back now so they can play.'
+      : `Your slot could have gone to one of the ${x.waiting} players on the waitlist. Show up, or give it back now so one of them can play.`)
+    : 'Your slot could have gone to someone else. Show up, or give it back now so someone can claim it.';
+  return `<div class="pw-lock-bar" role="status" data-pw-lock-bar>
+  <span class="pw-lock-bar__ic" aria-hidden="true">!</span>
+  <a class="pw-lock-bar__t" href="/papawis#pw-game-${escHtml(x.id)}"><b>You’re locked in for ${escHtml(x.title)}${when ? ` ${escHtml(when)}` : ''}${x.place ? ` · ${escHtml(x.place)}` : ''}</b><small>${lead} ${cost}</small></a>
+  <a class="pw-lock-bar__btn" href="/papawis?giveback=${encodeURIComponent(x.id)}#pw-game-${escHtml(x.id)}">I can’t make it</a>
+</div>
+<script>(function(){var b=document.querySelector('[data-pw-lock-bar]'),h=document.querySelector('.site-header');if(!b)return;function f(){b.style.top=(h&&getComputedStyle(h).position==='sticky'?h.offsetHeight:0)+'px';}f();addEventListener('resize',f);})();</script>`;
+}
+
 // ── one upcoming run (the full block) ───────────────────────────────────────
 function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
-  const { isLoggedIn, viewerPlayerId, hasBalance, alertsOn, banned } = ctx;
+  const { isLoggedIn, viewerPlayerId, hasBalance, alertsOn, banned, held, lateByGame = {} } = ctx;
   const dLeft = daysUntil(g.date);
   const scheduled = !isPapawisSignupOpenNow(g);
   const pub = scheduled ? [] : signups;                       // held-back rosters stay private
@@ -190,8 +218,13 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
   const full = !scheduled && filled >= max;
   const cancellable = dLeft >= CUTOFF_DAYS;
   const cutoffDate = addDays(g.date, -CUTOFF_DAYS);
+  // Free cancelling runs through the whole cutoff day (server.js late drops).
+  const freeUntil = `${fmtDay(cutoffDate)}, 11:59 PM`;
+  const lockAt = new Date(`${addDays(g.date, -(CUTOFF_DAYS - 1))}T00:00:00+08:00`).getTime();
+  const started = Date.now() >= tipoffMs(g);
   const mySignup = scheduled ? null : pub.find(s => !s.guest_name && s.player_id === viewerPlayerId);
   const mySlot = mySignup ? confirmed.indexOf(mySignup) + 1 : 0;
+  const mineIn = mySignup?.status === 'confirmed';
   const kind = scheduled ? 'wait' : full ? 'full' : isToday ? 'today' : 'open';
   const st = ST[kind];
   const opensAt = papawisSignupOpensAtMs(g);
@@ -267,15 +300,22 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
       <div class="pwx-who__head"><span class="pwx-k">Who's in<span class="pwx-mob-only"> · <b>${filled}</b> of ${max}</span></span>${whoBtn}</div>
       ${faceGrid(confirmed, max, { isLoggedIn, viewerPlayerId, kind })}
       ${faceStack(confirmed, max, { kind })}
+      ${scheduled ? '' : lateLine(lateByGame[g.id] || [])}
     </div>`;
 
   // details
   const price = g.price_per_head ? peso(g.price_per_head) : '—';
-  const cancelK = isToday || !cancellable ? 'Cancellations' : 'Cancel by';
-  const cancelV = cancellable ? fmtDay(cutoffDate) : 'Closed · message an admin';
-  const cancelNote = cancellable
-    ? `Drop out yourself, free, until ${CUTOFF_DAYS} days before tip-off. After that only an admin can take you off the list.`
-    : `The window closed ${fmtDay(cutoffDate)}. Can't make it? Message an admin so your slot goes to the next person in line.`;
+  // What a locked-in slot costs, in words (the price is an estimate until close-out).
+  const owe = g.price_per_head ? `Your ${peso(g.price_per_head)} share` : 'Your share';
+  const priceData = g.price_per_head ? peso(g.price_per_head) : '';
+  // The cancel row: your own slot (free to cancel for …, or locked in), else the rule.
+  const cancelRow = mineIn && !cancellable && !started
+    ? `<div class="pwx-row pwx-row--locked"><span class="pwx-k">Your slot · ${mySlot} of ${max}</span><span class="pwx-v">Locked in</span><span class="pwx-note">Free cancelling closed ${escHtml(freeUntil)}. ${escHtml(owe)} is yours to pay unless someone from the list takes your slot.</span></div>`
+    : mineIn && cancellable
+      ? `<div class="pwx-row"><span class="pwx-k">Your slot · ${mySlot} of ${max}</span><span class="pwx-v pwx-v--ok" data-lock-cd="${lockAt}">Free to cancel</span><span class="pwx-note">Until ${escHtml(freeUntil)}. After that ${escHtml(owe.charAt(0).toLowerCase() + owe.slice(1))} is yours to pay unless someone takes your slot.</span></div>`
+      : cancellable
+        ? `<div class="pwx-row"><span class="pwx-k">Free cancel until</span><span class="pwx-v">${escHtml(freeUntil)}</span><span class="pwx-note">Cancel yourself, free, until then. After that a slot is yours to pay for unless someone takes it.</span></div>`
+        : `<div class="pwx-row"><span class="pwx-k">Cancellations</span><span class="pwx-v">Closed</span><span class="pwx-note">Inside ${CUTOFF_DAYS} days, a player who can’t make it gives their slot back, and pays unless someone takes it.</span></div>`;
   const waitV = scheduled ? 'Opens with the list' : waitlist.length ? `${waitlist.length} waiting` : full ? 'Empty' : `Empty · ${open} slot${open === 1 ? '' : 's'} still open`;
   const details = `<div class="pwx-details">
       <div class="pwx-mob-only pwx-mob-more">
@@ -283,7 +323,7 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
         ${placeLine}${placeBtns}
       </div>
       <div class="pwx-row"><span class="pwx-k">Per head</span><span class="pwx-num pwx-price">${price}</span><span class="pwx-note">Estimate with ${Math.max(filled, max)} players · court + ref split after the game</span></div>
-      <div class="pwx-row"><span class="pwx-k">${cancelK}</span><span class="pwx-v">${cancelV}</span><span class="pwx-note">${cancelNote}</span></div>
+      ${cancelRow}
       <div class="pwx-row"><span class="pwx-k">Waitlist</span><span class="pwx-v">${waitV}</span><span class="pwx-note">Moves up on its own if someone drops</span></div>
     </div>`;
 
@@ -296,10 +336,12 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
     btn = `<button class="pwx-btn" type="button" disabled>${ICON.lock}${lbl('Claim a slot')}</button>`;
     note = noteHtml(`Opens ${fmtDay(opensDay)} · 8:00 AM`);
   } else if (mySignup?.status === 'confirmed') {
+    // Inside the window: give the slot back (late drops, server.js), not message an admin.
     btn = cancellable
       ? `<button class="pwx-btn pwx-btn--outline" type="button" data-pwx-act="cancel" data-game="${gid}">${lbl('Cancel my spot')}</button>`
-      : `<button class="pwx-btn" type="button" disabled>${ICON.lock}${lbl('Cancel my spot')}</button>`;
-    note = noteHtml(`You're in · slot ${mySlot}`, cancellable ? ` · free to cancel until ${fmtDay(cutoffDate)}` : ' · cancellation closed', true);
+      : started ? `<button class="pwx-btn" type="button" disabled>${ICON.lock}${lbl('The run has started')}</button>`
+      : `<button class="pwx-btn pwx-btn--danger" type="button" data-pwx-act="giveback" data-game="${gid}" data-waiting="${waitlist.length}" data-price="${escHtml(priceData)}">${lbl('I can’t make it')}</button>`;
+    note = noteHtml(`You're in · slot ${mySlot}`, cancellable ? ` · free to cancel until ${escHtml(freeUntil)}` : ' · locked in', true);
     // Rate & Win free run: put it on this spot, or take it off again.
     const v = ctx.voucher;
     if (v?.applied.has(mySignup.id)) note += `<span class="pwx-note-line pwx-voucher">${ICON.check}<b>Free run applied</b> · this run is on us · <button type="button" class="pwx-linkbtn" data-pwx-act="voucher" data-use="0" data-game="${gid}">Undo</button></span>`;
@@ -311,7 +353,7 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
   } else if (mySignup?.status === 'waitlist') {
     const pos = waitlist.indexOf(mySignup) + 1;
     btn = `<button class="pwx-btn pwx-btn--outline" type="button" data-pwx-act="cancel" data-game="${gid}">${lbl('Leave the waitlist')}</button>`;
-    note = noteHtml(`You're #${pos} on the waitlist`, ' · you move up on your own if someone drops', true);
+    note = noteHtml(`You're #${pos} on the waitlist`, held ? ' · an admin moves you in (late drops or no-shows lately)' : ' · you move up on your own if someone drops', true);
   } else if (!isLoggedIn) {
     btn = `<a class="pwx-btn" href="${loginHref}">${lbl(full ? 'Join the waitlist &rarr;' : 'Claim a slot &rarr;')}</a>`;
     note = noteHtml(full ? `${waitlist.length} waiting` : `${open} slot${open === 1 ? '' : 's'} left`, ' · log in to claim');
@@ -321,14 +363,15 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
   } else if (hasBalance) {
     btn = `<a class="pwx-btn" href="/settle-balance">${lbl('Settle my balance &rarr;')}</a>`;
     note = noteHtml('You have an unpaid Papawis game', ' · settle it to join');
-  } else if (full) {
+  } else if (full || held) {
     btn = `<button class="pwx-btn" type="button" data-pwx-act="join" data-game="${gid}">${lbl('Join the waitlist &rarr;')}</button>`;
-    note = noteHtml(`${waitlist.length} waiting`, ' · join and you move up if a slot opens');
+    note = held ? noteHtml('You join on the waitlist', ` · ${PW_STRIKE_NOTE}`) : noteHtml(`${waitlist.length} waiting`, ' · join and you move up if a slot opens');
   } else {
     const label = isToday ? 'Grab a last slot &rarr;' : 'Claim a slot &rarr;';
-    // Inside the cutoff a claim can't be cancelled later → confirm first (dialog below).
-    btn = `<button class="pwx-btn" type="button" data-pwx-act="join" data-game="${gid}"${cancellable ? '' : ` data-confirm="1" data-slot="${filled + 1}" data-max="${max}" data-when="${escHtml(isToday ? `Today${startClock(g) ? ` · ${startClock(g)}` : ''}` : `${fmtDay(g.date)}${startClock(g) ? ` · ${startClock(g)}` : ''}`)}" data-court="${escHtml(court)}" data-price="${escHtml(price)}"`}>${lbl(label)}</button>`;
-    note = noteHtml(`${open} slot${open === 1 ? '' : 's'} left`, cancellable ? ` · cancel free until ${fmtDay(cutoffDate)}` : " · claims inside 3 days can't be cancelled");
+    // Every claim confirms first: the slot is yours to pay for once free cancelling closes
+    // (the commitment dialog below; Paolo, 2026-11-01).
+    btn = `<button class="pwx-btn" type="button" data-pwx-act="join" data-game="${gid}" data-confirm="1" data-locked="${cancellable ? '' : '1'}" data-free-until="${escHtml(freeUntil)}" data-slot="${filled + 1}" data-max="${max}" data-when="${escHtml(isToday ? `Today${startClock(g) ? ` · ${startClock(g)}` : ''}` : `${fmtDay(g.date)}${startClock(g) ? ` · ${startClock(g)}` : ''}`)}" data-court="${escHtml(court)}" data-price="${escHtml(priceData)}">${lbl(label)}</button>`;
+    note = noteHtml(`${open} slot${open === 1 ? '' : 's'} left`, cancellable ? ` · cancel free until ${escHtml(freeUntil)}` : ' · yours to pay for once you claim');
   }
   const action = `<div class="pwx-action">${btn}${note}<div class="pwx-err" data-err-for="${gid}" hidden></div></div>`;
 
@@ -425,8 +468,10 @@ function pastCard(g, signups, { isLoggedIn, hidden }) {
 const PAST_SHOWN = 8;
 
 // ── page ────────────────────────────────────────────────────────────────────
-export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = null, viewer = null, isLoggedIn = false, hasBalance = false, summary = null, isAdmin = false, alertsOn = null, voucher = null, banned = false } = {}) {
-  const ctx = { isLoggedIn, viewerPlayerId, hasBalance, alertsOn, voucher, banned };
+// lateByGame: each upcoming run's late drops (server.js getPapawisLateDrops) · held: too many
+// late drops or no-shows lately, so joins go on the waitlist
+export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = null, viewer = null, isLoggedIn = false, hasBalance = false, summary = null, isAdmin = false, alertsOn = null, voucher = null, banned = false, lateByGame = {}, held = false } = {}) {
+  const ctx = { isLoggedIn, viewerPlayerId, hasBalance, alertsOn, voucher, banned, lateByGame, held };
   const key = g => `${g.date}T${g.start_time || '00:00'}`;
   const upcoming = games.filter(g => g.status === 'open' && daysUntil(g.date) >= 0).sort((a, b) => key(a) < key(b) ? -1 : 1);
   const past = games.filter(g => !upcoming.includes(g)).sort((a, b) => key(a) < key(b) ? 1 : -1);
@@ -481,14 +526,34 @@ export function papawisPage({ games = [], signupsByGame = {}, viewerPlayerId = n
 
   <div class="pwx-cf-back" id="pwx-cf" hidden>
     <div class="pwx-cf" role="dialog" aria-modal="true" aria-labelledby="pwx-cf-title">
-      <span class="pwx-cf__icon">${ICON.lock}</span>
-      <h3 id="pwx-cf-title">Grab this slot for good?</h3>
-      <p>It's inside the ${CUTOFF_DAYS}-day window, so <b>you can't cancel once you claim</b>. Your share of the court and ref, about <b class="pwx-amber" id="pwx-cf-price"></b>, goes on your balance after the game.</p>
+      <h3 id="pwx-cf-title">You’re taking 1 of <span id="pwx-cf-max"></span> slots</h3>
+      <p>If you drop out late, someone else could have played in your place. Only claim it if you’re sure.</p>
       <div class="pwx-cf__game">${ICON.pin}<span><b id="pwx-cf-when"></b> · <span id="pwx-cf-court"></span> · slot <span id="pwx-cf-slot"></span></span></div>
+      <div class="pwx-tl">
+        <div class="pwx-tl__r pwx-tl__r--free" id="pwx-cf-free"><i></i><span>Cancel for free<small>Right here, no questions asked</small></span><b id="pwx-cf-until"></b></div>
+        <div class="pwx-tl__r pwx-tl__r--lock"><i></i><span id="pwx-cf-lockt">Locked in<small>Your share, about <span id="pwx-cf-price"></span>, is yours to pay even if you can’t make it, unless someone takes your slot</small></span><b id="pwx-cf-from"></b></div>
+      </div>
+      <label class="pwx-check" for="pwx-cf-ok"><input type="checkbox" id="pwx-cf-ok"><span id="pwx-cf-oktext"></span></label>
       <div class="pwx-cf__btns">
         <button class="pwx-btn pwx-btn--outline" type="button" id="pwx-cf-no">${lbl('Not now')}</button>
-        <button class="pwx-btn" type="button" id="pwx-cf-yes">${lbl("Yes, I'm playing")}</button>
+        <button class="pwx-btn" type="button" id="pwx-cf-yes" disabled>${lbl('Confirm my slot')}</button>
       </div>
+    </div>
+  </div>
+
+  <div class="pwx-cf-back" id="pwx-gb" hidden>
+    <div class="pwx-cf" role="dialog" aria-modal="true" aria-labelledby="pwx-gb-title">
+      <h3 id="pwx-gb-title">Give your slot back?</h3>
+      <p id="pwx-gb-lead"></p>
+      <div class="pwx-tl">
+        <div class="pwx-tl__r pwx-tl__r--free"><i></i><span>Someone takes it<small>You pay nothing. It still counts as a late drop.</small></span><b>₱0</b></div>
+        <div class="pwx-tl__r pwx-tl__r--lock"><i></i><span>No one takes it before the run<small>You pay for the slot you held</small></span><b id="pwx-gb-price"></b></div>
+      </div>
+      <div class="pwx-cf__btns">
+        <button class="pwx-btn pwx-btn--outline" type="button" id="pwx-gb-no">${lbl('I’ll be there')}</button>
+        <button class="pwx-btn pwx-btn--danger" type="button" id="pwx-gb-yes">${lbl('Give my slot back')}</button>
+      </div>
+      <div class="pwx-err" id="pwx-gb-err" hidden></div>
     </div>
   </div>
   ${papawisScript(viewer)}`;
@@ -552,17 +617,60 @@ function papawisScript(viewer) {
       .catch(function (e) { btn.disabled = false; showErr(gid, e.message); });
   }
 
-  // can't-cancel confirmation
-  var cf = document.getElementById('pwx-cf'), cfBtn = null;
+  // The commitment dialog before every claim: free to cancel until …, then yours to pay for.
+  var cf = document.getElementById('pwx-cf'), cfBtn = null, cfOk = document.getElementById('pwx-cf-ok'), cfYes = document.getElementById('pwx-cf-yes');
+  function setText(id, t) { document.getElementById(id).textContent = t; }
   function openCf(btn) {
     cfBtn = btn;
-    document.getElementById('pwx-cf-price').textContent = btn.dataset.price;
-    document.getElementById('pwx-cf-when').textContent = btn.dataset.when;
-    document.getElementById('pwx-cf-court').textContent = btn.dataset.court;
-    document.getElementById('pwx-cf-slot').textContent = btn.dataset.slot + ' of ' + btn.dataset.max;
+    var locked = btn.dataset.locked === '1', price = btn.dataset.price || 'your share';
+    setText('pwx-cf-price', price); setText('pwx-cf-when', btn.dataset.when); setText('pwx-cf-court', btn.dataset.court);
+    setText('pwx-cf-slot', btn.dataset.slot + ' of ' + btn.dataset.max); setText('pwx-cf-max', btn.dataset.max);
+    document.getElementById('pwx-cf-free').hidden = locked;
+    setText('pwx-cf-until', 'Until ' + btn.dataset.freeUntil);
+    setText('pwx-cf-from', locked ? 'From now' : 'After that');
+    setText('pwx-cf-oktext', locked ? 'I’ll show up, or pay my share if no one takes my slot.' : 'I’ll show up, or pay my share if I drop out after ' + btn.dataset.freeUntil + ' and no one takes my slot.');
+    cfOk.checked = false; cfYes.disabled = true;
     cf.hidden = false;
     document.getElementById('pwx-cf-no').focus();
   }
+  cfOk.addEventListener('change', function () { cfYes.disabled = !cfOk.checked; });
+
+  // "I can't make it": give the slot back (late drops). The waitlist's next player takes it
+  // at once, or the next player to join does.
+  var gb = document.getElementById('pwx-gb'), gbBtn = null;
+  function openGb(btn) {
+    gbBtn = btn;
+    var n = Number(btn.dataset.waiting) || 0;
+    setText('pwx-gb-lead', n ? 'We’ll offer it to the ' + n + ' player' + (n === 1 ? '' : 's') + ' on the waitlist right away.' : 'Nobody is on the waitlist yet. The next player to join takes it.');
+    setText('pwx-gb-price', btn.dataset.price || 'Your share');
+    document.getElementById('pwx-gb-err').hidden = true;
+    gb.hidden = false;
+    document.getElementById('pwx-gb-no').focus();
+  }
+  function closeGb() { gb.hidden = true; if (gbBtn) gbBtn.focus(); gbBtn = null; }
+  document.getElementById('pwx-gb-no').addEventListener('click', closeGb);
+  gb.addEventListener('click', function (e) { if (e.target === gb) closeGb(); });
+  document.getElementById('pwx-gb-yes').addEventListener('click', function () {
+    var b = this, gid = gbBtn && gbBtn.dataset.game;
+    if (!gid) return;
+    b.disabled = true;
+    post('/papawis/' + encodeURIComponent(gid) + '/give-back')
+      .then(function () { location.href = '/papawis#pw-game-' + gid; location.reload(); })
+      .catch(function (err) { b.disabled = false; var e = document.getElementById('pwx-gb-err'); e.textContent = err.message; e.hidden = false; });
+  });
+  // From the red bar: ?giveback=<run> opens it straight away.
+  var gbq = (location.search.match(/[?&]giveback=([^&]+)/) || [])[1];
+  if (gbq) { var gbb = document.querySelector('[data-pwx-act="giveback"][data-game="' + decodeURIComponent(gbq) + '"]'); if (gbb) setTimeout(function () { openGb(gbb); }, 0); }
+
+  // Free to cancel for 1d 4h 12m (your own slot, until the lock).
+  var lcs = document.querySelectorAll('[data-lock-cd]');
+  function lockTick() {
+    lcs.forEach(function (el) {
+      var t = Math.max(0, Math.floor((Number(el.dataset.lockCd) - Date.now()) / 60000));
+      el.textContent = t ? 'Free to cancel for ' + (t >= 1440 ? Math.floor(t / 1440) + 'd ' : '') + Math.floor(t % 1440 / 60) + 'h ' + (t % 60) + 'm' : 'Locked in';
+    });
+  }
+  if (lcs.length) { lockTick(); setInterval(lockTick, 30000); }
   function closeCf() { cf.hidden = true; if (cfBtn) cfBtn.focus(); cfBtn = null; }
   document.getElementById('pwx-cf-no').addEventListener('click', closeCf);
   document.getElementById('pwx-cf-yes').addEventListener('click', function () { var b = cfBtn; cf.hidden = true; cfBtn = null; if (b) join(b); });
@@ -577,6 +685,7 @@ function papawisScript(viewer) {
     if (e.key !== 'Escape') return;
     if (!mb.hidden) closeModal();
     if (!cf.hidden) closeCf();
+    if (!gb.hidden) closeGb();
   });
 
   document.addEventListener('click', function (e) {
@@ -585,6 +694,8 @@ function papawisScript(viewer) {
     var act = btn.dataset.pwxAct, gid = btn.dataset.game;
     if (act === 'join') {
       if (btn.dataset.confirm) openCf(btn); else join(btn);
+    } else if (act === 'giveback') {
+      openGb(btn);
     } else if (act === 'cancel') {
       if (!confirm('Cancel your spot for this run?')) return;
       btn.disabled = true;

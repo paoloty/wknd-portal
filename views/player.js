@@ -1681,8 +1681,21 @@ function prfToday(o) {
   const next = o.papawisGames
     .filter(g => g.status !== 'completed' && g.status !== 'cancelled' && String(g.date || '') >= o.todayYmd)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
-  if (next) {
+  // o.papawisLocked: the run you're locked into (server.js pwLockedSlotFor; late drops).
+  const lk = o.papawisLocked;
+  if (lk) {
+    due++;
+    tiles.push(prfTile({ label: 'NEXT PAPAWIS', chip: { kind: 'due', text: 'LOCKED IN' }, value: prfDay(lk.date), sub: `${lk.title.charAt(0).toUpperCase() + lk.title.slice(1)}${lk.place ? ` · ${lk.place}` : ''} · ${lk.price ? `${lk.price} is yours to pay` : 'yours to pay'} unless someone takes your slot`, cta: { href: `/papawis?giveback=${encodeURIComponent(lk.id)}#pw-game-${encodeURIComponent(lk.id)}`, text: 'I can’t make it' } }));
+  } else if (next) {
     tiles.push(prfTile({ label: 'NEXT PAPAWIS', chip: next.any_confirmed ? { kind: 'ok', text: 'IN' } : { kind: 'due', text: 'WAITLIST' }, value: prfDay(next.date), sub: [prfWeekday(next.date), next.any_confirmed ? 'Confirmed' : 'Waitlist', next.title].filter(Boolean).join(' · '), cta: { href: '/papawis', text: 'View', quiet: true } }));
+  }
+  // Your Papawis record (late drops): runs kept vs dropped late or missed.
+  const rec = o.papawisRecord;
+  const missed = rec ? rec.replaced + rec.charged + rec.open + rec.noShows : 0;
+  if (rec && rec.played + missed > 0) {
+    const pct = Math.round((rec.played / (rec.played + missed)) * 100);
+    tiles.push(prfTile({ label: 'PAPAWIS RECORD', chip: rec.strikes >= rec.limit ? { kind: 'due', text: 'ON HOLD' } : null, value: String(pct), small: '%',
+      sub: `${rec.played} of ${rec.played + missed} runs kept${missed ? ` · ${[rec.replaced + rec.open + rec.charged ? `${rec.replaced + rec.open + rec.charged} late drop${rec.replaced + rec.open + rec.charged === 1 ? '' : 's'}` : '', rec.noShows ? `${rec.noShows} no-show${rec.noShows === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ')}` : ''}${rec.strikes ? ` · ${rec.strikes} of ${rec.limit} in the last ${rec.days} days` : ''}` }));
   }
   // Until they've clicked through to the community chat from anywhere on the site.
   if (o.showGcInvite) {

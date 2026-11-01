@@ -59,18 +59,24 @@ export function papawisAction(r) {
   const status = (icon, title, sub) => `<div class="pw-status" role="status"><i>${icon}</i><span><b>${title}</b><small>${sub}</small></span></div>`;
   switch (s.kind) {
     case 'scheduled': return `<button type="button" class="btn" disabled>Sign-ups not open yet</button>${note(esc(s.note))}`;
-    case 'in': return `${status(icons.check, r.myTeam ? `You're on ${r.myTeam === 'light' ? 'Light' : 'Dark'} · slot ${s.slot}` : `You're in · slot ${s.slot}`,
-        r.myTeam ? `Bring a ${r.myTeam} shirt${s.cancellable ? '' : ' · teams are set'}` : s.cancellable ? `Free to cancel until ${esc(r.cancelBy)}` : 'Cancellation closed · message an admin')}
-      ${s.cancellable ? btn('Cancel my spot', 'cancel') : '<button type="button" class="btn btn--ghost" disabled>Cancel my spot</button>'}
+    // Inside the window the slot is locked in: "I can't make it" gives it back (server.js late
+    // drops), in a sheet that says what it costs (public/app.js initPapawis).
+    case 'in': return `${s.cancellable
+        ? status(icons.check, r.myTeam ? `You're on ${r.myTeam === 'light' ? 'Light' : 'Dark'} · slot ${s.slot}` : `You're in · slot ${s.slot}`,
+          `<span data-countdown-to="${r.lockAt}" data-countdown-label="Free to cancel for"></span>`)
+        : `<div class="pw-status pw-status--locked" role="status"><i>${icons.lock}</i><span><b>${r.myTeam ? `On ${r.myTeam === 'light' ? 'Light' : 'Dark'} · ` : ''}Locked in · slot ${s.slot} of ${r.max}</b><small>${s.started ? 'The run has started' : `${esc(r.owe)} is yours to pay unless someone takes your slot`}</small></span></div>`}
+      ${s.cancellable ? btn('Cancel my spot', 'cancel') : s.started ? '' : `<button type="button" class="btn btn--danger" data-pw-act="give-back" data-pw-run="${id}" data-pw-waiting="${r.waiting}" data-pw-price="${esc(r.priceData)}">I can’t make it</button>`}
+      ${s.cancellable ? `<p class="pwr__note">Free until ${esc(r.freeUntil)}. After that ${esc(r.owe.charAt(0).toLowerCase() + r.owe.slice(1))} is yours to pay unless someone takes your slot.</p>` : ''}
       ${s.freeApplied ? `<p class="pwr__note pwr__free"><b>Free run applied</b> · this run is on us · <button type="button" class="link" data-pw-act="voucher" data-pw-use="0" data-pw-run="${id}">Undo</button></p>`
         : s.freeAvailable ? `<button type="button" class="btn btn--plain" data-pw-act="voucher" data-pw-use="1" data-pw-run="${id}">Use my free run here</button>` : ''}`;
     case 'pending': return `${status(icons.clock, 'You\'re listed', 'Held until an admin confirms your deposit')}<a class="btn" href="/app/settle?category=Papawis%20Deposit&amp;from=papawis">Pay deposit</a>${btn('Cancel my request', 'cancel')}`;
-    case 'waitlist': return `${status(icons.clock, `You're #${s.pos} on the waitlist`, 'You move up on your own if someone drops')}${btn('Leave the waitlist', 'cancel')}`;
+    case 'waitlist': return `${status(icons.clock, `You're #${s.pos} on the waitlist`, r.held ? 'An admin moves you in (late drops or no-shows lately)' : 'You move up on your own if someone drops')}${btn('Leave the waitlist', 'cancel')}`;
     case 'banned': return `<a class="btn" href="/app/settle?from=papawis">Pay my balance</a>${note('Your account is banned', ' · settle your balance and message us to get it lifted')}`;
     case 'unpaid': return `<a class="btn" href="/app/settle?from=papawis">Pay my balance</a>${note('You have an unpaid Papawis game', ' · settle it to join')}`;
-    case 'join-waitlist': return `${btn('Join the waitlist', 'join')}${s.waiting ? note(`${s.waiting} waiting`, ' · you move up if a slot opens') : note('Be first in line', ' · you move up if a slot opens')}`;
-    default: return `${btn(`${r.today ? 'Grab' : 'Claim'} slot ${r.filled + 1}`, 'join', s.confirmFirst ? ` data-pw-confirm="Claim slot ${r.filled + 1} of ${r.max} for ${esc(r.day)}${r.startClock ? ` · ${esc(r.startClock)}` : ''}? This close to the run it can't be cancelled from the app." ` : '')}
-      ${note(`${s.open} slot${s.open === 1 ? '' : 's'} left`, s.confirmFirst ? ' · claims this close to the run can\'t be cancelled' : ` · cancel free until ${esc(r.cancelBy)}`)}`;
+    case 'join-waitlist': return `${btn('Join the waitlist', 'join')}${r.held ? note('You join on the waitlist', ' · 3 late drops or no-shows in 60 days, so an admin moves you in') : s.waiting ? note(`${s.waiting} waiting`, ' · you move up if a slot opens') : note('Be first in line', ' · you move up if a slot opens')}`;
+    // Every claim confirms first in a sheet: free to cancel until …, then yours to pay for.
+    default: return `${btn(`${r.today ? 'Grab' : 'Claim'} slot ${r.filled + 1}`, 'join', ` data-pw-commit="1" data-pw-locked="${s.confirmFirst ? '1' : ''}" data-pw-until="${esc(r.freeUntil)}" data-pw-slot="${r.filled + 1}" data-pw-max="${r.max}" data-pw-price="${esc(r.priceData)}"`)}
+      ${note(`${s.open} slot${s.open === 1 ? '' : 's'} left`, s.confirmFirst ? ' · yours to pay for once you claim' : ` · cancel free until ${esc(r.freeUntil)}`)}`;
   }
 }
 
@@ -96,9 +102,10 @@ function runCard(r) {
       <div class="pw-who"><span class="pw-who__t">${r.teamsOut ? 'Teams' : 'Who\'s in'}</span><span class="pw-who__n"><b>${r.filled}</b> of ${r.max}</span></div>
       ${seats(r, { you: canClaim })}
       ${r.scheduled ? '<p class="pwr__note">The list opens with sign-ups. First come, first served.</p>' : waitRow(r)}
+      ${r.late?.length ? `<p class="pw-late"><b>Gave their slot back late:</b> ${r.late.map(d => `${esc(d.name)} <span>${d.taken ? 'slot taken' : 'slot open'}</span>`).join(', ')}</p>` : ''}
       <div class="pw-facts">
         ${fact('Per head', r.price ? esc(r.price) : 'TBA', !!r.price)}
-        ${r.scheduled ? fact('Sign-ups open', esc(r.opensLabel)) : fact(r.cancelBy ? 'Free cancel until' : 'Cancel', r.cancelBy ? esc(r.cancelBy) : 'Closed')}
+        ${r.scheduled ? fact('Sign-ups open', esc(r.opensLabel)) : fact(r.cancelBy ? 'Free cancel until' : 'Cancel', r.cancelBy ? esc(r.cancelBy) : 'Locked')}
         ${fact('Waitlist', r.scheduled ? '—' : r.waiting ? `${r.waiting} waiting` : 'Empty')}
       </div>
       ${r.price ? `<p class="pwr__fine">${esc(r.priceNote)}</p>` : ''}
@@ -229,4 +236,13 @@ export function papawisStatsBlock(pw, { id = '', share = false, from = 'me', pid
   <p class="foot-note">${esc(note)}</p>
   <div class="group pwp-runs">${pw.runs.slice(0, max).map(row).join('')}</div>
   <p class="foot-note">Day totals: points · rebounds · assists</p>`;
+}
+
+// The red "You're locked in" bar at the top of every app screen (server.js pwLockedSlotFor;
+// the site's papawisLockedBar). Tapping it opens the run with the give-back sheet.
+export function appLockedBar(x) {
+  if (!x) return '';
+  const when = x.clock ? ` at ${x.clock}` : '';
+  const sub = x.waiting ? `${x.waiting} player${x.waiting === 1 ? '' : 's'} waiting for your slot. Can’t make it? Give it back now.` : 'Can’t make it? Give it back now so someone can claim it.';
+  return `<a class="pw-lockbar" href="/app/papawis?giveback=${encodeURIComponent(x.id)}#run-${esc(x.id)}" role="status"><span class="pw-lockbar__ic" aria-hidden="true">!</span><span class="pw-lockbar__t"><b>Locked in for ${esc(x.title)}${esc(when)}</b><small>${esc(sub)}</small></span>${chev}</a>`;
 }

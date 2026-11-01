@@ -8,6 +8,7 @@ export const ACTIVITY_LABELS = {
   registered:    { label: 'registered', color: 'text-amber-400' },
   joined:        { label: 'joined',    color: 'text-emerald-400' },
   cancelled:     { label: 'cancelled', color: 'text-red-400' },
+  late_drop:     { label: 'gave their slot back late', color: 'text-red-400' },
   promoted:      { label: 'moved to confirmed', color: 'text-emerald-400' },
   waitlisted:    { label: 'moved to waitlist',  color: 'text-amber-400' },
   viewed_roster: { label: 'viewed the player list', color: 'text-slate-400' },

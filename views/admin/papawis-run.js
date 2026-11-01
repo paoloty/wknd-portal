@@ -70,8 +70,16 @@ export function paidCell(game, s, candidates = [], reusable = [], { unpaidBadge 
   return `<div class="pw-paid">${unpaid}${reuse}${mark('Mark paid')}</div>`;
 }
 
+// Late drops (server.js, 2026-11-01): between the 3-day lock and tip-off, removing a confirmed
+// player counts as a late drop (they pay if no one takes the slot) unless it's excused.
+const inLateWindow = (game, s) => game.status === 'open' && s.status === 'confirmed'
+  && Math.round((Date.parse(`${game.date}T00:00:00Z`) - Date.parse(`${manilaTodayStr()}T00:00:00Z`)) / 86400000) < PAPAWIS_CUTOFF_DAYS
+  && Date.now() < Date.parse(`${game.date}T${game.start_time || '00:00'}:00+08:00`);
+const LATE_LABEL = { open: ['Slot open', 'amber'], replaced: ['Slot taken', 'green'], charged: ['Charged', 'red'], excused: ['Excused', 'gray'] };
+
 function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPaid, unlinkedByPlayer, reusableByPlayer }) {
   const name = signupName(s);
+  const late = inLateWindow(game, s);
   const canNotify = canManage && !s.guest_name && s.status === 'confirmed' && s.team && s.reminder_sent_at && !s.team_notified_at;
   const att = s.status === 'confirmed' ? { noshow: 'No-show', dnp: 'DNP' }[s.attendance] || '' : '';
   const sub = s.guest_name ? `Guest of ${displayPlayerName(s.player_name)}` : (s.team_name || '');
@@ -94,14 +102,18 @@ function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPa
     ] : []),
     !s.guest_name && s.player_id ? { label: 'Open player', href: `/admin/players/${s.player_id}` } : null,
     canManage ? 'sep' : null,
-    canManage ? { label: 'Remove…', danger: true, post: `/admin/papawis/${game.id}/remove/${s.id}`, done: `${name} removed.`,
+    canManage && late ? { label: 'Remove · late drop…', danger: true, post: `/admin/papawis/${game.id}/remove/${s.id}`, done: `${name} removed (late drop).`,
+      confirm: { title: `Remove ${name} as a late drop?`, body: 'Inside 3 days: it goes on their record, and they pay for the slot if no one takes it. The first on the waitlist moves up.', send: 'Remove' } } : null,
+    canManage && late ? { label: 'Remove · excused…', post: `/admin/papawis/${game.id}/remove/${s.id}?excused=1`, done: `${name} removed (excused).`,
+      confirm: { title: `Excuse ${name}?`, body: 'For an injury or an emergency: no charge, and it’s not on their record. The first on the waitlist moves up.', send: 'Remove, excused' } } : null,
+    canManage && !late ? { label: 'Remove…', danger: true, post: `/admin/papawis/${game.id}/remove/${s.id}`, done: `${name} removed.`,
       confirm: { title: `Remove ${name}?`, body: s.status === 'confirmed' ? 'The first person on the waitlist moves up.' : 'They come off the waitlist.', send: 'Remove' } } : null,
   ].filter(Boolean);
   const cleanMenu = menuItems.filter((m, i, a) => !(m === 'sep' && (i === 0 || i === a.length - 1)));
   const side = s.status === 'confirmed' ? s.team : '';
   return `<tr class="aui-grid__row"${canManage ? ' draggable="true"' : ''} data-id="${attr(s.id)}" data-status="${attr(s.status)}" data-name="${attr(name)}" data-paid="${s.paid_at ? 1 : 0}">
     <td class="pw-roster__n">${canManage ? '<span class="pw-handle" aria-hidden="true" title="Drag to reorder">⠿</span>' : ''}<span class="aui-num">${n}</span></td>
-    <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, s.guest_name ? '' : colorByTeam[s.team_name] || '', { playerId: s.guest_name ? '' : s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}${att ? ` ${badge(att, att === 'No-show' ? 'red' : 'gray')}` : ''}</span>${sub ? `<span class="aui-cell__sub">${escHtml(sub)}</span>` : ''}</span>${side ? `<span class="pw-side-inline">${sideBadge(side)}</span>` : ''}</span></td>
+    <td class="is-primary" data-label="Player"><span class="aui-who">${avatar(name, s.guest_name ? '' : colorByTeam[s.team_name] || '', { playerId: s.guest_name ? '' : s.player_id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}${att ? ` ${badge(att, att === 'No-show' ? 'red' : 'gray')}` : ''}${s.late_outcome === 'charged' ? ` ${badge('Late drop', 'red')}` : ''}</span>${sub ? `<span class="aui-cell__sub">${escHtml(sub)}</span>` : ''}</span>${side ? `<span class="pw-side-inline">${sideBadge(side)}</span>` : ''}</span></td>
     <td class="is-bare is-desk" data-label="Side">${sideBadge(side)}</td>
     ${showPaid ? `<td class="is-bare" data-label="Paid">${paidCell(game, s, (unlinkedByPlayer[s.player_id] || []), (reusableByPlayer[s.player_id] || []))}</td>` : ''}
     <td class="is-num is-desk" data-label="Signed up">${escHtml(fmtTime(s.signed_up_at))}</td>
@@ -119,6 +131,16 @@ function rosterTable(game, groups, opts) {
     </tbody>`).join('');
   return `<div class="aui-grid__card"><div class="aui-grid__scroll"><table class="aui-grid__table pw-roster">${head}${bodies}</table></div>
     ${opts.canManage ? '<div class="aui-grid__pager"><span>Drag ⠿ to reorder or move between lists: the order is the slot order.</span></div>' : ''}</div>`;
+}
+
+// Who gave their slot back inside the window, and what happened to it.
+function lateList(drops) {
+  if (!drops.length) return '';
+  const rows = drops.map(d => {
+    const [label, tone] = LATE_LABEL[d.late_outcome] || ['Late', 'gray'];
+    return `<div class="pw-pending"><div class="aui-cell__stack"><span class="aui-cell__title">${escHtml(signupName(d))}</span><span class="aui-cell__sub">Gave the slot back ${escHtml(fmtTime(d.late_drop_at))}</span></div>${badge(label, tone)}</div>`;
+  }).join('');
+  return section({ title: `Gave their slot back late · ${drops.length}`, note: '· slot open = they pay at close-out unless someone joins', bodyHtml: `<div class="aui-panel aui-stack">${rows}</div>` });
 }
 
 function pendingDeposits(game, pending, minDeposit, unconfirmedDepositByPlayer) {
@@ -337,6 +359,7 @@ function settingsTab(game, courts, { isOpen }) {
 export function adminPapawisRunBody({
   game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, reusableByPlayer = {}, courtRate = null,
   minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [], broadcast = null, tab = 'roster', teamRoster = [], colorByTeam = {}, colorById = {}, ver = '',
+  lateDrops = [],
 }) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const waitlist = signups.filter(s => s.status === 'waitlist');
@@ -398,10 +421,12 @@ export function adminPapawisRunBody({
         { status: 'confirmed', label: `Confirmed · ${confirmed.length}/${game.max_slots}`, rows: confirmed, empty: 'No one confirmed yet.' },
         { status: 'waitlist', label: `Waitlist · ${waitlist.length}`, rows: waitlist, empty: 'Nobody waiting.' },
       ], rosterOpts),
+      lateList(lateDrops),
       canManage ? addPlayerPanel(game, players, colorById) : '',
     ].join(''),
     teams: () => teamsTab(game, teamRoster, { isOpen, isLocked, confirmedCount: confirmed.length, teamsVisible: isConfirmedFull && daysLeft <= PAPAWIS_CUTOFF_DAYS }),
-    money: () => moneyTab(game, { confirmed, isOpen, isCompleted, courtRate, unlinkedByPlayer, reusableByPlayer, colorByTeam }),
+    // Late drops no one took were charged at close-out: on the bill with everyone who played.
+    money: () => moneyTab(game, { confirmed: isCompleted ? [...confirmed, ...lateDrops.filter(d => d.late_outcome === 'charged')] : confirmed, isOpen, isCompleted, courtRate, unlinkedByPlayer, reusableByPlayer, colorByTeam }),
     messages: () => messagesTab(game, broadcast, { isOpen, isLocked, isCompleted }),
     activity: () => activityTab(activity),
     settings: () => settingsTab(game, courts, { isOpen }),

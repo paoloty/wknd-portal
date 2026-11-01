@@ -47,7 +47,7 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
 // scoring: { games } for scorers, anyone picked to score, and admins (server.js scoringMenuFor), else null.
 // cover: { own } — the profile's cover is the player's own photo (else their team's colours).
 // Its buttons sit under Change photo (Paolo, 2026-10-29: not over the cover, too big there).
-export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null, papawis = null }) {
+export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null, papawis = null, pwRecord = null }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
   <div class="card glow prof">
     ${appAvatar({ ...me, size: 'lg' })}
@@ -75,6 +75,7 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
       ${resCell(g)}<span class="line">${esc(g.line)}</span>${chev}</a>`).join('')}</div>
   <p class="foot-note">Points · rebounds · assists</p>` : '<div class="empty">No games played yet this season.</div>'}
   ${papawisStatsBlock(papawis, { share: true })}
+  ${pwRecordBlock(pwRecord)}
   <div class="sec">Profile</div>
   <div class="group group--icons">
     <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?from=me"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>As other players see it</small></span>${chev}</a>
@@ -84,6 +85,22 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
     <input type="file" accept="image/*" data-cover-input hidden>` : ''}
     <a class="cell" href="/app/setup/details"><span class="ico">${icons.user}</span><span class="cell__t">Edit details</span>${chev}</a>
   </div>`;
+}
+
+// Your Papawis record (server.js getPapawisRecord; late drops, 2026-11-01): runs kept vs late
+// drops and no-shows, and how close you are to having your joins held.
+function pwRecordBlock(r) {
+  if (!r) return '';
+  const late = r.replaced + r.charged + r.open, missed = late + r.noShows;
+  if (r.played + missed === 0) return '';
+  const pct = Math.round((r.played / (r.played + missed)) * 100);
+  const row = (k, v) => `<div class="cell"><span class="cell__t">${k}</span><span class="cell__v num">${v}</span></div>`;
+  return `<div class="sec">Papawis record</div>
+  <div class="group">
+    <div class="cell"><span class="cell__t">${pct}% of runs kept<small>${r.played} of ${r.played + missed} runs</small></span>${r.strikes >= r.limit ? '<span class="pill pill--solid">On hold</span>' : ''}</div>
+    ${row('Late drops · slot taken', r.replaced)}${row('Late drops · paid', r.charged + r.open)}${row('No-shows', r.noShows)}
+  </div>
+  <p class="foot-note">${r.strikes >= r.limit ? `Your joins wait on the waitlist until an admin moves you in. They drop off ${r.days} days after the run.` : `${r.strikes} of ${r.limit} late drops or no-shows in the last ${r.days} days. At ${r.limit}, your joins wait on the waitlist until an admin moves you in.`}</p>`;
 }
 
 // Under Me (gear). rows: [{ icon, title, value, href, count, soon }] — a row without an

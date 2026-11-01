@@ -35,7 +35,12 @@ function rowActs(run, s, canManage, full) {
       s.att !== 'dnp' ? { label: 'Mark as DNP', sub: 'Came, didn’t play. Still charged', post: `${base}/attendance`, body: { mark: 'dnp' }, done: `${s.name} marked DNP` } : null,
       s.att ? { label: 'Mark as played', sub: 'Clears the no-show or DNP', post: `${base}/attendance`, body: { mark: '' }, done: `${s.name} marked played` } : null,
     ] : []),
-    canManage ? { label: 'Remove from the run', danger: true, post: `/admin/papawis/${run.id}/remove/${s.id}`, done: `${s.name} removed`,
+    // Inside the 3-day window (server.js late drops): a late drop, or excused.
+    canManage && s.late ? { label: 'Remove · late drop', sub: 'On their record. They pay if no one takes the slot', danger: true, post: `/admin/papawis/${run.id}/remove/${s.id}`, done: `${s.name} removed (late drop)`,
+      ask: `Remove ${s.name} as a late drop? They pay for the slot if no one takes it. The first on the waitlist moves up.` } : null,
+    canManage && s.late ? { label: 'Remove · excused', sub: 'Injury or emergency: no charge, not on their record', post: `/admin/papawis/${run.id}/remove/${s.id}?excused=1`, done: `${s.name} removed (excused)`,
+      ask: `Excuse ${s.name}? No charge, and it's not on their record.` } : null,
+    canManage && !s.late ? { label: 'Remove from the run', danger: true, post: `/admin/papawis/${run.id}/remove/${s.id}`, done: `${s.name} removed`,
       ask: `Remove ${s.name}? ${s.status === 'confirmed' ? 'The first person on the waitlist moves up.' : 'They come off the waitlist.'}` } : null,
   ].filter(Boolean);
 }
@@ -87,6 +92,9 @@ function rosterTab(run, d) {
   return `${dep}
     ${list('confirmed', `Confirmed · ${confirmed.length}/${run.max}${['noshow', 'dnp'].map(k => { const n = confirmed.filter(s => s.att === k).length; return n ? ` · ${n} ${k === 'noshow' ? 'no-show' : 'DNP'}` : ''; }).join('')}`, confirmed, 'No one confirmed yet.')}
     ${run.open || waitlist.length ? list('waitlist', `Waitlist · ${waitlist.length}`, waitlist, 'Nobody waiting.') : ''}
+    ${d.lateDrops?.length ? `<div class="sec adm-sec">Gave their slot back late · ${d.lateDrops.length}</div>
+    <div class="group">${d.lateDrops.map(x => `<div class="cell"><span class="cell__t">${esc(x.name)}<small>${esc(d.fmt(x.at))}</small></span><span class="cell__v">${{ open: 'Slot open', replaced: 'Slot taken', charged: 'Charged', excused: 'Excused' }[x.outcome] || 'Late'}</span></div>`).join('')}</div>
+    <p class="foot-note">Slot open: they pay at close-out unless someone joins.</p>` : ''}
     ${canManage ? '<p class="foot-note">Drag the grip to reorder or move between lists. The order is the slot order.</p>' : ''}
     <div class="adm-actions">
       ${canManage ? `<button type="button" class="btn btn--ghost" data-adm-add>${icons.plus}Add player</button>` : ''}

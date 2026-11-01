@@ -1018,6 +1018,32 @@
   // pwSeen: runs whose roster this session already reported (the site's "viewed" beacon,
   // which Papawis announcements use to find interested players).
   var pwJustJoined = null, pwSeen = {};
+  // Late drops (server.js, 2026-11-01). The sheet before a claim: free to cancel until …, then
+  // the slot is yours to pay for; Confirm works once the box is ticked.
+  function pwCommitSheet(b, go) {
+    var locked = b.getAttribute('data-pw-locked') === '1', until = b.getAttribute('data-pw-until') || '', price = b.getAttribute('data-pw-price');
+    var share = price ? 'your ' + price + ' share' : 'your share';
+    var el = admSheet('You’re taking 1 of ' + b.getAttribute('data-pw-max') + ' slots',
+      '<div class="pw-commit"><p>If you drop out late, someone else could have played in your place. Only claim it if you’re sure.</p>' +
+      '<div class="pw-tl">' + (locked ? '' : '<div class="pw-tl__r pw-tl__r--free"><i></i><span>Cancel for free<small>In the app, no questions asked</small></span><b>Until ' + admEsc(until) + '</b></div>') +
+      '<div class="pw-tl__r pw-tl__r--lock"><i></i><span>Locked in<small>' + admEsc(share.charAt(0).toUpperCase() + share.slice(1)) + ' is yours to pay even if you can’t make it, unless someone takes your slot</small></span><b>' + (locked ? 'From now' : 'After that') + '</b></div></div>' +
+      '<label class="pw-check"><input type="checkbox" data-pw-ok><span>' + admEsc(locked ? 'I’ll show up, or pay my share if no one takes my slot.' : 'I’ll show up, or pay my share if I drop out after ' + until + ' and no one takes my slot.') + '</span></label>' +
+      '<button type="button" class="btn" data-pw-go disabled>Confirm slot ' + admEsc(b.getAttribute('data-pw-slot')) + '</button></div>');
+    var ok = $('[data-pw-ok]', el), btn = $('[data-pw-go]', el);
+    ok.addEventListener('change', function () { btn.disabled = !ok.checked; });
+    btn.addEventListener('click', function () { closeSheet(); go(); });
+  }
+  // "I can't make it": what giving the slot back costs, then the post.
+  function pwGiveBackSheet(b, go) {
+    var n = Number(b.getAttribute('data-pw-waiting')) || 0, price = b.getAttribute('data-pw-price');
+    var el = admSheet('Give your slot back?',
+      '<div class="pw-commit"><p>' + (n ? 'We’ll offer it to the <b>' + n + ' player' + (n === 1 ? '' : 's') + ' on the waitlist</b> right away.' : 'Nobody is on the waitlist yet. The next player to join takes it.') + '</p>' +
+      '<div class="pw-tl"><div class="pw-tl__r pw-tl__r--free"><i></i><span>Someone takes it<small>You pay nothing. It still counts as a late drop.</small></span><b>₱0</b></div>' +
+      '<div class="pw-tl__r pw-tl__r--lock"><i></i><span>No one takes it before the run<small>You pay for the slot you held</small></span><b>' + admEsc(price || 'Your share') + '</b></div></div>' +
+      '<button type="button" class="btn btn--red" data-pw-go>Give my slot back</button><button type="button" class="btn btn--ghost" data-sheet-x>I’ll be there</button></div>');
+    $('[data-pw-go]', el).addEventListener('click', function () { closeSheet(); go(); });
+  }
+  var pwGbOpened = {};
   function initPapawis() {
     clearInterval(pwTimer);
     var cds = $$('[data-countdown-to]'), caps = $$('[data-pw-cd]');
@@ -1039,6 +1065,12 @@
       pwSeen[id] = true;
       fetch('/papawis/' + encodeURIComponent(id) + '/viewed', { method: 'POST', credentials: 'same-origin', keepalive: true }).catch(function () {});
     });
+    // From the red bar: ?giveback=<run> opens the give-back sheet once.
+    var gbq = (location.search.match(/[?&]giveback=([^&#]+)/) || [])[1];
+    if (gbq && !pwGbOpened[gbq]) {
+      pwGbOpened[gbq] = true;
+      setTimeout(function () { var gb = $('[data-pw-act="give-back"][data-pw-run="' + decodeURIComponent(gbq) + '"]'); if (gb) gb.click(); }, 0);
+    }
     $$('[data-pw-card]').forEach(function (card) {
       if (card._bound) return;
       card._bound = true;
@@ -1049,6 +1081,13 @@
         var msg = $('[data-pw-msg]', card); msg.hidden = true;
         // Never queued for later: offline, nothing is sent and the card says so.
         if (!navigator.onLine) { msg.textContent = 'You\'re offline. This needs a connection, so nothing was sent.'; msg.hidden = false; return; }
+        // Claiming: the commitment sheet first. "I can't make it": the give-back sheet first.
+        // Each calls back here (b._go) once the player says yes.
+        if (!b._go && (b.getAttribute('data-pw-commit') || act === 'give-back')) {
+          (act === 'give-back' ? pwGiveBackSheet : pwCommitSheet)(b, function () { b._go = true; b.click(); });
+          return;
+        }
+        b._go = false;
         var ask = b.getAttribute('data-pw-confirm');
         if (ask && !window.confirm(ask)) return;
         if (act === 'cancel' && !window.confirm(b.textContent.trim() + '?')) return;
@@ -1064,8 +1103,9 @@
             if (!res.ok) { msg.textContent = (res.j && res.j.error) || 'That didn\'t go through. Try again.'; msg.hidden = false; return; }
             var st = res.j.status;
             toast(act === 'voucher' ? (res.j.message || 'Done')
+              : act === 'give-back' ? (res.j.replaced ? res.j.by + ' took your slot. Nothing to pay.' : 'Slot given back. We\'ll tell you if someone takes it.')
               : act === 'cancel' ? 'You\'re off the list'
-              : st === 'waitlist' ? 'You\'re on the waitlist' : st === 'pending' ? 'You\'re listed · send your deposit to confirm' : 'You\'re in!');
+              : st === 'waitlist' ? (res.j.held ? 'You\'re on the waitlist · an admin moves you in' : 'You\'re on the waitlist') : st === 'pending' ? 'You\'re listed · send your deposit to confirm' : 'You\'re in!');
             if (act === 'join') pwJustJoined = run;
             refreshScreen();
           }, function () {

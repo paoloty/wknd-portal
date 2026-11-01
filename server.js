@@ -177,6 +177,7 @@ import {
   db as portalDb,
   getBirthdayEmail, saveBirthdayDraft, getBirthdayEmailsForYears, getSentBirthdayEmails, getBirthdayLog,
   papawisProbationHold, getPapawisSlotAlerts, cancelPapawisAnnounce, setPapawisEmailOptout, setPicksEmailOptout,
+  markPapawisLateDrop, setPapawisLateOutcome, getPapawisLateDrops, reconcilePapawisLateDrops, getPapawisRecord, getPapawisLockedSlots,
   getEmailsForAddress, getLatestEmailsByRef, getLatestEmailForRef,
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
@@ -258,7 +259,7 @@ import { playoffModeState, PLAYOFF_MODES, CHAMPION_DAYS } from './lib/playoff-mo
 import { bonusCutoff, ballotClose, isPast, fmtMoment, tallyBallots, podiumPoints } from './lib/mvp-ballot.js';
 import { awardsPage } from './views/awards.js';
 import { badgesPage } from './views/badges.js';
-import { papawisPage, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
+import { papawisPage, papawisLockedBar, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
 import { estimatedPapawisPrice, hasSavedPapawisAmount, hoursBetween, estimateTotal, roundTo10, defaultPapawisPrice, REFEREE_RATE_DEFAULT, ACTIVITY_LABELS as PAPAWIS_ACTIVITY_LABELS } from './views/admin/papawis.js';
 import { adminPapawisActivityBody } from './views/admin/papawis-activity.js';
 import { adminPapawisRunsBody } from './views/admin/papawis-runs.js';
@@ -2615,6 +2616,8 @@ function renderPage(req, opts) {
   }
 
   const impersonatingHtml = req.session?.impersonating ? impersonationBanner(req.session.impersonatingPlayerName || 'this player') : '';
+  // The red "You're locked in" bar: a slot in a run whose free cancelling has closed (late drops).
+  const lockedBarHtml = !focused && isPlayer && req.session?.playerPlayerId ? papawisLockedBar(pwLockedSlotFor(req.session.playerPlayerId)) : '';
 
   // Players app: home-screen tags + the "Use the app" bar on phones (see APP_HOME_TAGS).
   const appPlayer = isPlayer && !!req.session?.playerPlayerId && !req.session?.impersonating && appAccess(req) === 'ok';
@@ -2622,7 +2625,7 @@ function renderPage(req, opts) {
   const appBarHtml = appPlayer && !focused && /iPhone|iPad|iPod|Android/i.test(req.get('user-agent') || '') ? appUseBar() : '';
 
   const raffleBarHtml = !focused && opts.currentPath === '/' ? raffleHomeBar() : '';
-  const body = impersonatingHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
+  const body = impersonatingHtml + lockedBarHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
@@ -6188,7 +6191,7 @@ import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDon
 import { appPicksPage, pickWhoHtml } from './views/app/picks.js';
 import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
 import { appPlayerPage, appPlayerMissing, appSeasonPage } from './views/app/season.js';
-import { appPapawisPage, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
+import { appPapawisPage, appLockedBar, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
 import { appPapawisFinishPage } from './views/app/papawis-score.js';
 import { papawisResultsPage, papawisResultsBody } from './views/papawis-results.js';
 import { appAdminPapawisPage, appAdminPapawisNewPage, papawisMessengerText } from './views/app/admin-papawis.js';
@@ -6682,7 +6685,9 @@ function appReviewTodosHeld(me) {
 const appBadges = me => ({ picks: appOpenPicks(me).length, me: appAccountTodos(me).length });
 // Every screen with the tab bar goes through this, so the badges are always current.
 const appWho = me => createHash('sha256').update(`wknd-app:${me.reg.id}`).digest('hex').slice(0, 12);
-const sendTab = (res, me, opts) => sendApp(res, { ...opts, badges: { ...appBadges(me), unread: me.unread }, who: appWho(me) });
+// Every tab screen but the full-screen ones (bare) opens with the red "You're locked in" bar
+// while the player holds a slot whose free cancelling has closed (late drops).
+const sendTab = (res, me, opts) => sendApp(res, { ...opts, body: (opts.bare || !me?.playerId ? '' : appLockedBar(pwLockedSlotFor(me.playerId))) + (opts.body || ''), badges: { ...appBadges(me), unread: me.unread }, who: appWho(me) });
 const closeLabel = ms => manilaFormat(ms, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 
 // ── Home: the feed ──
@@ -9369,6 +9374,7 @@ app.get('/app/me', requireApp, (req, res) => {
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
     games, papawis: papawisProfileFor(me.playerId),
+    pwRecord: getSetting('papawis_enabled', '0') === '1' ? { ...getPapawisRecord(me.playerId, Date.now() - PW_STRIKE_DAYS * 86400000), limit: PW_STRIKE_LIMIT, days: PW_STRIKE_DAYS } : null,
   }) });
 });
 
@@ -9565,6 +9571,7 @@ function appPapawisRuns(me) {
   const vouchers = getVouchersForPlayer(me.playerId);
   const freeRun = vouchers.find(v => v.status === 'active') || null;
   const applied = new Set(vouchers.filter(v => v.status === 'reserved').map(v => v.signup_id));
+  const held = pwStrikes(me.playerId) >= PW_STRIKE_LIMIT;
   const runs = getPapawisGames()
     .filter(g => g.status === 'open' && pwDaysUntil(g.date) >= 0)
     .sort((a, b) => `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`));
@@ -9587,12 +9594,12 @@ function appPapawisRuns(me) {
     // balance happen on the site for now: shown as information).
     let state;
     if (scheduled) state = { kind: 'scheduled', note: `Sign-ups open ${pwDay(new Date(opensAt + 8 * 3600e3).toISOString().slice(0, 10))} · 8:00 AM` };
-    else if (mine?.status === 'confirmed') state = { kind: 'in', slot: confirmed.indexOf(mine) + 1, cancellable, freeApplied: applied.has(mine.id), freeAvailable: !!freeRun && !applied.has(mine.id) };
+    else if (mine?.status === 'confirmed') state = { kind: 'in', slot: confirmed.indexOf(mine) + 1, cancellable, started: Date.now() >= pwTipAtMs(g), freeApplied: applied.has(mine.id), freeAvailable: !!freeRun && !applied.has(mine.id) };
     else if (mine?.status === 'pending') state = { kind: 'pending' };
     else if (mine?.status === 'waitlist') state = { kind: 'waitlist', pos: waitlist.indexOf(mine) + 1 };
     else if (banned) state = { kind: 'banned' };
     else if (unpaid) state = { kind: 'unpaid' };
-    else if (full) state = { kind: 'join-waitlist', waiting: waitlist.length };
+    else if (full || held) state = { kind: 'join-waitlist', waiting: waitlist.length };
     else state = { kind: 'join', open, confirmFirst: !cancellable };
     const face = s => pwFace(s, teams, me.playerId);
     // Teams show once the admin has sent them, as on the site (views/utils.js papawisTeamsSent).
@@ -9608,6 +9615,11 @@ function appPapawisRuns(me) {
       teamsOut, myTeam: teamsOut && mine?.status === 'confirmed' ? (mine.team === 'light' || mine.team === 'dark' ? mine.team : '') : '',
       price: price ? pwPeso(price) : '', priceNote: `Estimate with ${Math.max(filled, max)} players · split after the game`,
       cancelBy: cancellable ? pwDay(addDaysYmd(g.date, -PAPAWIS_CUTOFF_DAYS)) : '', startClock, state,
+      // Late drops: when free cancelling ends, what a locked-in slot costs, who gave theirs back.
+      lockAt: pwLockAtMs(g), freeUntil: pwFreeUntil(g), held,
+      priceData: price ? pwPeso(price) : '', owe: price ? `Your ${pwPeso(price)} share` : 'Your share',
+      late: scheduled ? [] : getPapawisLateDrops(g.id).filter(d => d.late_outcome && d.late_outcome !== 'excused')
+        .map(d => ({ name: d.guest_name || displayPlayerName(d.player_name || '').split(' ')[0] || 'A player', taken: d.late_outcome !== 'open' })),
     };
   });
 }
@@ -9881,6 +9893,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
     team: s.team === 'light' || s.team === 'dark' ? s.team : '', teamName: s.guest_name ? '' : (s.team_name || ''), paid: !!s.paid_at,
     reminded: !!s.reminder_sent_at, teamNotified: !!s.team_notified_at, face: pwFace(s, teams, ''),
     att: s.status === 'confirmed' ? s.attendance || '' : '', canMark: s.status === 'confirmed' && pwCanMark(g),
+    late: s.status === 'confirmed' && pwInLateWindow(g),
   });
   const confirmed = signups.filter(s => s.status === 'confirmed').map(row);
   const waitlist = signups.filter(s => s.status === 'waitlist').map(row);
@@ -9896,6 +9909,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
     confirmedCount: confirmed.length, waitCount: waitlist.length, paidCount: confirmed.filter(s => s.paid).length,
     count: confirmed.length + waitlist.length + pending.length,
     canAnnounce: todo.canAnnounce, catchUp: todo.catchUp, teamsSent: papawisTeamsSent(signups.filter(s => s.status === 'confirmed')), fmt,
+    lateDrops: getPapawisLateDrops(g.id).map(d => ({ name: pwSignupName(d), outcome: d.late_outcome, at: d.late_drop_at })),
     players: [], teams: { built: false, all: [] }, activity: [], broadcast: null, messenger: '', calc: null,
   };
   // Only what the open tab shows (one request per screen, and a fast render).
@@ -22099,6 +22113,9 @@ app.get('/players/:ref', async (req, res) => {
       joinCta: !req.session?.playerRegId && !req.session?.isAdmin ? { regOpen: getSetting('reg_open', '0') === '1', papawis: !!getFeatureFlags().papawis } : null,
       champSeasons: playerChampionSeasons(resolved.id, gameLogs), todayYmd: manilaTodayStr(), picksOn: picksEnabled(),
       balanceAmount, balanceTransactions: isOwnProfile && balanceAmount > 0 ? balanceTransactions : [], papawisGames, coachNote, latestPoll, papawisEmailsOn,
+      // Late drops: the run you're locked into, and your Papawis record (own profile only).
+      papawisLocked: isOwnProfile ? pwLockedSlotFor(resolved.id) : null,
+      papawisRecord: isOwnProfile && getSetting('papawis_enabled', '0') === '1' ? { ...getPapawisRecord(resolved.id, Date.now() - PW_STRIKE_DAYS * 86400000), limit: PW_STRIKE_LIMIT, days: PW_STRIKE_DAYS } : null,
       papawisProbation: isOwnProfile && !!player.papawis_probation && !(minDeposit != null && papawisBalance <= -minDeposit),
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
@@ -24624,6 +24641,9 @@ app.get('/papawis', (req, res) => {
     currentPath: '/papawis',
     metaTags: `${papawisMetaTags}\n  <link rel="stylesheet" href="/papawis.css?v=${PAPAWIS_CSS_VER}">`,
     body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, banned: viewerBanned, summary, isAdmin, alertsOn,
+      // Late drops: who gave a slot back on each upcoming run, and joins held for too many lately.
+      lateByGame: Object.fromEntries(games.filter(g => g.status === 'open' && pwDaysUntil(g.date) >= 0).map(g => [g.id, getPapawisLateDrops(g.id)])),
+      held: !!viewerPlayerId && pwStrikes(viewerPlayerId) >= PW_STRIKE_LIMIT,
       // Rate & Win free run: whether they have one to use, and which spots already carry one.
       voucher: viewerPlayerId ? (() => {
         const vs = getVouchersForPlayer(viewerPlayerId);
@@ -24631,6 +24651,72 @@ app.get('/papawis', (req, res) => {
       })() : null }),
   }));
 });
+
+// ── Late drops (Paolo, 2026-11-01) ──
+// Players cancel free until 3 days before a run (PAPAWIS_CUTOFF_DAYS). After that the slot is
+// theirs to pay for: "I can't make it" gives it back instead of messaging an admin. The next
+// on the waitlist takes it at once, or the next player to join does. Taken: nothing to pay.
+// Not taken by close-out: charged the run's price like everyone who played. An admin removing
+// a player inside the window does the same, unless they excuse it. Every late drop and
+// no-show is on the player's record; PW_STRIKE_LIMIT in PW_STRIKE_DAYS and their next joins
+// go on the waitlist for an admin to move in. The red "You're locked in" bar (site and app)
+// shows from the lock until tip-off.
+const PW_STRIKE_LIMIT = 3, PW_STRIKE_DAYS = 60;
+const pwLocked = g => pwDaysUntil(g.date) < PAPAWIS_CUTOFF_DAYS;
+const pwTipAtMs = g => Date.parse(`${g.date}T${g.start_time || '00:00'}:00+08:00`);
+// Free cancelling runs through the whole day PAPAWIS_CUTOFF_DAYS before the run.
+const pwLockAtMs = g => Date.parse(`${addDaysYmd(g.date, -(PAPAWIS_CUTOFF_DAYS - 1))}T00:00:00+08:00`);
+const pwFreeUntil = g => `${pwDay(addDaysYmd(g.date, -PAPAWIS_CUTOFF_DAYS))}, 11:59 PM`;
+// Between the lock and tip-off: a confirmed player leaving now is a late drop.
+const pwInLateWindow = g => !!g && g.status === 'open' && pwLocked(g) && Date.now() < pwTipAtMs(g);
+const pwStrikes = playerId => getPapawisRecord(playerId, Date.now() - PW_STRIKE_DAYS * 86400000)?.strikes || 0;
+const pwFirst = s => (s?.guest_name || (s?.player_id ? displayPlayerName(getPlayerById(s.player_id)?.name || '').split(' ')[0] : '')) || 'Someone';
+function pwNotifyTaken(game, drop, by = null) {
+  if (!drop.player_id) return;
+  createNotification({ playerId: drop.player_id, type: 'papawis_late_drop', title: `${by ? pwFirst(by) : 'Someone'} took your slot`,
+    body: `${game.title || 'Papawis'}: nothing to pay. Thanks for giving it back.`, link: `/papawis#pw-game-${game.id}` });
+}
+// Gives a confirmed slot back inside the window (the player's "I can't make it", or an admin).
+function pwGiveBack(game, signup, { excused = false, actor = 'player' } = {}) {
+  const openBefore = Math.max(0, (game.max_slots || 0) - getPapawisConfirmedCount(game.id));
+  const result = cancelPapawisSignup(signup.id, actor);
+  if (result.error) return result;
+  markPapawisLateDrop(signup.id, { openBefore, replaced: !!result.promoted, excused });
+  releaseVoucherForSignup(signup.id);
+  notifyPapawisPromotion(game, result.promoted);
+  if (result.promoted) { if (!excused) pwNotifyTaken(game, signup, result.promoted); }
+  else queuePapawisSlotAlert(game.id, { wasFull: openBefore === 0 });
+  logPapawisActivity({ gameId: game.id, eventType: 'late_drop', playerId: signup.player_id, playerName: signup.guest_name || signup.player_name || '',
+    notes: excused ? 'excused by an admin' : result.promoted ? 'slot taken from the waitlist' : 'waiting for someone to take the slot' });
+  bkCardChanged(`pw:${game.id}`);
+  return { ...result, replaced: !!result.promoted };
+}
+// After anything that can fill a slot: the late drops whose slot is now taken.
+function pwReconcile(gameId) {
+  const game = getPapawisGame(gameId);
+  if (!game) return;
+  for (const d of reconcilePapawisLateDrops(gameId)) pwNotifyTaken(game, d);
+}
+// Every change to a run's roster (admin routes, a join) can fill a dropped slot.
+app.use(['/admin/papawis/:id', '/papawis/:id/join'], (req, res, next) => {
+  if (req.method === 'POST') res.on('finish', () => { if (res.statusCode < 400) { try { pwReconcile(req.params.id); } catch (e) { console.error('[papawis late drops]', e.message); } } });
+  next();
+});
+// The run the player is locked into, for the red bar: { run, waiting, price, href, appHref } or null.
+function pwLockedSlotFor(playerId) {
+  if (!playerId || getSetting('papawis_enabled', '0') !== '1') return null;
+  const today = manilaTodayStr();
+  const g = getPapawisLockedSlots(playerId, today, addDaysYmd(today, PAPAWIS_CUTOFF_DAYS - 1)).find(r => Date.now() < pwTipAtMs(r));
+  if (!g) return null;
+  const waiting = getPapawisSignups(g.id).filter(x => x.status === 'waitlist').length;
+  const court = getPapawisCourtByName(g.location);
+  const price = g.price_per_player || estimatedPapawisPrice(g, g.max_slots || 0, g.court_rate_per_hour ? null : (court?.price_per_hour || null));
+  return {
+    // Named by its day ("Tuesday's run"): stored titles often carry a date of their own.
+    id: g.id, date: g.date, title: pwDaysUntil(g.date) === 0 ? 'today’s run' : `${manilaFormat(Date.parse(`${g.date}T12:00:00+08:00`), { weekday: 'long' })}’s run`,
+    place: pwCourtName(g.location), clock: g.start_time ? formatTimeRange(g.start_time, null) : '', waiting, price: price ? pwPeso(price) : '',
+  };
+}
 
 // ── Papawis announcements, slot alerts, email opt-out (lib/papawis-broadcast.js) ──
 
@@ -24728,14 +24814,16 @@ app.post('/papawis/:id/join', (req, res) => {
   // safe yet, so it falls back to still holding them rather than treating any credit as enough.
   // Shared with the announcement emails' "deposit needed" line (papawisProbationHold).
   const isProbation = papawisProbationHold(playerId).hold;
+  // Too many late drops or no-shows lately: on the waitlist for an admin to move in.
+  const held = pwStrikes(playerId) >= PW_STRIKE_LIMIT;
   const signupId = randomBytes(6).toString('hex');
-  const result = joinPapawisGame(req.params.id, playerId, signupId, isProbation);
+  const result = joinPapawisGame(req.params.id, playerId, signupId, isProbation, held);
   if (result.error === 'not_found')      return res.status(404).json({ error: 'Game not found.' });
   if (result.error === 'not_open')       return res.status(400).json({ error: 'Sign-ups for this game are not open yet.' });
   if (result.error === 'passed')         return res.status(400).json({ error: 'This game has already happened — sign-ups are closed.' });
   if (result.error === 'already_listed') return res.status(400).json({ error: "You're already listed for this game." });
   bkCardChanged(`pw:${req.params.id}`);
-  res.json({ ok: true, status: result.status });
+  res.json({ ok: true, status: result.status, held: held && result.status === 'waitlist' });
 });
 
 // Rate & Win free run (lib/raffle.js): put it on (use: true) or take it off a confirmed spot
@@ -24789,7 +24877,7 @@ app.post('/papawis/:id/cancel', (req, res) => {
     const gameDate = new Date(game.date + 'T00:00:00');
     const daysLeft = Math.round((gameDate - today) / 86400000);
     if (daysLeft < PAPAWIS_CUTOFF_DAYS) {
-      return res.status(403).json({ error: `Cancellation window closed ${PAPAWIS_CUTOFF_DAYS} days before game day — message an admin.` });
+      return res.status(403).json({ error: `Free cancelling closed ${PAPAWIS_CUTOFF_DAYS} days before the run. Tap “I can’t make it” to give your slot back.` });
     }
   }
   const wasFull = signup.status === 'confirmed' && getPapawisConfirmedCount(game.id) >= game.max_slots;
@@ -24800,6 +24888,21 @@ app.post('/papawis/:id/cancel', (req, res) => {
   queuePapawisSlotAlert(game.id, { wasFull });
   bkCardChanged(`pw:${game.id}`);
   res.json({ ok: true });
+});
+
+// "I can't make it": a confirmed player gives their slot back inside the window (late drops, above).
+app.post('/papawis/:id/give-back', (req, res) => {
+  if (getSetting('papawis_enabled', '0') !== '1') return res.status(404).json({ error: 'Not available.' });
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) return res.status(401).json({ error: 'Please log in.' });
+  const game = getPapawisGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Run not found.' });
+  const signup = getPapawisActiveSignupForPlayer(game.id, req.session.playerPlayerId);
+  if (!signup || signup.status !== 'confirmed') return res.status(400).json({ error: 'You don’t have a slot in this run.' });
+  if (!pwLocked(game)) return res.status(400).json({ error: 'You can still cancel for free. Use Cancel my spot.' });
+  if (!pwInLateWindow(game)) return res.status(400).json({ error: 'This run has started. Message an admin.' });
+  const r = pwGiveBack(game, signup);
+  if (r.error) return res.status(400).json({ error: 'That didn’t go through. Try again.' });
+  res.json({ ok: true, replaced: r.replaced, by: r.promoted ? pwFirst(r.promoted) : '' });
 });
 
 // Fire-and-forget beacon from the "See all players" / "See who was listed" / "See who
@@ -25984,7 +26087,7 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
     currentPath: '/admin/papawis',
     body: adminPapawisRunBody({
       game, signups, players: playersWithTeam, activity, daysLeft, unlinkedByPlayer, reusableByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts(),
-      tab: String(req.query.tab || 'roster'), ver: CSS_VER,
+      tab: String(req.query.tab || 'roster'), ver: CSS_VER, lateDrops: getPapawisLateDrops(game.id),
       teamRoster: req.query.tab === 'teams' ? getPapawisConfirmedForTeams(game.id) : [],
       colorByTeam, colorById: adminTeamColorByPlayer(),
       broadcast: {
@@ -26125,6 +26228,12 @@ app.post('/admin/papawis/:id/remove/:signupId', requireAuth, (req, res) => {
   const before = getPapawisSignupById(req.params.signupId);
   const gameBefore = getPapawisGame(req.params.id);
   const wasFull = before?.status === 'confirmed' && !!gameBefore && getPapawisConfirmedCount(gameBefore.id) >= gameBefore.max_slots;
+  // Inside the window a confirmed player's removal is a late drop, unless excused (?excused=1).
+  if (before?.status === 'confirmed' && before.game_id === req.params.id && pwInLateWindow(gameBefore)) {
+    const r = pwGiveBack(gameBefore, before, { excused: req.query.excused === '1', actor: 'admin' });
+    if (r.error) return res.status(400).json({ error: 'Could not remove.' });
+    return res.json({ ok: true });
+  }
   const result = adminRemovePapawisSignup(req.params.signupId);
   if (!result?.error) releaseVoucherForSignup(req.params.signupId);
   if (result.error) return res.status(400).json({ error: 'Could not remove.' });
@@ -26361,8 +26470,23 @@ app.post('/admin/papawis/:id/complete', requireAuth, express.json(), (req, res) 
       markPapawisSignupPaid(s.id, '');
     }
   }
+  // Late drops no one took: the run's price, like everyone who played (late drops, above).
+  pwReconcile(game.id);
+  let lateCharged = 0;
+  for (const d of getPapawisLateDrops(game.id).filter(x => x.late_outcome === 'open')) {
+    const notes = `Papawis — ${game.title || 'Pickup game'} (${game.date}) — slot given back late, no one took it${d.guest_name ? ` (guest: ${d.guest_name})` : ''}`;
+    recordTransaction({
+      id: randomBytes(6).toString('hex'), player_id: d.player_id, amount: price, type: 'charge',
+      payment_method: '', date: today, status: 'confirmed', notes, reference_no: game.id, season: '', category: 'Papawis',
+    });
+    setPapawisLateOutcome(d.id, 'charged');
+    createNotification({ playerId: d.player_id, type: 'papawis_late_drop', title: 'No one took your slot',
+      body: `${game.title || 'Papawis'}: ${pwPeso(price)} added to your balance for the slot you held.`, link: '/settle-balance' });
+    if (getPlayerPapawisBalance(d.player_id) <= 0) markPapawisSignupPaid(d.id, '');
+    lateCharged++;
+  }
   completePapawisGame(req.params.id, price, breakdown);
-  res.json({ ok: true, charged: confirmed.length - freeRuns, freeRuns });
+  res.json({ ok: true, charged: confirmed.length - freeRuns + lateCharged, freeRuns, lateCharged });
   if (getSetting('papawis_reminders_enabled', '0') === '1') {
     sendPapawisCompletionEmails(req.params.id, price).then(({ sent, errors }) => {
       if (errors.length) console.error(`[papawis] completion emails: ${sent} sent, ${errors.length} failed`, errors);
@@ -27651,6 +27775,30 @@ function runPapawisReminders() {
 }
 runPapawisReminders();
 setInterval(runPapawisReminders, PAPAWIS_REMINDER_CHECK_MS);
+
+// Late drops (above): six hours before free cancelling closes, everyone holding a slot hears
+// it once in the bell (and on their phone): "Last chance to cancel for free". Also settles
+// any late drop whose slot a change outside the routes filled.
+const PW_LAST_CALL_MS = 6 * 3600e3;
+function runPapawisLastCall() {
+  if (getSetting('papawis_enabled', '0') !== '1') return;
+  const now = Date.now();
+  for (const g of getPapawisGames().filter(x => x.status === 'open' && pwDaysUntil(x.date) >= 0)) {
+    try { pwReconcile(g.id); } catch (e) { console.error('[papawis late drops]', e.message); }
+    const lockAt = pwLockAtMs(g), key = `papawis_last_call_${g.id}`;
+    if (now < lockAt - PW_LAST_CALL_MS || now >= lockAt || getSetting(key, '') || !isPapawisSignupOpenNow(g)) continue;
+    setSetting(key, String(now));
+    const people = getPapawisSignups(g.id).filter(x => x.status === 'confirmed' && !x.guest_name && x.player_id);
+    for (const x of people) {
+      createNotification({ playerId: x.player_id, type: 'papawis_last_call', title: 'Last chance to cancel for free',
+        body: `${g.title || 'Papawis'} (${pwDay(g.date)}): free cancelling closes at midnight. After that your slot is yours to pay for unless someone takes it.`,
+        link: `/papawis#pw-game-${g.id}` });
+    }
+    if (people.length) console.log(`[papawis] last call sent for ${g.id}: ${people.length}`);
+  }
+}
+runPapawisLastCall();
+setInterval(runPapawisLastCall, 10 * 60 * 1000);
 
 // Birthday emails: hourly, write drafts for the coming week and send today's (see
 // runBirthdayAutomation in lib/birthday.js). Sending only happens on production, from 8 AM

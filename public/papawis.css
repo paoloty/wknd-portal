@@ -325,3 +325,29 @@ td.pw-team-row__name--dark, th.pw-team-row__name--dark { border-left: none; }
 }
 .pwx-place a, .pwx-past__court a { color: inherit; text-decoration: underline; text-decoration-color: rgba(245,147,50,.5); text-underline-offset: 3px; }
 .pwx-place a:hover, .pwx-past__court a:hover { color: var(--amber); }
+
+/* Late drops (Paolo, 2026-11-01): your locked-in slot, "I can't make it", the commitment and
+   give-back dialogs, and who gave their slot back. */
+.pwx-row--locked { margin: 0 -14px; padding: 12px 14px; border-radius: 10px; background: rgba(197,48,48,.12); box-shadow: inset 3px 0 0 #c53030; border-bottom: 0; }
+.pwx-row--locked .pwx-k { color: #f87171; }
+.pwx-v--ok { color: #3fb97a; }
+.pwx-btn--danger { background: transparent; border: 1px solid rgba(248,113,113,.5); color: #f87171; box-shadow: none; }
+.pwx-btn--danger:hover { filter: none; background: rgba(248,113,113,.1); color: #f87171; }
+.pwx-cf .pwx-btn--danger { background: #c53030; border-color: #c53030; color: #fff; }
+.pwx-cf .pwx-btn--danger:hover { background: #b42a2a; color: #fff; }
+.pwx-tl { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.pwx-tl__r { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 14px; color: var(--text); }
+.pwx-tl__r[hidden] { display: none; }
+.pwx-tl__r + .pwx-tl__r { border-top: 1px solid var(--border); }
+.pwx-tl__r i { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.pwx-tl__r--free i { background: #3fb97a; }
+.pwx-tl__r--lock i { background: var(--amber); }
+.pwx-tl__r > span { flex: 1; min-width: 0; }
+.pwx-tl__r small { display: block; font-size: 12px; line-height: 1.45; color: var(--text-muted); }
+.pwx-tl__r b { flex: none; font-family: 'Saira Condensed', sans-serif; font-size: 16px; font-weight: 700; text-align: right; }
+.pwx-check { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); font-size: 14px; line-height: 1.45; color: var(--text); cursor: pointer; }
+.pwx-check input { flex: none; width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--amber); }
+.pwx-late { display: flex; align-items: flex-start; gap: 6px; margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
+.pwx-late svg { flex: none; margin-top: 2px; color: #f87171; }
+.pwx-late b { color: var(--text); font-weight: 600; }
+.pwx-late__o { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 5px; background: rgba(245,147,50,.14); color: var(--amber); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; line-height: 1; }
