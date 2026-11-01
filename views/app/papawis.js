@@ -102,7 +102,7 @@ function runCard(r) {
       <div class="pw-who"><span class="pw-who__t">${r.teamsOut ? 'Teams' : 'Who\'s in'}</span><span class="pw-who__n"><b>${r.filled}</b> of ${r.max}</span></div>
       ${seats(r, { you: canClaim })}
       ${r.scheduled ? '<p class="pwr__note">The list opens with sign-ups. First come, first served.</p>' : waitRow(r)}
-      ${r.late?.length ? `<p class="pw-late"><b>Gave their slot back late:</b> ${r.late.map(d => `${esc(d.name)} <span>${d.taken ? 'slot taken' : 'slot open'}</span>`).join(', ')}</p>` : ''}
+      ${r.late?.length ? `<p class="pw-late"><b>Gave their slot back late:</b> ${r.late.map(d => `${esc(d.name)} <span>${esc(d.label)}</span>`).join(', ')}</p>` : ''}
       <div class="pw-facts">
         ${fact('Per head', r.price ? esc(r.price) : 'TBA', !!r.price)}
         ${r.scheduled ? fact('Sign-ups open', esc(r.opensLabel)) : fact(r.cancelBy ? 'Free cancel until' : 'Cancel', r.cancelBy ? esc(r.cancelBy) : 'Locked')}
@@ -124,6 +124,8 @@ function scoreBar(s) {
   if (!s) return '';
   if (s.results) return `<a class="pw-scorebar" href="${esc(s.results)}"><span><b>Today's results are in</b><small>Scores, box score and the Player of the Day</small></span><span class="btn btn--ghost">See results</span></a>`;
   if (!s.href) return '';
+  // Not open yet: the button shows, greyed, with when scoring opens (server.js pwScoreOpensAt).
+  if (s.opens && !s.busy) return `<div class="pw-scorebar"><span><b>Score today's games</b><small>Scoring opens 2 hours before the run, so nobody starts it by accident.</small></span><button type="button" class="btn btn--ghost" disabled>${esc(s.opens)}</button></div>`;
   // Scorers only (Paolo, 2026-10-30); one phone at a time, so it says who has it.
   return `<div class="pw-scorebar"><span><b>${s.busy ? `${esc(s.busy)} is scoring` : s.live ? 'Scoring now' : 'Score today\'s games'}</b><small>${s.busy ? 'Open it to take over between games, or ask them to hand it over.' : 'Same scorer as league games. Set the minutes and check who\'s here before each game.'}</small></span><a class="btn${s.busy ? ' btn--ghost' : ''}" href="${esc(s.href)}">${s.live || s.busy ? 'Open the scorer' : 'Start scoring'}</a></div>`;
 }

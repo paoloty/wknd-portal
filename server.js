@@ -7400,7 +7400,9 @@ app.get('/app/score', requireApp, (req, res) => {
       // two minutes frees it again).
       const inNow = scoreLanes.scoring(g.id);
       const full = inNow.length >= 2 && !inNow.some(x => x.playerId === me.playerId) ? inNow.map(x => x.name) : null;
-      return { id: g.id, title: scoreGameTitle(g), when: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), status: getScoreGame(g.id)?.status, full, href: `/app/score/${encodeURIComponent(g.id)}` };
+      // Not open yet (2 hours before tip-off): shown greyed with when it opens.
+      const status = getScoreGame(g.id)?.status, opens = status !== 'live' && Date.now() < scoreOpensAt(g) ? scoreOpensLabel(scoreOpensAt(g)) : '';
+      return { id: g.id, title: scoreGameTitle(g), when: [manilaDayLabel(gameYmd(g.date)), gameTipLabel(g)].filter(Boolean).join(' · '), status, full, opens, href: `/app/score/${encodeURIComponent(g.id)}` };
     });
   // Papawis runs (Scorers): today's and the coming week's open runs, so a scorer can open one
   // early with signal (it then works offline at the court), and today's not yet finished.
@@ -7408,7 +7410,8 @@ app.get('/app/score', requireApp, (req, res) => {
     for (const r of pwScorableRuns(me.playerId, pwIsAdmin(req))) {
       const sg = getScoreGame(pwScoreId(r.id)), h = sg?.settings?.holder;
       const busy = h && h.playerId !== me.playerId && Date.now() - h.at < PW_HOLD_QUIET ? h.name : '';
-      games.push({ id: pwScoreId(r.id), title: `Papawis · ${r.title || 'run'}`, when: [pwDay(r.date), formatTimeRange(r.start_time, r.end_time) || r.time_label || '', busy ? `${busy} is scoring` : ''].filter(Boolean).join(' · '), status: sg?.status, full: null, href: `/app/score/${encodeURIComponent(pwScoreId(r.id))}` });
+      const opens = sg?.status !== 'live' && Date.now() < pwScoreOpensAt(r) ? scoreOpensLabel(pwScoreOpensAt(r)) : '';
+      games.push({ id: pwScoreId(r.id), title: `Papawis · ${r.title || 'run'}`, when: [pwDay(r.date), formatTimeRange(r.start_time, r.end_time) || r.time_label || '', busy ? `${busy} is scoring` : ''].filter(Boolean).join(' · '), status: sg?.status, full: null, opens, href: `/app/score/${encodeURIComponent(pwScoreId(r.id))}` });
     }
   }
   sendTab(res, me, { title: 'Games to score · WKND', tab: 'me', body: appScorerListPage({ games, back: { href: '/app/me', label: 'Me' } }) });
@@ -7882,6 +7885,9 @@ app.post('/api/score/:id/events', express.json({ limit: '2mb' }), (req, res) => 
   const sg = getScoreGame(game.id);
   if (!sg) return res.status(409).json({ error: 'Scoring isn’t turned on for this game.' });
   if (sg.status === 'published' && pass === 'video') return res.status(409).json({ error: 'This game is published. Ask an admin to change it.' });
+  if (pass === 'live' && sg.status !== 'live' && sg.status !== 'published' && !sg.settings?.review && !sg.settings?.reviewOnly && Date.now() < scoreOpensAt(game) - SCORE_EARLY_LEEWAY) {
+    return res.status(423).json({ error: `${scoreOpensLabel(scoreOpensAt(game)).replace(/^Opens/, 'Scoring opens')}.` });
+  }
   const raw = Array.isArray(req.body?.events) ? req.body.events.slice(0, 2000) : [];
   // Players named in a play must be on one of the game's two teams.
   const roster = new Set(getAllPlayers().filter(p => p.team_id === game.team_a_id || p.team_id === game.team_b_id).map(p => p.id));
@@ -8232,6 +8238,15 @@ function pwCanFinish(req, run) {
   if (!pid || req.session?.impersonating) return false;
   return getScoreEvents(pwScoreId(run.id), 'live').some(e => e.author === pid);
 }
+// A run's scoring opens like a game's (scoreOpensAt): 2 hours before its start, or at the
+// start of its day with no start time (Paolo, 2026-11-01: someone might start it by accident).
+function pwScoreOpensAt(run) {
+  return /^\d{2}:\d{2}$/.test(String(run?.start_time || '')) ? Date.parse(`${run.date}T${run.start_time}:00+08:00`) - SCORE_OPENS_BEFORE : Date.parse(`${run.date}T00:00:00+08:00`);
+}
+// Plays sent before scoring opens are refused (the phone's holding screen keeps them from
+// being tapped; this is for an old copy of the page). A few minutes' leeway for a phone
+// whose clock runs fast.
+const SCORE_EARLY_LEEWAY = 5 * 60 * 1000;
 function pwScoreBundle(run) {
   const id = pwScoreId(run.id), sg = getScoreGame(id) || { status: 'setup', settings: {} };
   const court = getPapawisCourtByName(run.location);
@@ -8243,7 +8258,7 @@ function pwScoreBundle(run) {
   const extra = Object.values(pwPeople(run)).filter(p => !listed.has(p.id) && !p.guest);
   return {
     game: { id, date: run.date, tip: run.start_time || '', type: 'papawis' },
-    fourPoint: four, status: sg.status, rules: PW_SCORE_RULES,
+    fourPoint: four, status: sg.status, rules: PW_SCORE_RULES, opensAt: sg.status === 'live' ? 0 : pwScoreOpensAt(run),
     a: { id: 'light', name: 'Light', color: 'var(--team-white, #d7dce5)', players: sides.a },
     b: { id: 'dark', name: 'Dark', color: 'var(--team-black, #6b7486)', players: sides.b },
     events: scoreEventsWithBy(id, 'live'), pass: 'live', video: '',
@@ -8262,7 +8277,9 @@ function pwScoreLink(req, run) {
   const sg = getScoreGame(pwScoreId(run.id));
   const h = sg?.settings?.holder;
   const busy = h && h.playerId !== pid && Date.now() - h.at < PW_HOLD_QUIET ? h.name : '';
-  return { href: `/app/score/${encodeURIComponent(pwScoreId(run.id))}`, live: sg?.status === 'live', busy, results: getPapawisScored(run.id) ? `/app/papawis/${encodeURIComponent(run.id)}` : '' };
+  // The bar only shows on the run's day, so the time is enough ("Opens 5:00 PM").
+  const opens = sg?.status !== 'live' && Date.now() < pwScoreOpensAt(run) ? `Opens ${manilaFormat(pwScoreOpensAt(run), { hour: 'numeric', minute: '2-digit' })}` : '';
+  return { href: `/app/score/${encodeURIComponent(pwScoreId(run.id))}`, live: sg?.status === 'live', busy, opens, results: getPapawisScored(run.id) ? `/app/papawis/${encodeURIComponent(run.id)}` : '' };
 }
 function sendPapawisScorer(req, res, back) {
   const run = pwRunOfScore(req.params.id);
@@ -8287,6 +8304,7 @@ function pwScoreEventsPost(req, res) {
   if (req.session?.impersonating) return res.status(403).json({ error: 'Viewing as a player: nothing was saved.' });
   if (!pwScoreAccess(req, run)) return res.status(403).json({ error: 'Papawis runs are scored by Papawis scorers.' });
   const id = pwScoreId(run.id);
+  if (getScoreGame(id)?.status !== 'live' && Date.now() < pwScoreOpensAt(run) - SCORE_EARLY_LEEWAY) return res.status(423).json({ error: `${scoreOpensLabel(pwScoreOpensAt(run)).replace(/^Opens/, 'Scoring opens')}.` });
   const raw = Array.isArray(req.body?.events) ? req.body.events.slice(0, 2000) : [];
   // Who a play may name: anyone the run's games know (today's list, earlier setups, their
   // guests), plus anyone this batch's own setups name: a real player, or a guest it declares.
@@ -9619,7 +9637,7 @@ function appPapawisRuns(me) {
       lockAt: pwLockAtMs(g), freeUntil: pwFreeUntil(g), held,
       priceData: price ? pwPeso(price) : '', owe: price ? `Your ${pwPeso(price)} share` : 'Your share',
       late: scheduled ? [] : getPapawisLateDrops(g.id).filter(d => d.late_outcome && d.late_outcome !== 'excused')
-        .map(d => ({ name: d.guest_name || displayPlayerName(d.player_name || '').split(' ')[0] || 'A player', taken: d.late_outcome !== 'open' })),
+        .map(d => ({ name: d.guest_name || displayPlayerName(d.player_name || '').split(' ')[0] || 'A player', label: { open: 'slot open', charged: 'not taken' }[d.late_outcome] || 'slot taken' })),
     };
   });
 }

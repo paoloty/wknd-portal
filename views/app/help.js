@@ -13,7 +13,7 @@ export const SCORER_GUIDE = [
       ['p', 'You can score a game when an admin picks you for it, or when you’re a scorer, which lets you score any game with scoring turned on. Your games are under <b>Me → Scoring → Games to score</b>, and Home reminds you on game day.'],
       ['img', 'list.jpg', 'Games to score: every game you can score, with the ones being scored now marked.'],
       ['steps', [
-        '<b>Open the game</b> a few minutes before tip-off. The scorer opens even with no signal once it has loaded.',
+        '<b>Open the game</b> a few minutes before tip-off. Scoring opens 2 hours before tip-off (Papawis runs too), or at the start of the day when there’s no time set; until then the game shows greyed in Games to score with when it opens, so nobody starts it by accident. Open it once with signal: it then opens by itself on time, even with no signal.',
         '<b>Pick your side</b> if someone else is scoring too: White, Blue, or Both. With one phone, choose Both.',
         '<b>Check who’s there.</b> Tap a team’s name → <i>DNP…</i> to mark players who didn’t come, so they don’t show on court.',
         '<b>Start the clock</b> with ▶ at tip-off. If you forget, it starts by itself with the first play.',

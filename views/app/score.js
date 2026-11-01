@@ -3,7 +3,7 @@
 // screen, keeps every tap on the phone first (IndexedDB) and sends them in batches. The same
 // page serves the app (/app/score/:id) and the site's admin (/admin/games/:id/score).
 // Rules and maths: public/score-engine.js (shared with the server's publish).
-import { esc, backChev, chev } from './layout.js';
+import { esc, backChev, chev, icons } from './layout.js';
 
 // The games this player (or admin) can score. games: [{ id, title, when, status, href }]
 export function appScorerListPage({ games, back }) {
@@ -11,6 +11,10 @@ export function appScorerListPage({ games, back }) {
     ? `<div class="group">${games.map(g => g.full
       // Two scorers already in (the most a game takes): shown, not tappable.
       ? `<div class="cell cell--off" aria-disabled="true"><span class="cell__t">${esc(g.title)}<small>${esc(g.when)} · 2 scorers already in: ${esc(g.full.join(' and '))}</small></span></div>`
+      // Not open yet (server.js scoreOpensAt, 2 hours before tip-off): greyed, with when it
+      // opens. Tapping still opens its holding screen, which keeps the game on the phone for
+      // no signal and opens by itself on time; nothing can be scored before then.
+      : g.opens ? `<a class="cell cell--off cell--soon" href="${esc(g.href)}"><span class="ico ico--off">${icons.lock}</span><span class="cell__t">${esc(g.title)}<small>${esc(g.when)}</small></span><span class="cell__v">${esc(g.opens)}</span></a>`
       : `<a class="cell" href="${esc(g.href)}"><span class="cell__t">${esc(g.title)}<small>${esc(g.when)}${g.status === 'live' ? ' · scoring now' : ''}</small></span>${chev}</a>`).join('')}</div>`
     : '<div class="empty">No games to score. When an admin picks you to score a game, it shows up here.</div>';
   // One title: the bar's (a large title under it said the same thing twice; audit 2026-10-27).
