@@ -71,7 +71,7 @@ export function papawisResultsPage({ run, results, summary = null, share = null 
     <div class="section-header"><h2>${esc(run.title)} · results</h2><a href="/papawis">All runs</a></div>
     <p class="pwx-sub">${esc([run.day, run.place].filter(Boolean).join(' · '))}</p>
     ${summary ? summaryPanel(summary, 'papawis-run', false) : ''}
-    ${share ? `<p class="pwx-share"><button type="button" class="gd-btn gd-btn--amber" data-ssc-open>Share my stats</button></p>${shareStatsModal(share.game, share.stat, share.locked)}
+    ${share ? `<p class="pwx-share"><button type="button" class="gd-btn gd-btn--amber" data-ssc-open>Share my stats</button></p>${shareStatsModal(share.game, share.stat, share.locked, share.lockText || '')}
     <script>if (/[?&]share=1(&|$)/.test(location.search)) { var b = document.querySelector('[data-ssc-open]'); if (b) setTimeout(function () { b.click(); }, 0); }</script>` : ''}
     ${papawisResultsBody(results)}
   </div></div>`;

@@ -8599,7 +8599,7 @@ function pwResultsFor(run) {
   // No-shows and DNPs (marked by an admin): listed under the box score, no line.
   const absent = getPapawisSignups(run.id).filter(s => s.status === 'confirmed' && s.attendance)
     .map(s => ({ name: s.guest_name || displayPlayerName(s.player_name || ''), mark: s.attendance, side: s.team === 'light' || s.team === 'dark' ? s.team : '' }));
-  return { games: done.games, people, potd, full, absent, potdCount: potd && potd.playerId ? getPapawisPotdCount(potd.playerId) : 0 };
+  return { games: done.games, people, potd, full, basic: rows.some(r => r.level === 'basic'), absent, potdCount: potd && potd.playerId ? getPapawisPotdCount(potd.playerId) : 0 };
 }
 // The run's AI recap (Paolo, 2026-10-31): a headline and a sentence or two from the games and
 // the standouts, through the same writer and checks as the teams summaries (teamsSummary),
@@ -8647,7 +8647,9 @@ app.get('/papawis/:id/results', (req, res) => {
   if (!run || !results) return res.redirect('/papawis');
   const summary = pwRunSummaryStart(run);
   const t = pwShareFacts(run, req.session?.playerPlayerId);
+  // Locked over this run's own fee: say so (as the app does), not "while you have a balance".
   const share = t ? { ...t, locked: shareCardsLocked(req, t.game) } : null;
+  if (share?.locked && pwRunUnpaid(run, req.session.playerPlayerId)) share.lockText = 'Premium cards save with a lock until this run is paid.';
   res.send(renderPage(req, { title: `${run.title || 'Papawis'} · Results`, currentPath: '/papawis', body: papawisResultsPage({ run: { id: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '' }, results, summary, share }) }));
 });
 
@@ -9009,7 +9011,9 @@ function describeScorePlay(e, nm, tname) {
 app.get('/app/games/:id/share', requireApp, async (req, res) => {
   const me = appMe(req);
   const g = getGameById(req.params.id);
-  const back = { href: g ? `/app/games/${encodeURIComponent(g.id)}` : '/app/me', label: g ? 'Game' : 'Me', tab: APP_BACK[req.query.from] ? req.query.from : 'home' };
+  // From Me's Recent (?from=me) Back goes to Me, as a run's share does.
+  const back = req.query.from === 'me' ? { href: '/app/me', label: 'Me', tab: 'me' }
+    : { href: g ? `/app/games/${encodeURIComponent(g.id)}` : '/app/me', label: g ? 'Game' : 'Me', tab: APP_BACK[req.query.from] ? req.query.from : 'home' };
   const stat = g && !g.under_review ? getGameDetailStats(g.id).find(s => s.player_id === me.playerId) : null;
   if (!stat) return sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, body: appSharePage({ back, missing: true }) });
   // The opening "stats to show" follows the line (as the site's editor): a defensive night
@@ -13524,7 +13528,7 @@ async function premiumShareData(game, stat, playerId, accentKey, key) {
     gameId: game.id,
     displayName: formatName(stat.name || ''),
     cardName: [first.split(' ')[0], surname].filter(Boolean).join(' '),
-    shortName: `${first ? first[0] + '. ' : ''}${last} #${stat.number ?? ''}`,
+    shortName: `${first ? first[0] + '. ' : ''}${last}${stat.number != null && String(stat.number) !== '' ? ` #${stat.number}` : ''}`,
     initials: ((first[0] || '') + (last[0] || '')).toUpperCase(),
     number: stat.number ?? '',
     teamName: String(stat.team_name || '').toUpperCase(), teamColor: stat.team_color || '#8a93a4',
@@ -13609,17 +13613,20 @@ function pwShareFacts(run, playerId) {
   // (public/share-cards.js d.pw). basic: scored makes, rebounds and assists only, so no
   // percentages, misses, steals, blocks, turnovers or fouls on the card (Paolo, 2026-10-31).
   const sum = (lines, k) => lines.reduce((a, r) => a + (Number(r[k]) || 0), 0);
-  const games = mine.map(g => { const [x, y] = score(g), L = me.games[g.n]; return { n: g.n, my: x, opp: y, line: { pts: L.pts || 0, reb: L.reb || 0, ast: L.ast || 0, fg3m: L.fg3m || 0 } }; });
+  const games = mine.map(g => { const [x, y] = score(g), L = me.games[g.n]; return { n: g.n, my: x, opp: y, side: L.side === 'dark' ? 'dark' : 'light', line: { pts: L.pts || 0, reb: L.reb || 0, ast: L.ast || 0, fg3m: L.fg3m || 0 } }; });
   // My side's whole line across the games I played (Marquee's share rings).
   const sideLines = mine.flatMap(g => res.people.map(o => o.games[g.n]).filter(r => r && r.side === me.games[g.n].side));
-  const rank = res.people.indexOf(me) + 1;
+  // Rank by rating (Holo's top 3 and its RANK stamp), not the POTD-first order the results show.
+  const rank = [...res.people].sort((x, y) => y.rating - x.rating || (y.line.pts || 0) - (x.line.pts || 0)).indexOf(me) + 1;
   let positions = [];
   try { positions = JSON.parse(p.positions || '[]'); } catch {}
   const fact = res.potd?.key === me.key ? `Player of the Day with ${pts} point${pts === 1 ? '' : 's'} over ${mine.length} game${mine.length === 1 ? '' : 's'}.`
     : pts > 0 && res.people.every(o => o === me || (Number(o.line.pts) || 0) < pts) ? `Top scorer of the run with ${pts} points over ${mine.length} game${mine.length === 1 ? '' : 's'}.`
     : `${pts} PTS, ${me.line.reb || 0} REB and ${me.line.ast || 0} AST over ${mine.length} game${mine.length === 1 ? '' : 's'}.`;
   const pw = {
-    basic: !res.full, side, games,
+    // Any Basic game makes the day Basic (as pwRater does): a Full game's misses alone would
+    // inflate FG% and under-count steals and blocks across the day.
+    basic: res.basic, side, games,
     wl: { w: games.filter(g => g.my > g.opp).length, l: games.filter(g => g.my < g.opp).length },
     sideTotals: { pts: games.reduce((a, g) => a + g.my, 0), reb: sum(sideLines, 'reb'), ast: sum(sideLines, 'ast') },
     rank, of: res.people.length, potd: res.potd?.key === me.key,
@@ -13705,7 +13712,9 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
       ? await shareCardCached(`${full}|thumb`, async () => sharp(await shareCardCached(full, () => renderMyStatCard(req, game, stat, playerId, locked))).resize(216).png({ compressionLevel: 9 }).toBuffer())
       : await shareCardCached(full, () => renderMyStatCard(req, game, stat, playerId, locked));
     res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', `private, max-age=${thumb ? 600 : 60}`);
+    // The URL doesn't name the player, so a shared phone or tablet must never keep one
+    // player's card for the next (the server's own cache is per player and makes this cheap).
+    res.set('Cache-Control', 'private, no-store');
     res.end(png);
   } catch (err) {
     console.error('my-stat-card.png error', err);
@@ -13743,6 +13752,9 @@ async function renderMyStatCard(req, game, stat, playerId, locked) {
   const badge   = req.query.badge === '1';
   const accent  = Object.prototype.hasOwnProperty.call(SHARE_ACCENT_PRESETS, req.query.accent) ? req.query.accent : 'amber';
   let png;
+  // Holo (the day's top 3) and Player of the Day (its winner) are offered only to those
+  // players (views/game.js sscFamiliesFor); a hand-made URL for anyone else gets the Marquee.
+  if (game.papawis && PAPAWIS_KEYS.includes(req.query.align) && !sscFamiliesFor(game).some(f => f.key === req.query.align)) req.query.align = 'center';
   if (game.papawis && PAPAWIS_KEYS.includes(req.query.align)) {
     // Papawis-only templates (public/share-cards.js): the premium ones lock like the six below.
     const data = { ...await premiumShareData(game, stat, playerId, accent, req.query.align), hideZeros };

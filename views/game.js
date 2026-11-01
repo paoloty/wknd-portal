@@ -86,7 +86,8 @@ export const SSC_ACCENTS = [
   ['purple', '#a78bfa'], ['pink', '#f472b6'], ['cyan', '#22d3ee'],
 ];
 
-export function shareStatsModal(game, stat, locked = false) {
+// lockText: the lock note when it isn't the balance (a run's own unpaid fee).
+export function shareStatsModal(game, stat, locked = false, lockText = '') {
   const ast = Number(stat.ast) || 0, stl = Number(stat.stl) || 0, blk = Number(stat.blk) || 0, fg3m = Number(stat.fg3m) || 0;
   // Opening "Focus" follows this player's own box score — a rough offense-vs-defense signal
   // (ast+3PM vs stl+blk), so a defensive night doesn't open on a PTS/REB/AST row.
@@ -153,7 +154,7 @@ export function shareStatsModal(game, stat, locked = false) {
           </div>
         </section>
       </div>
-      ${locked ? `<div class="ssc2__lock" id="ssc2-lock" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Premium cards save with a lock while you have a balance. <a href="/settle-balance">Settle your balance</a> to unlock them.</span></div>` : ''}
+      ${locked ? `<div class="ssc2__lock" id="ssc2-lock" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>${lockText ? escHtml(lockText) : 'Premium cards save with a lock while you have a balance. <a href="/settle-balance">Settle your balance</a> to unlock them.'}</span></div>` : ''}
       <div class="ssc2__msg" id="ssc2-msg" hidden></div>
       <div class="ssc2__acts">
         <button type="button" class="ssc2-act" id="ssc2-save" aria-label="Save">${icon('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>')}<span>Save</span></button>

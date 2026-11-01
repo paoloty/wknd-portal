@@ -32,6 +32,8 @@ export const SHARE_ACCENTS = {
 };
 
 export const W = 1080, H = 1920;
+// "#7", or nothing for a player with no jersey number (never a bare "#").
+const jno = d => (d.number != null && String(d.number) !== '' ? `#${d.number}` : '');
 const BASE = 'Noto Sans, DejaVu Sans, Liberation Sans, Arial, sans-serif';
 // Saira Condensed ships as Black only (assets/fonts), so numbers are always weight 900.
 export const NUM = `'Saira Condensed', ${BASE}`;
@@ -150,10 +152,10 @@ async function usual(d, measure) {
   <text x="${kickX}" y="${headY}" font-family="${BODY}" font-size="${kickSize}" font-weight="700" letter-spacing="4" fill="${MUTED}">${kicker}</text>
   <text x="${x0}" y="${nameY}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1" fill="${WHITE}" filter="url(#txt)">${esc(cardName)}</text>
   <circle cx="${x0 + 12}" cy="${nameY + 52}" r="12" fill="${esc(d.teamColor)}"/>
-  <text x="${x0 + 36}" y="${nameY + 64}" font-family="${BODY}" font-size="33" font-weight="700" fill="${MUTED}">${esc(d.teamName)} · #${esc(d.number)}</text>
+  <text x="${x0 + 36}" y="${nameY + 64}" font-family="${BODY}" font-size="33" font-weight="700" fill="${MUTED}">${esc([d.teamName, jno(d)].filter(Boolean).join(' · '))}</text>
   ${rowSvg}
   ${hasAvg ? `<rect x="${x0}" y="${legendY - 26}" width="6" height="30" fill="#e7eaf0"/>
-  <text x="${x0 + 22}" y="${legendY}" font-family="${BODY}" font-size="28" fill="${MUTED}">season average</text>` : ''}
+  <text x="${x0 + 22}" y="${legendY}" font-family="${BODY}" font-size="28" fill="${MUTED}">${d.papawis ? 'run' : 'season'} average</text>` : ''}
   <rect x="${x0}" y="${ruleY}" width="${W - 132}" height="3" fill="#ffffff" fill-opacity="0.12"/>
   ${footer(d, footY)}
 </svg>`;
@@ -231,7 +233,7 @@ async function cover(d, measure) {
   const heroNumW = await widthOf(measure, hero.v, NUM, 340, 900);
   const wordX = Math.round(40 + heroNumW + 30);
   const wordSize = await fit(measure, heroWord, { font: NUM, size: 78, maxW: W - 54 - wordX });
-  const byline = `${d.cardName.toUpperCase()} · #${d.number} ${d.teamName}`;
+  const byline = [d.cardName.toUpperCase(), [jno(d), d.teamName].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
   const bylineSize = await fit(measure, byline, { font: BODY, size: 33, weight: 700, maxW: W - 54 - wordX });
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>${DEFS}
@@ -278,7 +280,7 @@ async function poster(d, measure) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>${DEFS}${scrim()}</defs>
   <rect x="0" y="${nameY - 380}" width="${W}" height="${H - nameY + 380}" fill="url(#scrim)"/>
-  <text x="54" y="${nameY}" font-family="${BODY}" font-size="33" font-weight="800" letter-spacing="9" fill="${SOFT}">${esc(d.cardName.toUpperCase())} · #${esc(d.number)}</text>
+  <text x="54" y="${nameY}" font-family="${BODY}" font-size="33" font-weight="800" letter-spacing="9" fill="${SOFT}">${esc([d.cardName.toUpperCase(), jno(d)].filter(Boolean).join(' · '))}</text>
   ${lineSvg}
   ${footer(d, footY, { x0: 54, x1: W - 54 })}
 </svg>`;
@@ -297,9 +299,9 @@ async function bug(d, measure, { photoHref = null, hasPhoto = !!photoHref } = {}
   const name = d.cardName.toUpperCase();
   const x = 54, y = 54, heroW = 180, rowH = 168, av = 120;
   const textX = x + heroW + 30 + av + 30, maxText = W - 54 - 40 - textX;
-  const nameSize = await fit(measure, `${name} #${d.number}`, { font: NUM, size: 51, ls: 1.5, maxW: maxText });
+  const nameSize = await fit(measure, `${name} ${jno(d)}`.trim(), { font: NUM, size: 51, ls: 1.5, maxW: maxText });
   const lineSize = await fit(measure, line || ' ', { font: NUM, size: 42, maxW: maxText });
-  const nameW = await widthOf(measure, `${name} #${d.number}`, NUM, nameSize, 900, 1.5);
+  const nameW = await widthOf(measure, `${name} ${jno(d)}`.trim(), NUM, nameSize, 900, 1.5);
   const lineW = await widthOf(measure, line || ' ', NUM, lineSize, 900);
   const boxR = Math.min(W - 54, textX + Math.max(nameW, lineW, 400) + 40);
   const stripY = y + rowH, stripH = 60;
@@ -323,7 +325,7 @@ async function bug(d, measure, { photoHref = null, hasPhoto = !!photoHref } = {}
   <circle cx="${avCx}" cy="${avCy}" r="${av / 2}" fill="#161c29"/>
   ${photoHref ? `<image href="${esc(photoHref)}" x="${photoBox.left}" y="${photoBox.top}" width="${av}" height="${av}" preserveAspectRatio="xMidYMin slice" clip-path="url(#av)"/>` : ''}
   ${hasPhoto ? '' : `<text x="${avCx}" y="${avCy + 15}" text-anchor="middle" font-family="${NUM}" font-size="48" font-weight="900" fill="${SOFT}">${esc(d.initials)}</text>`}
-  <text x="${textX}" y="${y + 76}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1.5" fill="${WHITE}">${esc(name)} <tspan fill="${MUTED}">#${esc(d.number)}</tspan></text>
+  <text x="${textX}" y="${y + 76}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1.5" fill="${WHITE}">${esc(name)}${jno(d) ? ` <tspan fill="${MUTED}">${esc(jno(d))}</tspan>` : ''}</text>
   <text x="${textX}" y="${y + 128}" font-family="${NUM}" font-size="${lineSize}" font-weight="900" fill="${SOFT}">${esc(line)}</text>
   <circle cx="${x + 42}" cy="${stripY + stripH / 2}" r="9" fill="${esc(d.teamColor)}"/>
   <text x="${x + 64}" y="${stripY + 40}" font-family="${BODY}" font-size="27" font-weight="700" letter-spacing="3" fill="${SOFT}">${esc(strip)}</text>
@@ -421,7 +423,7 @@ async function pwsheet(d, measure) {
   const { first, last } = nameParts(d);
   const name = `${first} ${last}`.trim();
   const nameSize = await fit(measure, name, { font: NUM, size: 120, ls: 1, maxW: x1 - x0 });
-  const sub = [`#${d.number}`, SIDE_WORD[pw.side], d.dateShort.toUpperCase(), pw.court.toUpperCase()].filter(Boolean).join(' · ');
+  const sub = [jno(d), SIDE_WORD[pw.side], d.dateShort.toUpperCase(), pw.court.toUpperCase()].filter(Boolean).join(' · ');
   const subSize = await fit(measure, sub, { font: BODY, size: 30, weight: 700, ls: 4, maxW: x1 - x0 });
   const rows = games.map((g, i) => {
     const top = rowsTop + i * rowH, mid = top + rowH / 2, r = wl(g);
@@ -477,8 +479,10 @@ async function pwsides(d, measure) {
     const me = side === mine, light = side === 'light';
     const ink = light ? '#0d121c' : WHITE;
     const scores = games.map((g, i) => {
-      // Each game's score for this row's side: mine is g.my when I played this side.
-      const v = side === mine ? g.my : g.opp, other = side === mine ? g.opp : g.my;
+      // Each game's score for this row's side, from the side the player was on THAT game
+      // (g.side): someone who switched mid-run has g.my for the other side in those games.
+      const on = g.side || mine;
+      const v = side === on ? g.my : g.opp, other = side === on ? g.opp : g.my;
       return `<text x="${colX(i)}" y="${top + rowH / 2 + 30}" text-anchor="middle" font-family="${NUM}" font-size="84" font-weight="900" fill="${ink}" fill-opacity="${v >= other ? 1 : 0.42}">${v}</text>`;
     }).join('');
     const youW = 104;
@@ -497,7 +501,7 @@ async function pwsides(d, measure) {
   <rect x="0" y="${nameY - 420}" width="${W}" height="${H - nameY + 420}" fill="url(#scrim)"/>
   ${kicker(x0, 110, `PAPAWIS · ${d.dateShort.toUpperCase()}`, accent)}
   <text x="${x0}" y="${nameY}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1" fill="${WHITE}" filter="url(#txt)">${esc(name)}</text>
-  <text x="${x0}" y="${lineY}" font-family="${NUM}" font-size="60" font-weight="900" fill="${WHITE}">${esc(line)} <tspan fill="${MUTED}" font-family="${BODY}" font-size="28" font-weight="700">#${esc(d.number)}</tspan></text>
+  <text x="${x0}" y="${lineY}" font-family="${NUM}" font-size="60" font-weight="900" fill="${WHITE}">${esc(line)}${jno(d) ? ` <tspan fill="${MUTED}" font-family="${BODY}" font-size="28" font-weight="700">${esc(jno(d))}</tspan>` : ''}</text>
   ${heads}
   ${row('light', lightTop)}
   ${row('dark', darkTop)}
@@ -563,7 +567,7 @@ async function pwpotd(d, measure) {
   const subY = statNumY - 140, nameY = subY - 52;
   const titleSize = 230, lh = Math.round(titleSize * 0.84);
   const t3 = nameY - 64, t2 = t3 - lh, t1 = t2 - lh;
-  const name = `${nameParts(d).first} ${nameParts(d).last} · #${d.number}`.trim();
+  const name = [`${nameParts(d).first} ${nameParts(d).last}`.trim(), jno(d)].filter(Boolean).join(' · ');
   const nameSize = await fit(measure, name, { font: BODY, size: 46, weight: 800, ls: 4, maxW: x1 - x0 });
   const sub = [SIDE_WORD[pw.side], result(d), pw.court.toUpperCase()].filter(Boolean).join(' · ');
   const subSize = await fit(measure, sub, { font: BODY, size: 30, weight: 700, ls: 4, maxW: x1 - x0 });
@@ -601,7 +605,7 @@ async function cardFront(d, measure, holo) {
   const bannerTop = winBottom - 120, bannerH = 300, bx0 = sx, bx1 = W - sx;
   const lastSize = await fit(measure, last, { font: NUM, size: 176, ls: 1, maxW: bx1 - bx0 - 140 });
   const firstSize = await fit(measure, first || ' ', { font: BODY, size: 38, weight: 800, ls: 8, maxW: bx1 - bx0 - 140 });
-  const chips = [`#${d.number}`, (pw.positions || []).join(' · '), `${SIDE_WORD[pw.side]}`].filter(Boolean);
+  const chips = [jno(d), (pw.positions || []).join(' · '), `${SIDE_WORD[pw.side]}`].filter(Boolean);
   const chipInk = holo ? WHITE : accent.text;
   let cx = bx0 + 44;
   const chipSvg = (await Promise.all(chips.map(async (c, i) => {
@@ -707,7 +711,7 @@ async function pwback(d, measure) {
       <rect x="${frame}" y="${frame + topH}" width="${cw - frame * 2}" height="${bioH}" fill="${accent.bg}"/>
     </g>
     <circle cx="${frame + 96}" cy="${frame + topH / 2}" r="58" fill="${accent.bg}"/>
-    <text x="${frame + 96}" y="${frame + topH / 2}" text-anchor="middle" dominant-baseline="central" font-family="${NUM}" font-size="${String(d.number).length > 2 ? 48 : 66}" font-weight="900" fill="${accent.text}">${esc(d.number)}</text>
+    <text x="${frame + 96}" y="${frame + topH / 2}" text-anchor="middle" dominant-baseline="central" font-family="${NUM}" font-size="${String(d.number).length > 2 ? 48 : 66}" font-weight="900" fill="${accent.text}">${esc(jno(d) ? d.number : '–')}</text>
     <text x="${frame + 184}" y="${frame + topH / 2 + 4}" font-family="${NUM}" font-size="${nameSize}" font-weight="900" letter-spacing="1" fill="${WHITE}">${esc(name)}</text>
     <text x="${frame + 186}" y="${frame + topH / 2 + 48}" font-family="${BODY}" font-size="22" font-weight="700" letter-spacing="5" fill="${MUTED}">PAPAWIS · RUN ${pw.runNo} · ${esc(d.dateShort.toUpperCase())}</text>
     ${bioSvg}
