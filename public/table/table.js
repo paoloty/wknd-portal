@@ -12,6 +12,75 @@ const show = name => document.querySelectorAll('[data-screen]').forEach(el => { 
 const fmt = secs => { const s = Math.max(0, Math.ceil(secs)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const IDLE_MS = 20000;
 
+// ── Papawis clock (Paolo, 2026-11-01): big, and it warns. The layout: A (big clock, the normal
+// one) or B (clock first: tap the clock), kept per tablet. Amber in the last 2 minutes with a
+// chime at 2:00, red with tenths in the last 10 s with a tick each second from 0:05, a buzzer at
+// 0:00. Sounds are small WAV files made here and played as ordinary audio, which an iPad plays
+// even with the silent switch on; a tablet only plays sound after a tap (Turn on sound).
+const store = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+let clockFirst = store.get('wknd-table-clock') === 'first';
+const pwClock = secs => {
+  if (secs > 0 && secs < 10) { const t = Math.floor(secs * 10); return `0:0${Math.floor(t / 10)}<small>.${t % 10}</small>`; }
+  return fmt(secs);
+};
+const alertOf = secs => (secs <= 0 ? 'end' : secs < 10 ? 'last' : secs <= 120 ? 'warn' : '');
+const RATE = 22050;
+function wav(len, fn) {
+  const n = Math.floor(len * RATE), buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, RATE, true); v.setUint32(28, RATE * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, fn(i / RATE))) * 32767, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+const env = (t, start, dur) => { const u = t - start; return u < 0 || u > dur ? 0 : Math.min(1, u / 0.02) * Math.exp(-4 * u / dur); };
+const sine = (f, t) => Math.sin(2 * Math.PI * f * t);
+let sounds = null, soundOn = false;
+function makeSounds() {
+  if (sounds) return sounds;
+  const src = {
+    chime: wav(1.2, t => 0.55 * (env(t, 0, 0.55) * sine(880, t) + env(t, 0.32, 0.8) * sine(660, t))),
+    tick: wav(0.12, t => 0.5 * env(t, 0, 0.1) * (sine(1320, t) > 0 ? 1 : -1)),
+    buzzer: wav(1.25, t => { const a = t < 0.03 ? t / 0.03 : t > 1.15 ? Math.max(0, (1.25 - t) / 0.1) : 1; return 0.35 * a * ((((t * 170) % 1) * 2 - 1) + (((t * 176) % 1) * 2 - 1)); }),
+  };
+  sounds = {};
+  for (const k of Object.keys(src)) { const a = new Audio(src[k]); a.preload = 'auto'; sounds[k] = a; }
+  return sounds;
+}
+function play(k) { if (!soundOn || !sounds) return; const a = sounds[k]; try { a.currentTime = 0; const p = a.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+function soundUnlock() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  const s = makeSounds();
+  for (const a of Object.values(s)) { a.muted = true; const p = a.play(); const done = () => { a.pause(); a.currentTime = 0; a.muted = false; }; if (p && p.then) p.then(done, done); else done(); }
+  soundOn = true;
+  setTimeout(() => play('chime'), 150);
+}
+// Sounds only when the clock runs down past the mark (so joining at 1:50, or a restart, stays quiet).
+let lastSecs = null, lastPer = null;
+function alertSounds(secs) {
+  if (!S || S.kind !== 'papawis' || S.final) { lastSecs = null; return; }
+  const prev = lastSecs, same = lastPer === S.period;
+  lastSecs = secs; lastPer = S.period;
+  if (prev == null || !same || prev - secs > 2 || prev <= secs) return;
+  if (prev > 120 && secs <= 120) play('chime');
+  for (let m = 5; m >= 1; m--) if (prev > m && secs <= m) play('tick');
+  if (prev > 0 && secs <= 0) play('buzzer');
+}
+function paintClock() {
+  if (!S || view !== 'board') return;
+  const secs = S.final ? 0 : Math.max(0, clockNow()), pw = S.kind === 'papawis';
+  const c = $('[data-clock]');
+  if (pw && !S.final) c.innerHTML = pwClock(secs); else c.textContent = fmt(secs);
+  const a = pw && !S.final ? alertOf(secs) : '';
+  const board = $('[data-board]');
+  board.classList.toggle('board--pw', pw); board.classList.toggle('board--first', pw && clockFirst);
+  for (const k of ['warn', 'last', 'end']) board.classList.toggle(`is-${k}`, a === k);
+  const cue = $('[data-cue]'); cue.hidden = !a;
+  cue.textContent = a === 'end' ? `End of ${S.period}` : a === 'last' ? 'Last 10 s' : a === 'warn' ? 'Last 2 min' : '';
+  $('[data-act="sound"]').hidden = !pw || soundOn;
+  alertSounds(secs);
+}
+
 // ── Offline copy ──
 const offNote = $('[data-offline-note]');
 // In the app (/app/table, table mode) the app keeps the screen; /table keeps its own copy.
@@ -180,7 +249,7 @@ function paint() {
     $('[data-title]').innerHTML = esc(S.title);
     for (const [i, side] of ['a', 'b'].entries()) $(`[data-side="${side}"]`).innerHTML = sideHtml(S.teams[i]);
     $('[data-per]').textContent = S.final ? 'FINAL' : S.period;
-    $('[data-clock]').textContent = S.final ? '0:00' : fmt(clockNow());
+    paintClock();
     $('[data-run]').innerHTML = S.final ? 'Game over' : `<span class="dot${S.clock.running ? '' : ' dot--wait'}"></span>${S.clock.running ? 'Clock running' : 'Clock stopped'}`;
     $('[data-last]').textContent = S.last || '';
     $('[data-prev]').innerHTML = (S.prev || []).map(g => `Game ${g.n} <b>${g.a}–${g.b}</b>`).join(' · ');
@@ -221,7 +290,7 @@ let looping = false;
 function loop() {
   if (looping) return; looping = true;
   const tick = () => {
-    if (S && view === 'board' && !S.final) $('[data-clock]').textContent = fmt(clockNow());
+    if (S && view === 'board') paintClock();
     if (S && view !== 'board') { const left = Math.ceil((IDLE_MS - (Date.now() - touched)) / 1000); if (left <= 0) { view = 'board'; paint(); } else document.querySelectorAll('[data-act="board"]').forEach(b => { b.textContent = `Back to the score · ${left} s`; }); }
     const quiet = performance.now() - lastMsg;
     // Online, the phone only sends changes (and every 20 s), so quiet is normal up to ~45 s.
@@ -258,6 +327,8 @@ document.addEventListener('click', e => {
     return;
   }
   if (b.hasAttribute('data-follow')) return follow(b.getAttribute('data-follow'));
+  if (act === 'sound') { soundUnlock(); return paint(); }
+  if (act === 'clockmode') { if (!S || S.kind !== 'papawis') return; clockFirst = !clockFirst; store.set('wknd-table-clock', clockFirst ? 'first' : 'big'); return paint(); }
   if (act === 'players') { view = 'players'; return paint(); }
   if (act === 'board') { view = 'board'; return paint(); }
   if (b.hasAttribute('data-team')) { cardTeam = Number(b.getAttribute('data-team')) || 0; return paint(); }

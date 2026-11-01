@@ -3217,15 +3217,18 @@ app.get('/linktest/sw.js', (req, res) => {
 // The table display (public/table/, 2026-10-30): a tablet at the scorer's table mirrors the
 // scorer's phone over the phone's hotspot. No sign-in; works offline after one visit (its own
 // service worker, scoped to /table, like the link test).
-app.get('/table', (req, res) => {
-  res.set('Cache-Control', 'no-cache').sendFile(path.join(__dirname, 'public/table/index.html'));
-});
+// The page names its script with the app's version, so a tablet never pairs new markup with a
+// week-old cached table.js.
+let tablePage = null;
+const sendTable = res => {
+  if (!tablePage) tablePage = readFileSync(path.join(__dirname, 'public/table/index.html'), 'utf8').replace('src="/table/table.js"', `src="/table/table.js?v=${APP_VER}"`);
+  res.set('Cache-Control', 'no-cache').type('html').send(tablePage);
+};
+app.get('/table', (req, res) => sendTable(res));
 // Table mode in the app (Paolo, 2026-10-30): a tablet signed into the app opens Me → Scoring →
 // Table display; the app's service worker keeps the screen, so it works with no internet after
 // one visit. Same page and script as /table.
-app.get('/app/table', requireApp, (req, res) => {
-  res.set('Cache-Control', 'no-cache').sendFile(path.join(__dirname, 'public/table/index.html'));
-});
+app.get('/app/table', requireApp, (req, res) => sendTable(res));
 app.get('/table/sw.js', (req, res) => {
   res.set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/table' }).type('application/javascript').sendFile(path.join(__dirname, 'public/table/sw.js'));
 });
@@ -6221,7 +6224,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/player-cards.js', 'views/player-cards.js', 'views/app/papawis-score.js', 'views/app/table.js', 'public/table.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js', 'views/app/season.js', 'views/feed-admin.js', 'public/feed-admin.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/player-cards.js', 'views/player-cards.js', 'views/app/papawis-score.js', 'views/app/table.js', 'public/table/table.js', 'public/table/index.html', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js', 'views/app/season.js', 'views/feed-admin.js', 'public/feed-admin.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);

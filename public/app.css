@@ -1637,6 +1637,8 @@ html.tk-lock { overflow: hidden; }
 .sc-clk { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .sc-clk__p { font: 600 12px/1 var(--font-num); letter-spacing: .1em; color: var(--muted); }
 .sc-clk__row { display: flex; align-items: center; gap: 4px; }
+/* Papawis: the last 2 minutes and the last 10 s (public/scorer.js clockTone). */
+.sc-clk__t.is-warn { color: var(--amber-text); } .sc-clk__t.is-last { color: var(--loss); }
 button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0; color: inherit; font: 700 24px/1 var(--font-num); }
 .sc-cb { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); touch-action: none; }
 .sc-cb--go { background: var(--amber); color: #111; }

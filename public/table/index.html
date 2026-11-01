@@ -67,7 +67,32 @@
   .tos i.on { background: var(--text); border: 0; }
   .mid { display: flex; flex-direction: column; align-items: center; gap: 16px; }
   .per { display: inline-flex; align-items: center; height: 56px; padding: 0 28px; border-radius: 999px; background: var(--surface-2); font: 700 36px/1 var(--num); letter-spacing: .06em; }
-  .clock { font: 800 clamp(80px, 12vw, 150px)/.9 var(--num); font-variant-numeric: tabular-nums; }
+  .clock { font: 800 clamp(80px, 12vw, 150px)/.9 var(--num); font-variant-numeric: tabular-nums; padding: 0; transition: color .3s; }
+  .clock small { font-size: .5em; }
+  /* Papawis (Paolo, 2026-11-01: players couldn't read the clock from the court). A, the normal
+     layout: the clock as big as the scores (Papawis has no fouls or timeouts under them). B,
+     clock first (tap the clock): the score in a band on top, the clock fills the screen. */
+  .board--pw .sb { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
+  .board--pw .score, .board--pw .clock { font-size: clamp(110px, min(17vw, 30vh), 240px); }
+  .board--pw .marks { display: none; }
+  .board--first .sb { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "a b" "mid mid"; gap: 16px 24px; }
+  .board--first [data-side="a"] { grid-area: a; } .board--first [data-side="b"] { grid-area: b; } .board--first .mid { grid-area: mid; }
+  .board--first .side { flex-direction: row; justify-content: center; gap: 28px; padding: 10px 24px; border-radius: 22px; background: var(--surface); border: 1px solid var(--border); }
+  .board--first .side__n { font-size: clamp(24px, 3vw, 36px); }
+  .board--first .score { font-size: clamp(80px, min(10vw, 15vh), 130px); }
+  .board--first .clock { font-size: clamp(160px, min(31vw, 46vh), 440px); }
+  /* The last 2 minutes (amber), the last 10 s (red, with tenths), time (blinks red). */
+  .cue { display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 999px; font: 700 22px/1 var(--num); letter-spacing: .14em; text-transform: uppercase; }
+  .board--pw.is-warn .clock { color: var(--amber); } .board--pw.is-warn .cue { background: rgba(245,147,50,.16); color: var(--amber); }
+  .board--pw.is-last .clock, .board--pw.is-end .clock { color: var(--loss); } .board--pw.is-last .cue { background: rgba(248,113,113,.16); color: var(--loss); }
+  .board--pw.is-end .cue { background: var(--loss); color: #fff; }
+  .board--pw.is-end .clock { animation: blink 1s steps(2, start) infinite; }
+  .board--pw.is-warn, .board--pw.is-last, .board--pw.is-end { box-shadow: inset 0 0 0 8px var(--c-alert); }
+  .board--pw.is-warn { --c-alert: var(--amber); } .board--pw.is-last, .board--pw.is-end { --c-alert: var(--loss); }
+  @keyframes blink { to { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .board--pw.is-end .clock { animation: none; } }
+  .snd { margin-left: auto; margin-right: 10px; }
+  .snd--off { background: var(--amber); color: #111; }
   .run { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--muted); }
   .strip { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 20px; padding: 10px 10px 10px 22px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); }
   .strip__last { font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -153,12 +178,12 @@
 </section>
 
 <!-- The scoreboard -->
-<section class="screen" data-screen="board" hidden>
-  <div class="top"><span class="lbl" data-title></span><button type="button" class="pill" data-act="home" aria-label="Link status: tap to stop showing this game"><span class="dot" data-link-dot></span><span data-link>Linked</span></button></div>
+<section class="screen" data-screen="board" data-board hidden>
+  <div class="top"><span class="lbl" data-title></span><button type="button" class="pill snd snd--off" data-act="sound" hidden>🔇 Turn on sound</button><button type="button" class="pill" data-act="home" aria-label="Link status: tap to stop showing this game"><span class="dot" data-link-dot></span><span data-link>Linked</span></button></div>
   <div class="banner" data-lost hidden></div>
   <div class="sb">
     <div class="side" data-side="a"></div>
-    <div class="mid"><span class="per" data-per>Q1</span><b class="clock" data-clock>10:00</b><span class="run" data-run></span></div>
+    <div class="mid"><span class="per" data-per>Q1</span><button type="button" class="clock" data-act="clockmode" data-clock>10:00</button><span class="cue" data-cue hidden></span><span class="run" data-run></span></div>
     <div class="side" data-side="b"></div>
   </div>
   <div class="strip"><span class="strip__last" data-last></span><span class="strip__prev" data-prev></span><button type="button" class="btn btn--ghost" data-act="players">Players ›</button></div>

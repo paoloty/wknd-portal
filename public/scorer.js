@@ -262,6 +262,10 @@ export async function mount(el) {
   };
   let G = fold();
   const clockStr = () => `${Math.floor(ui.secs / 60)}:${String(ui.secs % 60).padStart(2, '0')}`;
+  // Papawis: the clock turns amber in the last 2 minutes and red in the last 10 s, like the table
+  // display (public/table/table.js), without its sounds.
+  const clockTone = () => (!pw || G.final ? '' : ui.secs <= 10 ? ' is-last' : ui.secs <= 120 ? ' is-warn' : '');
+  const showClock = c => { if (!c) return; c.textContent = clockStr(); c.className = `sc-clk__t num${clockTone()}`; };
 
   // ── Practice: how far it got, for the admin log (never the plays). At most every 20 s, and
   // right away at the end of a quarter, at game over and on Reset. ──
@@ -468,7 +472,7 @@ export async function mount(el) {
     // notes; while choosing a side the countdowns tick, so then always.
     const sig = JSON.stringify([d.me, d.others, d.asks, d.keeper && d.keeper.device, ui.asked, ui.alone, ui.tip, !ui.lane && d.holders]);
     if (sig !== laneSig || body.action) { laneSig = sig; paint(); }
-    else { const c = root.querySelector('[data-sc-clock]'); if (c) c.textContent = clockStr(); }
+    else showClock(root.querySelector('[data-sc-clock]'));
   }
   const pickSide = (want, holder) => {
     if (!holder) return lanes({ action: 'claim', want });
@@ -1054,7 +1058,7 @@ export async function mount(el) {
     if (!ui.running) return;
     clockNow();
     if (ui.secs <= 0) { ui.running = false; syncRun(); ui.tip = `End of ${G.period} on the clock.`; save(); paint(); return; }
-    const c = root.querySelector('[data-sc-clock]'); if (c) c.textContent = clockStr();
+    showClock(root.querySelector('[data-sc-clock]'));
     if (Date.now() - lastSave > 15000) { lastSave = Date.now(); save(); }
   }, 1000);
   // Back on the screen (a call, the lock screen): the clock catches up at once.
@@ -1872,7 +1876,7 @@ export async function mount(el) {
     root.classList.toggle('is-roomy', thumb && (!!pw || ['a', 'b'].filter(mine).length < 2));
     // The clock, its start/end and the ••• menu: on the board, or in thumb mode the dock's top row.
     const clockCtl = () => `
-              <button type="button" class="sc-clk__t num" data-act="clockset" data-sc-clock aria-label="Game clock ${clockStr()}. Tap to fix it">${clockStr()}</button>
+              <button type="button" class="sc-clk__t num${clockTone()}" data-act="clockset" data-sc-clock aria-label="Game clock ${clockStr()}. Tap to fix it">${clockStr()}</button>
               ${keepsClock() && !ui.running && ui.secs === 0 && !G.final && !ui.locked ? `<button type="button" class="sc-cb sc-cb--go sc-cb--end" data-act="end" aria-label="End ${esc(G.period)}">End</button>`
                 : keepsClock() ? `<button type="button" class="sc-cb sc-cb--go${ui.whistle && !ui.running ? ' is-pulse' : ''}" data-act="clock" aria-label="${ui.running ? 'Pause clock' : 'Start clock'}">${ui.running ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>'}</button>`
                 : `<span class="sc-keeper num" aria-label="${esc(keeper().name)} keeps the clock">${esc(keeper().name.split(' ')[0])}</span>`}
