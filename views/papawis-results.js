@@ -35,10 +35,10 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
   const cols = full ? ['PTS', 'REB', 'AST', 'STL', 'BLK', 'FG'] : ['PTS', 'REB', 'AST'];
   const cells = L => [L.pts || 0, L.reb || 0, L.ast || 0, ...(full ? [L.stl || 0, L.blk || 0, fgLine(L)] : [])];
   // out: no-shows and DNPs on this side, at the bottom with their mark in place of a line.
-  const outRow = a => `<tr class="is-out"><th scope="row"><span class="pwx-who">${esc(a.name)}</span></th><td colspan="${cols.length}" class="pwx-out">${a.mark === 'noshow' ? 'No-show' : 'DNP'}</td></tr>`;
+  const outRow = a => `<tr class="is-out"><th scope="row"><span class="pwx-pname">${esc(a.name)}</span></th><td colspan="${cols.length}" class="pwx-out">${a.mark === 'noshow' ? 'No-show' : 'DNP'}</td></tr>`;
   const table = (title, rows, out = []) => `<div class="pwx-box"><div class="pwx-box__h">${title}</div>
     <div class="table-scroll"><table class="pwx-tbl"><thead><tr><th scope="col">Player</th>${cols.map(c => `<th scope="col" class="num">${c}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(r => `<tr data-pcard="${esc(r.key)}" tabindex="0"${r.key === potd?.key ? ' class="is-potd"' : ''}><th scope="row"><span class="pwx-who">${r.number ? `<i class="num">${esc(r.number)}</i>` : ''}${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ''}</span></th>${cells(r.L).map(v => `<td class="num">${v}</td>`).join('')}</tr>`).join('')}${out.map(outRow).join('')}</tbody></table></div></div>`;
+    <tbody>${rows.map(r => `<tr data-pcard="${esc(r.key)}" tabindex="0"${r.key === potd?.key ? ' class="is-potd"' : ''}><th scope="row"><span class="pwx-pname">${r.number ? `<i class="num">${esc(r.number)}</i>` : ''}${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ''}</span></th>${cells(r.L).map(v => `<td class="num">${v}</td>`).join('')}</tr>`).join('')}${out.map(outRow).join('')}</tbody></table></div></div>`;
   // The whole day, each player under the side he finished on.
   const day = ['light', 'dark'].map(s => {
     const rows = people.filter(p => p.side === s).sort((x, y) => (y.line.pts || 0) - (x.line.pts || 0)).map(p => ({ key: p.key, name: p.name, number: p.number, L: p.line, note: Object.values(p.games).some(r => r.side !== s) ? `also played ${s === 'light' ? 'Dark' : 'Light'}` : p.n < games.length ? `${p.n} of ${games.length} games` : '' }));
