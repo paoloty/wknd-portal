@@ -780,6 +780,8 @@ a.sx:active { transform: scale(.99); }
 .ax__head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .ax__ico { flex: none; width: 34px; height: 34px; border-radius: var(--r-in); background: rgba(245,147,50,.14); color: var(--amber-text); display: flex; align-items: center; justify-content: center; }
 .ax__ico svg { width: 18px; height: 18px; }
+/* Feed posts (not announcements) carry our Facebook page's profile picture (public/fb-page-avatar.jpg, saved from the page 2026-11-01). */
+.ax__ico--page { border-radius: 50%; background: none; object-fit: cover; }
 .ax__head > div { flex: 1; min-width: 0; }
 .ax__head b { display: block; font-size: 14px; font-weight: 600; }
 .ax__head small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }

@@ -99,7 +99,7 @@ function annCard(a) {
     : a.fb ? `<div class="ax__fb${a.fb.video ? ' is-video' : ''}" data-fb-embed="${esc(a.fb.url)}" data-fb-video="${a.fb.video ? '1' : ''}"><a class="ax__fb-open" href="${esc(a.fb.url)}" target="_blank" rel="noopener">${a.fb.video ? 'Watch on Facebook' : 'Open on Facebook'}</a></div>`
     : a.media?.img || a.yt ? `<div class="ax__media">${media({ ...a.media, yt: a.yt })}</div>` : '';
   return `<article class="sx ax ax--${esc(a.type || 'announcement')}${a.pinned ? ' is-pinned' : ''}"><div class="sx__body">
-    <div class="ax__head"><span class="ax__ico" aria-hidden="true">${ann ? icons.megaphone : icons.ball}</span><div><b>${esc(who)}</b><small>${esc(a.label || 'Announcement')}${a.when ? ` · ${esc(a.when)}` : ''}</small></div>${chip}</div>
+    <div class="ax__head">${ann ? `<span class="ax__ico" aria-hidden="true">${icons.megaphone}</span>` : `<img class="ax__ico ax__ico--page" src="/fb-page-avatar.jpg" alt="" width="34" height="34">`}<div><b>${esc(who)}</b><small>${esc(a.label || 'Announcement')}${a.when ? ` · ${esc(a.when)}` : ''}</small></div>${chip}</div>
     ${ann ? mediaHtml : ''}
     ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
     ${a.body ? `<div class="ax__body">${paras(a.body)}</div>` : ''}
