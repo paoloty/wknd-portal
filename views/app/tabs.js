@@ -47,9 +47,9 @@ export function appTeamPage({ me, team, roster = [], upNext = null, schedule = [
 // scoring: { games } for scorers, anyone picked to score, and admins (server.js scoringMenuFor), else null.
 // cover: { own } — the profile's cover is the player's own photo (else their team's colours).
 // Its buttons sit under Change photo (Paolo, 2026-10-29: not over the cover, too big there).
-// pwLearn: a Papawis-active player who isn't a scorer: the Papawis scoring practice and guide
-// (the Scoring group has them for scorers).
-export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null, papawis = null, pwRecord = null, pwLearn = false }) {
+// scoring: server.js appScoringMenu, or null. One row here; the Scoring screen (appScoringPage)
+// has the rest (Paolo, 2026-11-01: Me's Scoring list was crowded).
+export function appMePage({ me, season, games, positions, todos = [], scoring = null, cover = null, papawis = null, pwRecord = null }) {
   return `${lt('Me', `<a class="lt__icon" href="/app/settings" aria-label="Settings">${icons.gear}</a>`)}
   <div class="card glow prof">
     ${appAvatar({ ...me, size: 'lg' })}
@@ -58,20 +58,8 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
     <a class="prof__edit" href="/app/setup/details">Edit</a>
   </div>
   ${todos.length ? `<div class="sec">To do</div>${todoCard(todos)}` : ''}
-  ${scoring ? `<div class="sec">Scoring</div>
-  <div class="group group--icons">
-    <a class="cell" href="/app/score"><span class="ico ico--amber">${icons.ball}</span><span class="cell__t">Games to score<small>${scoring.games ? `${scoring.games} you can score` : 'None right now'}</small></span>${scoring.games ? `<span class="count">${scoring.games}</span>` : ''}${chev}</a>
-    <a class="cell" href="/app/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice game<small>Real teams, only on this phone</small></span>${chev}</a>
-    <a class="cell" href="/app/table" data-reload><span class="ico">${icons.tablet}</span><span class="cell__t">Table display<small>Show the live score on a big screen</small></span>${chev}</a>
-    <a class="cell" href="/app/help/scoring"><span class="ico">${icons.book}</span><span class="cell__t">How to score<small>The guide, with pictures</small></span>${chev}</a>
-    ${scoring.pw ? `<a class="cell" href="/app/papawis/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice a Papawis run<small>A past run’s players, only on this phone</small></span>${chev}</a>
-    <a class="cell" href="/app/help/papawis"><span class="ico">${icons.book}</span><span class="cell__t">How to score Papawis<small>Light and Dark, switching sides, Finish the run</small></span>${chev}</a>` : ''}
-    ${scoring.admin ? `<a class="cell" href="/app/admin/scorers"><span class="ico">${icons.user}</span><span class="cell__t">Scorers<small>Admin: who scores ${scoring.admin.games && scoring.admin.papawis ? 'games and Papawis' : scoring.admin.games ? 'the games' : 'Papawis'}</small></span>${chev}</a>` : ''}
-  </div>` : ''}
-  ${pwLearn ? `<div class="sec">Papawis scoring</div>
-  <div class="group group--icons">
-    <a class="cell" href="/app/papawis/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice scoring a run<small>A past run’s players, only on this phone</small></span>${chev}</a>
-    <a class="cell" href="/app/help/papawis"><span class="ico">${icons.book}</span><span class="cell__t">How to score Papawis<small>Light and Dark, switching sides, Finish the run</small></span>${chev}</a>
+  ${scoring ? `<div class="group group--icons me-scoring">
+    <a class="cell" href="/app/scoring"><span class="ico ico--amber">${icons.ball}</span><span class="cell__t">${scoring.league || scoring.admin ? 'Scoring' : 'Learn to score Papawis'}<small>${scoring.games ? `${scoring.games} to score now` : scoring.league || scoring.admin ? 'Games to score, practice, guides' : 'A practice run and the guide'}</small></span>${scoring.games ? `<span class="count">${scoring.games}</span>` : ''}${chev}</a>
   </div>` : ''}
   <div class="sec">${esc(season.label)}</div>
   <div class="tiles" style="margin-top:0">
@@ -208,4 +196,19 @@ export function appNotificationRows(items, { prevDay = '' } = {}) {
     out += n.href && n.href !== '/app/notifications' ? `<a class="cell cell--nf" href="${esc(n.href)}">${inner}</a>` : `<div class="cell cell--nf">${inner}</div>`;
   }
   return open ? `${out}</div>` : out;
+}
+
+// The Scoring screen (Me → Scoring, 2026-11-01): what was a long list on Me, grouped. Each
+// group shows only to who can use it. s: server.js appScoringMenu
+// ({ league, games, pw, admin: { games, papawis } | null }).
+export function appScoringPage(s) {
+  const row = (href, icon, title, sub, extra = '', attrs = '') => `<a class="cell" href="${href}"${attrs}><span class="ico${icon === 'ball' ? ' ico--amber' : ''}">${icons[icon]}</span><span class="cell__t">${title}<small>${sub}</small></span>${extra}${chev}</a>`;
+  const group = (label, rows) => (rows.filter(Boolean).length ? `<div class="sec">${label}</div><div class="group group--icons">${rows.filter(Boolean).join('')}</div>` : '');
+  return `<div class="navbar"><a class="navbar__back" href="/app/me">${backChev}Me</a><span class="navbar__title">Scoring</span><span></span></div>
+  ${s.league ? group('To score', [row('/app/score', 'ball', 'Games to score', s.games ? `${s.games} you can score` : 'None right now', s.games ? `<span class="count">${s.games}</span>` : '')]) : ''}
+  ${s.league ? group('League games', [row('/app/practice', 'play', 'Practice game', 'Real teams, only on this phone'), row('/app/help/scoring', 'book', 'How to score', 'The guide, with pictures')]) : ''}
+  ${s.pw ? group('Papawis', [row('/app/papawis/practice', 'play', 'Practice a run', 'A past run’s players, only on this phone'), row('/app/help/papawis', 'book', 'How to score Papawis', 'Light and Dark, switching sides, Finish the run')]) : ''}
+  ${s.league ? group('Tools', [row('/app/table', 'tablet', 'Table display', 'Show the live score on a big screen', '', ' data-reload')]) : ''}
+  ${s.admin ? group('Admin', [row('/app/admin/scorers', 'user', 'Scorers', `Who scores ${s.admin.games && s.admin.papawis ? 'games and Papawis' : s.admin.games ? 'the games' : 'Papawis'}`)]) : ''}
+  ${s.pw && !s.league ? '<p class="foot-note">Scoring real runs is for Papawis scorers. Ask an admin if you’d like to be one.</p>' : ''}`;
 }

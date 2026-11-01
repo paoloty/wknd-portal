@@ -6189,7 +6189,7 @@ import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comment
 import { appSharePage } from './views/app/share.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage, pickWhoHtml } from './views/app/picks.js';
-import { appTeamPage, appMePage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
+import { appTeamPage, appMePage, appScoringPage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
 import { appPlayerPage, appPlayerMissing, appSeasonPage } from './views/app/season.js';
 import { appPapawisPage, appLockedBar, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
 import { appPapawisFinishPage } from './views/app/papawis-score.js';
@@ -7414,7 +7414,7 @@ app.get('/app/score', requireApp, (req, res) => {
       games.push({ id: pwScoreId(r.id), title: `Papawis · ${r.title || 'run'}`, when: [pwDay(r.date), formatTimeRange(r.start_time, r.end_time) || r.time_label || '', busy ? `${busy} is scoring` : ''].filter(Boolean).join(' · '), status: sg?.status, full: null, opens, href: `/app/score/${encodeURIComponent(pwScoreId(r.id))}` });
     }
   }
-  sendTab(res, me, { title: 'Games to score · WKND', tab: 'me', body: appScorerListPage({ games, back: { href: '/app/me', label: 'Me' } }) });
+  sendTab(res, me, { title: 'Games to score · WKND', tab: 'me', body: appScorerListPage({ games, back: { href: '/app/scoring', label: 'Scoring' } }) });
 });
 // ── Scoring menu (Me → Scoring, 2026-10-27): games to score, a practice game, How to score ──
 // For scorers, anyone picked for a game, and admins (who still need the Scorer switch to score
@@ -7431,7 +7431,7 @@ const practiceTeams = () => {
 };
 app.get('/app/practice', requireApp, requireScoringMenu, (req, res) => {
   const me = appMe(req);
-  sendTab(res, me, { title: 'Practice game · WKND', tab: 'me', body: appPracticePage({ teams: practiceTeams(), back: { href: '/app/me', label: 'Me' } }) });
+  sendTab(res, me, { title: 'Practice game · WKND', tab: 'me', body: appPracticePage({ teams: practiceTeams(), back: { href: '/app/scoring', label: 'Scoring' } }) });
 });
 // The practice itself: the real scorer on two real rosters, a bundle with `practice` set so
 // public/scorer.js sends nothing. The phone keeps the plays; practice_log only hears how far it got.
@@ -7492,7 +7492,7 @@ function pwPracticePlayers() {
 }
 app.get('/app/papawis/practice', requireApp, requirePwScoring, (req, res) => {
   const pl = pwPracticePlayers();
-  sendTab(res, appMe(req), { title: 'Practice a run · WKND', tab: 'me', body: appPwPracticePage({ players: { label: pl.label, light: pl.a, dark: pl.b }, back: { href: '/app/me', label: 'Me' } }) });
+  sendTab(res, appMe(req), { title: 'Practice a run · WKND', tab: 'me', body: appPwPracticePage({ players: { label: pl.label, light: pl.a, dark: pl.b }, back: { href: '/app/scoring', label: 'Scoring' } }) });
 });
 // The practice itself: the real Papawis scorer with `practice` set (public/scorer.js sends
 // nothing, no hold, its own copy on the phone); practice_log hears how far it got (Light/Dark).
@@ -7516,7 +7516,7 @@ app.get('/app/papawis/practice/play', requireApp, requirePwScoring, (req, res) =
   sendApp(res, { title: 'Practice run · WKND', bare: true, body: appScorerPage({ bundle, back: { href: '/app/papawis/practice', label: 'Practice' } }) });
 });
 app.get('/app/help/papawis', requireApp, requirePwScoring, (req, res) => {
-  sendTab(res, appMe(req), { title: 'How to score Papawis · WKND', tab: 'me', body: appScorerGuidePage({ back: { href: '/app/me', label: 'Me' }, opts: PW_GUIDE_OPTS }) });
+  sendTab(res, appMe(req), { title: 'How to score Papawis · WKND', tab: 'me', body: appScorerGuidePage({ back: { href: '/app/scoring', label: 'Scoring' }, opts: PW_GUIDE_OPTS }) });
 });
 app.get('/app/help/papawis/:slug', requireApp, requirePwScoring, (req, res) => {
   const body = appScorerChapterPage({ slug: req.params.slug, opts: PW_GUIDE_OPTS });
@@ -7525,7 +7525,7 @@ app.get('/app/help/papawis/:slug', requireApp, requirePwScoring, (req, res) => {
 });
 
 app.get('/app/help/scoring', requireApp, requireScoringMenu, (req, res) => {
-  sendTab(res, appMe(req), { title: 'How to score · WKND', tab: 'me', body: appScorerGuidePage({ back: { href: '/app/me', label: 'Me' } }) });
+  sendTab(res, appMe(req), { title: 'How to score · WKND', tab: 'me', body: appScorerGuidePage({ back: { href: '/app/scoring', label: 'Scoring' } }) });
 });
 app.get('/app/help/scoring/:slug', requireApp, requireScoringMenu, (req, res) => {
   const body = appScorerChapterPage({ slug: req.params.slug });
@@ -9429,6 +9429,21 @@ app.get(['/app/season', '/app/season/:tab'], requireApp, (req, res) => {
 });
 
 // Me: profile, To do (money and season, plus a line to Picks), season averages, games.
+// Me → Scoring (2026-11-01): who sees what. league: scorers, anyone picked for a game, games
+// admins (their Games to score, practice game, league guide, table display); pw: Papawis
+// scorers, admins and Papawis-active players (pwLearnFor: the practice run and the Papawis
+// guide); admin: who picks scorers. null when none of it applies.
+function appScoringMenu(req, me, toScore = null) {
+  const admin = appScorersAdmin(req), league = scoringMenuFor(me.playerId), pw = pwLearnFor(req);
+  if (!league && !admin && !pw) return null;
+  const games = toScore ?? (league ? scorableGameIds(me.playerId).length + pwScorableRuns(me.playerId).length : 0);
+  return { league: league || !!admin, games, pw, admin };
+}
+app.get('/app/scoring', requireApp, (req, res) => {
+  const me = appMe(req), s = appScoringMenu(req, me);
+  if (!s) return res.redirect('/app/me');
+  sendTab(res, me, { title: 'Scoring · WKND', tab: 'me', body: appScoringPage(s) });
+});
 app.get('/app/me', requireApp, (req, res) => {
   const me = appMe(req);
   const season = String(getPortalCurrentSeason());
@@ -9451,11 +9466,8 @@ app.get('/app/me', requireApp, (req, res) => {
   const toScore = scorableGameIds(me.playerId).length + pwScorableRuns(me.playerId).length;
   const meP = getPlayerById(me.playerId);
   if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: meP?.is_scorer || meP?.is_pw_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
-  // Admins who pick scorers (games or Papawis) get the Scoring menu with its Scorers screen.
-  const scorersAdmin = appScorersAdmin(req);
-  const pwLearn = pwLearnFor(req);
-  const scoring = scoringMenuFor(me.playerId) || scorersAdmin ? { games: toScore, admin: scorersAdmin, pw: pwLearn } : null;
-  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, pwLearn: !scoring && pwLearn, cover: { own: !!getPlayerCoverAt(me.playerId) },
+  const scoring = appScoringMenu(req, me, toScore);
+  sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
     games, papawis: papawisProfileFor(me.playerId),
@@ -9909,7 +9921,7 @@ app.get('/app/admin/scorers', requireApp, (req, res) => {
   const list = ids => people.filter(p => ids.has(p.id));
   sendTab(res, me, { title: 'Scorers · WKND', tab: 'me', body: appAdminScorersPage({
     can, games, people, gameScorers: can.games ? list(gameIds) : [], pwScorers: can.papawis ? list(pwIds) : [],
-    papawisOn: getSetting('papawis_enabled', '0') === '1', back: { href: '/app/me', label: 'Me' },
+    papawisOn: getSetting('papawis_enabled', '0') === '1', back: { href: '/app/scoring', label: 'Scoring' },
   }) });
 });
 const pwSignupName = s => (s.guest_name ? s.guest_name : displayPlayerName(s.player_name));

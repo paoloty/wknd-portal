@@ -2911,3 +2911,6 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .pr-guide { margin: 10px 16px 0; width: auto; }
 .hg__hot { background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .hg__hot .cell__t { font-weight: 600; }
+
+/* Me: the one Scoring row (views/app/tabs.js; the rest is on the Scoring screen). */
+.me-scoring { margin-top: 16px; }
