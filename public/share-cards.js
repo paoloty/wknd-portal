@@ -747,6 +747,45 @@ export function premiumSvg(key, d, measure, opts = {}) {
 // and Archivo (the site's own variable file, every weight). Widths are measured on a canvas
 // in the same fonts, as ink (what sharp's trim measures on the server), letter-spacing added.
 const FONT_FILES = ['/fonts/sairacondensed-black-latin.woff2', '/fonts/archivo-k3kPo8UDI-1M0wlSV9XAw6lQkqWY8Q82sLydOxI.woff2'];
+// The holo WKND watermark (Paolo, 2026-11-01, mockup claude.ai/artifact/9M1rNtEjz1Q9sceK53Vxnc):
+// the real logo (WKND in Archivo black italic with the orange-ball lockup, here in foil) tiled
+// at the edges as faint holo foil: tight rainbow bands, hairline foil edges brighter than the
+// fill, one glint and a few sparkles. The middle (face and card) and Instagram's top and bottom
+// bars stay clear. A still picture (PNG), drawn under every card: the server composites it
+// below each template (server.js renderMyStatCard) and the phone puts it first in the SVG
+// (phoneDrawer.draw), so both look the same. Designed on a 270 x 480 grid, scaled to the card.
+const WM_WORD = (fill, stroke) => `<text x="6" y="34" font-family="${BODY}" font-style="italic" font-weight="900" font-size="30" letter-spacing="-1.3" ${stroke ? `fill="none" stroke="#fff" stroke-width="0.7"` : `fill="#fff"`}>WKND</text>`;
+const WM_BALL = stroke => stroke
+  ? '<g transform="translate(93 13) scale(.2)"><circle cx="50" cy="50" r="47" fill="none" stroke="#fff" stroke-width="3.5"/><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></g>'
+  : '<g transform="translate(93 13) scale(.2)"><circle cx="50" cy="50" r="48" fill="#fff"/><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87" fill="none" stroke="#000" stroke-width="6" stroke-linecap="round"/></g>';
+const WM_TILE = stroke => `${WM_WORD(true, stroke)}${WM_BALL(stroke)}<g transform="translate(67 43)">${WM_WORD(true, stroke)}${WM_BALL(stroke)}</g>`;
+const WM_SPARKS = [[18, 95, 4], [250, 70, 3], [30, 300, 5], [245, 250, 4], [20, 420, 3], [258, 395, 5], [60, 40, 4], [212, 440, 3]]
+  .map(([x, y, r]) => { const k = r * 0.28; return `<path d="M${x} ${y - r}L${x + k} ${y - k}L${x + r} ${y}L${x + k} ${y + k}L${x} ${y + r}L${x - k} ${y + k}L${x - r} ${y}L${x - k} ${y - k}Z" fill="#fff" opacity=".3"/>`; }).join('');
+export function watermarkInner() {
+  const sp = 'stop-color', g = 'wkwm';
+  return `<g transform="scale(${W / 270} ${H / 480})" mask="url(#${g}v)">
+    <defs>
+      <pattern id="${g}pf" width="135" height="86" patternUnits="userSpaceOnUse" patternTransform="rotate(-12)">${WM_TILE(false)}</pattern>
+      <pattern id="${g}ps" width="135" height="86" patternUnits="userSpaceOnUse" patternTransform="rotate(-12)">${WM_TILE(true)}</pattern>
+      <mask id="${g}mf" maskUnits="userSpaceOnUse" x="0" y="0" width="270" height="480"><rect width="270" height="480" fill="url(#${g}pf)"/></mask>
+      <mask id="${g}ms" maskUnits="userSpaceOnUse" x="0" y="0" width="270" height="480"><rect width="270" height="480" fill="url(#${g}ps)"/></mask>
+      <linearGradient id="${g}c" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="80" y2="140" spreadMethod="repeat"><stop offset="0" ${sp}="#6ff7ff"/><stop offset=".2" ${sp}="#a98bff"/><stop offset=".4" ${sp}="#ff86d6"/><stop offset=".6" ${sp}="#ffd76b"/><stop offset=".8" ${sp}="#7dffb8"/><stop offset="1" ${sp}="#6ff7ff"/></linearGradient>
+      <linearGradient id="${g}l" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="270" y2="480"><stop offset="0" ${sp}="#fff" stop-opacity="0"/><stop offset=".16" ${sp}="#fff" stop-opacity="0"/><stop offset=".2" ${sp}="#fff" stop-opacity="1"/><stop offset=".23" ${sp}="#fff" stop-opacity="0"/><stop offset=".62" ${sp}="#fff" stop-opacity="0"/><stop offset=".655" ${sp}="#fff" stop-opacity=".7"/><stop offset=".68" ${sp}="#fff" stop-opacity="0"/><stop offset="1" ${sp}="#fff" stop-opacity="0"/></linearGradient>
+      <radialGradient id="${g}r" gradientUnits="userSpaceOnUse" cx="135" cy="230" r="135" gradientTransform="translate(135 230) scale(1 1.15) translate(-135 -230)"><stop offset=".72" ${sp}="#000"/><stop offset="1" ${sp}="#fff"/></radialGradient>
+      <linearGradient id="${g}b" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="480"><stop offset=".11" ${sp}="#000"/><stop offset=".15" ${sp}="#fff"/><stop offset=".8" ${sp}="#fff"/><stop offset=".84" ${sp}="#000"/></linearGradient>
+      <mask id="${g}v" maskUnits="userSpaceOnUse" x="0" y="0" width="270" height="480"><rect width="270" height="480" fill="url(#${g}b)"/></mask>
+      <mask id="${g}e" maskUnits="userSpaceOnUse" x="0" y="0" width="270" height="480"><rect width="270" height="480" fill="url(#${g}r)"/></mask>
+    </defs>
+    <g mask="url(#${g}e)">
+      <rect width="270" height="480" fill="url(#${g}c)" mask="url(#${g}mf)" opacity=".045"/>
+      <rect width="270" height="480" fill="url(#${g}c)" mask="url(#${g}ms)" opacity=".13"/>
+      <rect width="270" height="480" fill="url(#${g}l)" mask="url(#${g}mf)" opacity=".22"/>
+      ${WM_SPARKS}
+    </g>
+  </g>`;
+}
+export const watermarkSvg = () => `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${watermarkInner()}</svg>`;
+
 export function phoneDrawer(data, { photoUrl = null } = {}) {
   const get = u => fetch(u, { credentials: 'same-origin' }).then(r => { if (!r.ok) throw new Error(u); return r.blob(); });
   const asDataUrl = blob => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(blob); });
@@ -781,7 +820,8 @@ export function phoneDrawer(data, { photoUrl = null } = {}) {
       const [css, photoHref] = await Promise.all([fonts, photo]);
       const d = { ...data, accent: SHARE_ACCENTS[accentKey] || SHARE_ACCENTS.amber };
       const { svg } = await premiumSvg(key, d, measure, { photoHref, hasPhoto: !!photoHref });
-      return URL.createObjectURL(new Blob([svg.replace(/^(<svg[^>]*>)/, `$1${css}`)], { type: 'image/svg+xml' }));
+      // The holo watermark first, so it sits under the card (as the server composites it).
+      return URL.createObjectURL(new Blob([svg.replace(/^(<svg[^>]*>)/, `$1${css}${watermarkInner()}`)], { type: 'image/svg+xml' }));
     },
     png(svgUrl) {
       return new Promise((ok, no) => {

@@ -277,7 +277,7 @@ import {
 } from './lib/papawis-broadcast.js';
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
 import { SHARE_PREMIUM_KEYS, SHARE_ACCENTS, PAPAWIS_KEYS, PAPAWIS_PREMIUM_KEYS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
-import { PHONE_KEYS as SHARE_PHONE_KEYS } from './public/share-cards.js';
+import { PHONE_KEYS as SHARE_PHONE_KEYS, watermarkSvg as shareWatermarkSvg } from './public/share-cards.js';
 import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, rerenderMediaJob, requestFinal, outputPath, OUTPUT_FILES, startMediaWorker, expiresAt as mediaExpiresAt } from './lib/media-jobs.js';
 import { potgVideoContext, savePotgPhoto, queuePotgVideos, potgPrefill, uploadPath, STAT_CATS as POTG_STAT_CATS, PHOTO_COUNT as POTG_PHOTO_COUNT } from './lib/potg-video.js';
 import { adminPotgVideoBody, adminMediaBody, mediaJobRow } from './views/admin/potg-video.js';
@@ -13713,6 +13713,15 @@ app.get('/api/games/:id/my-stat-card.png', async (req, res) => {
   }
 });
 
+// The holo WKND watermark (public/share-cards.js watermarkSvg) under every card: drawn once
+// per card size, then the card goes on top of it. The phone draws the same one (phoneDrawer).
+const shareWatermarks = new Map();
+async function withShareWatermark(png) {
+  const { width = 1080, height = 1920 } = await sharp(png).metadata();
+  const key = `${width}x${height}`;
+  if (!shareWatermarks.has(key)) shareWatermarks.set(key, sharp(Buffer.from(shareWatermarkSvg())).resize(width, height).png().toBuffer());
+  return sharp(await shareWatermarks.get(key)).composite([{ input: png }]).png().toBuffer();
+}
 async function renderMyStatCard(req, game, stat, playerId, locked) {
   const layout  = ['default', 'grid', 'sticker', 'comparison', 'gauges'].includes(req.query.layout) ? req.query.layout : 'gauges';
   // Template dropdown values — left/center/right share generateGameStatGaugesPng
@@ -13797,7 +13806,7 @@ async function renderMyStatCard(req, game, stat, playerId, locked) {
   if (badge && layout !== 'default' && layout !== 'comparison') {
     png = await composeStravagantBadgeOverlay(png, stat, resolveAccent(accent));
   }
-  return png;
+  return withShareWatermark(png);
 }
 
 // Save/Copy/Share on the "Stravagant" stat card all happen entirely
