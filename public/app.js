@@ -745,6 +745,34 @@
   }
   function initFbEmbeds() {
     $$('[data-fb-embed]').forEach(function (box) { if (box._fbWatch) return; box._fbWatch = true; if (fbSeen) fbSeen.observe(box); else fbMount(box); });
+    initGalleries();
+    // Me → Feed posts: the shared Feed posts script (public/feed-admin.js), run for each new screen.
+    if ($('[data-fa]') && !$('[data-fa]')._fa) { var s = document.createElement('script'); s.src = '/feed-admin.js?v=' + ver + '&t=' + Date.now(); document.body.appendChild(s); }
+  }
+  // Photos posts (views/app/feed.js feedGallery): "3 / 12" follows the swipe; a tap opens the
+  // photos full screen (swipe between them, pinch to zoom), larger copies than in the card.
+  function initGalleries() {
+    $$('[data-gal]').forEach(function (g) {
+      if (g._gal) return; g._gal = true;
+      var track = g.firstElementChild, n = $('[data-gal-n]', g), count = track.children.length;
+      if (n) track.addEventListener('scroll', function () { n.textContent = (Math.round(track.scrollLeft / track.clientWidth) + 1) + ' / ' + count; }, { passive: true });
+      track.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-gal-open]'); if (!b) return;
+        var start = Number(b.getAttribute('data-gal-open'));
+        var srcs = $$('img', track).map(function (im) { return im.getAttribute('src').replace(/([?&])w=\d+/, '$1w=960'); });
+        var v = document.createElement('div'); v.className = 'gal-view'; v.setAttribute('role', 'dialog'); v.setAttribute('aria-modal', 'true'); v.setAttribute('aria-label', 'Photos');
+        v.innerHTML = '<button type="button" class="gal-view__x" aria-label="Close">✕</button><div class="gal-view__track">' + srcs.map(function (s) { return '<div class="gal-view__ph"><img src="' + s + '" alt="" decoding="async"></div>'; }).join('') + '</div><div class="gal-view__n"></div>';
+        document.body.appendChild(v);
+        var vt = $('.gal-view__track', v), vn = $('.gal-view__n', v);
+        var say = function () { vn.textContent = (Math.round(vt.scrollLeft / vt.clientWidth) + 1) + ' / ' + srcs.length; };
+        vt.scrollLeft = start * vt.clientWidth; say();
+        vt.addEventListener('scroll', say, { passive: true });
+        var close = function () { v.remove(); document.removeEventListener('keydown', esc); };
+        var esc = function (e) { if (e.key === 'Escape') close(); };
+        $('.gal-view__x', v).addEventListener('click', close);
+        document.addEventListener('keydown', esc);
+      });
+    });
   }
 
   // Practice a Papawis run (views/app/practice.js appPwPracticePage): Carry on from this phone's

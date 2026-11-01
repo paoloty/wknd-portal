@@ -1,94 +1,17 @@
-// Admin → Players app → Announcements (/admin/app/announcements). Short posts for the top of
-// the app's feed: text, optionally one photo or one YouTube link, optionally pinned to the top
-// of Home for a few days. Also Facebook posts and videos from our page (2026-11-01), shown as
-// Facebook's embed, each with a date that sets where it sits in the feed (changeable later). The photo is shrunk in the browser (1600px JPEG) and posted as a
-// data URL with the rest (server.js POST /admin/app/announcements).
-import { escHtml } from '../layout.js';
-import { pageHeader, section, badge, button, emptyState, formCard, formSection, field, ago } from './ui.js';
-import { manilaFormat } from '../utils.js';
+// Admin → Players app → Feed posts (/admin/app/announcements; was Announcements). The app's
+// feed posts by type (announcement, highlight, photos, throwback, Facebook post), the bulk add
+// for past Facebook and YouTube links, and each post's date, edit, pin, hide and delete. The
+// screen itself is views/feed-admin.js, shared with the app's Me → Feed posts.
+import { pageHeader, button } from './ui.js';
+import { feedAdminBody } from '../feed-admin.js';
 
-const fmtTime = ms => manilaFormat(ms, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-// ms → "2026-11-01T18:30" in Manila, for <input type="datetime-local">.
-const toInput = ms => new Date(ms + 8 * 3600e3).toISOString().slice(0, 16);
-
-// list: getAppAnnouncements() rows
-export function adminAnnouncementsBody({ list, now = Date.now() }) {
-  const rows = list.length ? `<div class="aui-panel aui-panel--flush">${list.map(a => {
-    const pinned = a.pinned_until > now;
-    return `<div class="aui-action" style="cursor:default;align-items:flex-start;gap:12px">
-      ${a.has_image ? `<img src="/admin/app/announcements/${escHtml(a.id)}/image?v=${a.updated_at}&w=160" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none">` : ''}
-      <span class="aui-cell__stack" style="flex:1;min-width:0">
-        <span class="aui-action__label"><b>${escHtml(a.title || (a.fb_url ? 'Facebook post' : '(no title)'))}</b></span>
-        <span class="aui-cell__sub" style="white-space:pre-line">${escHtml(String(a.body || '').slice(0, 240))}${String(a.body || '').length > 240 ? '…' : ''}</span>
-        <span class="aui-cell__sub">${escHtml(fmtTime(a.shown_at || a.created_at))}${a.shown_at ? ' (set date)' : ''} · ${escHtml(a.created_by || 'admin')}${a.youtube_url ? ' · ▶ video' : ''}${a.fb_url ? ` · <a href="${escHtml(a.fb_url)}" target="_blank" rel="noopener">Facebook</a>` : ''}</span>
-        <span class="aui-row" style="gap:6px;margin-top:4px"><input class="aui-input" type="datetime-local" value="${escHtml(toInput(a.shown_at || a.created_at))}" data-ann-date-in="${escHtml(a.id)}" aria-label="Date in the feed" style="width:auto">${button('Set date', { size: 'sm', attrs: `data-ann-date="${escHtml(a.id)}"` })}</span>
-      </span>
-      <span style="display:flex;gap:6px;align-items:center;flex:none">
-        ${pinned ? badge(`Pinned · ${ago(now, a.pinned_until)} left`, 'amber') : ''}
-        ${pinned
-          ? button('Unpin', { size: 'sm', attrs: `data-ann-pin="${escHtml(a.id)}" data-days="0"` })
-          : button('Pin 7 days', { size: 'sm', attrs: `data-ann-pin="${escHtml(a.id)}" data-days="7"` })}
-        ${button('Delete', { size: 'sm', kind: 'ghost', attrs: `data-ann-delete="${escHtml(a.id)}"` })}
-      </span>
-    </div>`;
-  }).join('')}</div>` : emptyState({ title: 'No announcements yet', sub: 'Post one above. It shows in the app\'s feed right away.' });
-
-  const form = `<form id="ann-form" autocomplete="off">${formCard(
-    formSection({ title: 'New announcement', sub: 'Shows at the top of the players app\'s feed, newest first.', bodyHtml: `
-      ${field({ label: 'Title', name: 'title', placeholder: 'Saturday tip-off moves to 6:00 AM', attrs: 'maxlength="120"' })}
-      ${field({ label: 'Message', name: 'body', type: 'textarea', rows: 5, placeholder: 'What players need to know', attrs: 'maxlength="2000"' })}
-      ${field({ label: 'Facebook post or video (optional)', name: 'facebook', placeholder: 'https://www.facebook.com/wkndbasketball/videos/…', help: 'A public post, video or reel on our page. It shows as Facebook’s own post; videos play right in the feed. Title and message are optional with a link.' })}
-      ${field({ label: 'Date in the feed', name: 'date', type: 'datetime-local', help: 'Where it sits in the feed, newest first. Leave empty for now; for an older Facebook post, use the date it was posted.' })}
-      ${field({ label: 'YouTube link (optional)', name: 'youtube', placeholder: 'https://youtu.be/…' })}
-      <label class="aui-field" for="ann-photo"><span class="aui-field__label">Photo (optional)</span><input class="aui-input" id="ann-photo" type="file" accept="image/*"><span class="aui-field__help">Shown above the message. With a YouTube link too, it becomes the video's cover.</span></label>
-      ${field({ label: 'Pin to the top of Home', name: 'pinDays', type: 'select', value: '0', options: [['0', 'Don\'t pin'], ['1', '1 day'], ['3', '3 days'], ['7', '7 days']] })}
-      <label class="aui-field" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="notify" checked> <span>Notify players (bell and phone)</span></label>
-      <div style="display:flex;gap:10px;align-items:center">${button('Post to the app', { kind: 'primary', type: 'submit' })}<span class="aui-muted" data-ann-msg></span></div>
-    ` }),
-  )}</form>`;
-
+// list: getAppAnnouncements() rows · refOptions: server.js feedRefOptions()
+export function adminAnnouncementsBody({ list, refOptions = [], now = Date.now() }) {
   return `<div class="aui-page">
-    ${pageHeader({ eyebrow: 'Players app', title: 'Announcements', sub: 'Posts for every player in the app. Results, news and open Papawis runs show in the feed on their own.', actionsHtml: button('Back to Players app', { href: '/admin/app' }) })}
-    ${form}
-    ${section({ title: 'Posted', note: `· ${list.length}`, bodyHtml: rows })}
-  </div>
-  <script>
-  (function () {
-    var form = document.getElementById('ann-form'), msg = form.querySelector('[data-ann-msg]');
-    var say = function (t) { msg.textContent = t || ''; };
-    // Shrink the photo before upload: 1600px on the long side, JPEG.
-    var shrink = function (file) {
-      return new Promise(function (ok, fail) {
-        var img = new Image(), url = URL.createObjectURL(file);
-        img.onload = function () {
-          var k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas');
-          c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-          URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.85));
-        };
-        img.onerror = function () { URL.revokeObjectURL(url); fail(new Error('That file isn\\'t a photo we can read.')); };
-        img.src = url;
-      });
-    };
-    var post = function (url, data) {
-      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data || {}) })
-        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Couldn\\'t save. Try again.'); return j; }); });
-    };
-    form.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var btn = form.querySelector('button[type=submit]'), f = form.elements, file = document.getElementById('ann-photo').files[0];
-      if (!f.title.value.trim() && !f.body.value.trim() && !f.facebook.value.trim()) return say('Add a title, a message or a Facebook link.');
-      btn.disabled = true; say('Posting…');
-      (file ? shrink(file) : Promise.resolve('')).then(function (image) {
-        return post('/admin/app/announcements', { title: f.title.value, body: f.body.value, youtube: f.youtube.value, facebook: f.facebook.value, date: f.date.value, notify: f.notify.checked, pinDays: f.pinDays.value, image: image });
-      }).then(function () { location.reload(); }, function (err) { btn.disabled = false; say(err.message); });
-    });
-    document.addEventListener('click', function (e) {
-      var pin = e.target.closest('[data-ann-pin]'), del = e.target.closest('[data-ann-delete]'), dt = e.target.closest('[data-ann-date]');
-      if (dt) { var inp = document.querySelector('[data-ann-date-in="' + dt.getAttribute('data-ann-date') + '"]'); post('/admin/app/announcements/' + encodeURIComponent(dt.getAttribute('data-ann-date')) + '/date', { date: inp ? inp.value : '' }).then(function () { location.reload(); }, function (err) { alert(err.message); }); }
-      if (pin) post('/admin/app/announcements/' + encodeURIComponent(pin.getAttribute('data-ann-pin')) + '/pin', { days: pin.getAttribute('data-days') }).then(function () { location.reload(); }, function (err) { alert(err.message); });
-      if (del && confirm('Delete this announcement? It disappears from the app.')) post('/admin/app/announcements/' + encodeURIComponent(del.getAttribute('data-ann-delete')) + '/delete').then(function () { location.reload(); }, function (err) { alert(err.message); });
-    });
-  })();
-  </script>`;
+    ${pageHeader({ eyebrow: 'Players app', title: 'Feed posts', sub: 'Posts in the app’s feed, by date with the games, runs and results. An earlier date puts a post lower in the feed.', actionsHtml: button('Back to Players app', { href: '/admin/app' }) })}
+    ${feedAdminBody({ list, refOptions, now, thumb: a => feedThumb(a) })}
+  </div>`;
 }
+// A post's small picture for the Posted list: its first photo, else its photo.
+export const feedThumb = a => (a.photos ? `/admin/app/announcements/${encodeURIComponent(a.id)}/photos/1?w=160&v=${a.updated_at}`
+  : a.has_image ? `/admin/app/announcements/${encodeURIComponent(a.id)}/image?w=160&v=${a.updated_at}` : '');

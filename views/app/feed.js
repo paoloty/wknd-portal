@@ -2,7 +2,7 @@
 // (/app/posts/:slug). Items arrive newest first from server.js appFeedItems(), one lazy
 // page at a time (/app/feed/items → JSON { html, next }), each page carrying the day of its
 // last item so a day header isn't repeated across pages.
-import { esc, appAvatar, icons, backChev, soonTag, lazyList } from './layout.js';
+import { esc, appAvatar, icons, backChev, chev, soonTag, lazyList } from './layout.js';
 import { pickOption, pickCard } from './picks.js';
 import { appSocialBar, appThreadPanel } from './comments.js';
 import { papawisAction } from './papawis.js';
@@ -78,13 +78,32 @@ function gameCard(g) {
   </a><div class="sx__act">${g.shareHref ? `<a class="btn" href="${esc(g.shareHref)}">${icons.share}<span>Share my stats</span></a>` : `<a class="btn btn--ghost" href="${esc(g.href)}">Box score &amp; recap</a>`}</div>${appSocialBar(g.social)}</article>`;
 }
 
+// A feed post (server.js appAnnItem). Types (2026-11-01): announcement (the old card), highlight
+// (a Facebook or YouTube video in the card), photos (a swipe gallery), throwback (older content,
+// its original date on the label), facebook (Facebook's own post). Only an announcement says so.
+// ref: the game or run it's from (a link row); link: e.g. the Facebook album the photos are from.
+const FEED_CHIP = { highlight: ['red', '▶ Highlight'], photos: ['blue', ''], throwback: ['sepia', '⟲ Throwback'], facebook: ['grey', 'Facebook'] };
+function feedGallery(photos) {
+  return `<div class="ax__gal" data-gal><div class="ax__gal-track">${photos.map((p, i) => `<button type="button" class="ax__gal-ph" data-gal-open="${i}" aria-label="Photo ${i + 1} of ${photos.length}"><img src="${esc(p.img)}" srcset="${esc(p.srcset)}" sizes="(min-width: 560px) 560px, 100vw" alt="" loading="${i ? 'lazy' : 'eager'}" decoding="async"></button>`).join('')}</div>
+    ${photos.length > 1 ? `<span class="ax__gal-n num" data-gal-n>1 / ${photos.length}</span>` : ''}</div>`;
+}
 function annCard(a) {
-  return `<article class="sx ax${a.pinned ? ' is-pinned' : ''}"><div class="sx__body">
-    <div class="ax__head"><span class="ax__ico" aria-hidden="true">${icons.megaphone}</span><div><b>${esc(a.fb ? 'WKND Basketball' : a.by || 'WKND League')}</b><small>${a.fb ? 'Facebook' : 'Announcement'} · ${esc(a.when)}</small></div>${a.pinned ? `<span class="sx__chip sx__chip--amber">${icons.pinned}Pinned</span>` : ''}</div>
-    ${a.media?.img || a.yt ? `<div class="ax__media">${media({ ...a.media, yt: a.yt })}</div>` : ''}
+  const ann = a.type === 'announcement' || !a.type;
+  const chip = a.pinned ? `<span class="sx__chip sx__chip--amber">${icons.pinned}Pinned</span>`
+    : !ann && FEED_CHIP[a.type] ? `<span class="sx__chip sx__chip--${FEED_CHIP[a.type][0]}">${esc(FEED_CHIP[a.type][1] || `📷 ${a.photos.length} photo${a.photos.length === 1 ? '' : 's'}`)}</span>` : '';
+  const who = ann ? (a.by || 'WKND League') : 'WKND Basketball';
+  // Media: the gallery, else the Facebook embed, else the YouTube video or the photo.
+  const mediaHtml = a.photos?.length ? feedGallery(a.photos)
+    : a.fb ? `<div class="ax__fb${a.fb.video ? ' is-video' : ''}" data-fb-embed="${esc(a.fb.url)}" data-fb-video="${a.fb.video ? '1' : ''}"><a class="ax__fb-open" href="${esc(a.fb.url)}" target="_blank" rel="noopener">${a.fb.video ? 'Watch on Facebook' : 'Open on Facebook'}</a></div>`
+    : a.media?.img || a.yt ? `<div class="ax__media">${media({ ...a.media, yt: a.yt })}</div>` : '';
+  return `<article class="sx ax ax--${esc(a.type || 'announcement')}${a.pinned ? ' is-pinned' : ''}"><div class="sx__body">
+    <div class="ax__head"><span class="ax__ico" aria-hidden="true">${ann ? icons.megaphone : icons.ball}</span><div><b>${esc(who)}</b><small>${esc(a.label || 'Announcement')} · ${esc(a.when)}</small></div>${chip}</div>
+    ${ann ? mediaHtml : ''}
     ${a.title ? `<h3>${esc(a.title)}</h3>` : ''}
     ${a.body ? `<div class="ax__body">${paras(a.body)}</div>` : ''}
-    ${a.fb ? `<div class="ax__fb${a.fb.video ? ' is-video' : ''}" data-fb-embed="${esc(a.fb.url)}" data-fb-video="${a.fb.video ? '1' : ''}"><a class="ax__fb-open" href="${esc(a.fb.url)}" target="_blank" rel="noopener">${a.fb.video ? 'Watch on Facebook' : 'Open on Facebook'}</a></div>` : ''}
+    ${ann ? '' : mediaHtml}
+    ${a.ref ? `<a class="ax__ref" href="${esc(a.ref.href)}"><span class="ax__ref-i" aria-hidden="true">${icons.ball}</span><span class="ax__ref-t"><b>${esc(a.ref.title)}</b><small>${esc(a.ref.sub)}</small></span>${chev}</a>` : ''}
+    ${a.link ? `<a class="ax__fb-open ax__link" href="${esc(a.link)}" target="_blank" rel="noopener">${/facebook\.com|fb\.watch/.test(a.link) ? 'View album on Facebook' : 'Open the link'}</a>` : ''}
   </div>${appSocialBar(a.social)}</article>`;
 }
 

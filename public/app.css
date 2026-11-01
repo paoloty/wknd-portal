@@ -2969,3 +2969,35 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .ax__fb:not(.is-loaded) { min-height: 120px; background: var(--surface-2); }
 .ax__fb.is-video:not(.is-loaded) { aspect-ratio: 16 / 9; min-height: 0; }
 .ax__fb-open { display: flex; align-items: center; justify-content: center; height: 40px; margin: 8px 16px 0; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; text-decoration: none; }
+
+/* Feed post types (views/app/feed.js annCard, 2026-11-01): chips, the photo gallery (swipe,
+   tap for full screen: public/app.js initGalleries), the game or run row, the extra link. */
+.sx__chip--red { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+.sx__chip--blue { background: color-mix(in srgb, #3b82f6 14%, transparent); color: #3b82f6; }
+.sx__chip--sepia { background: color-mix(in srgb, #a07a3e 18%, transparent); color: #a07a3e; }
+.sx__chip--grey { background: var(--surface-2); color: var(--muted); }
+.ax__head > div { flex: 1; min-width: 0; }
+.ax__gal { position: relative; margin: 10px -16px 0; }
+.ax__gal-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
+.ax__gal-track::-webkit-scrollbar { display: none; }
+.ax__gal-ph { flex: none; width: 100%; aspect-ratio: 4 / 5; scroll-snap-align: center; padding: 0; border: 0; background: var(--surface-2); }
+.ax__gal-ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ax__gal-n { position: absolute; right: 26px; top: 10px; padding: 4px 8px; border-radius: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; font-weight: 700; line-height: 1; }
+.ax--throwback .ax__gal, .ax--throwback .ax__media, .ax--throwback .ax__fb { filter: sepia(.18); }
+.ax__ref { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: var(--r-in); background: var(--surface-2); color: inherit; text-decoration: none; }
+.ax__ref-i { flex: none; color: var(--amber-text); display: flex; }
+.ax__ref-i svg { width: 18px; height: 18px; }
+.ax__ref-t { flex: 1; min-width: 0; }
+.ax__ref-t b { display: block; font-size: 14px; font-weight: 600; }
+.ax__ref-t small { display: block; font-size: 12px; color: var(--muted); }
+.ax__link { margin: 10px 0 0; }
+.gal-view { position: fixed; inset: 0; z-index: 60; background: #000; display: flex; flex-direction: column; }
+.gal-view__x { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 12px; z-index: 2; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: #fff; font-size: 20px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.gal-view__track { flex: 1; display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.gal-view__track::-webkit-scrollbar { display: none; }
+.gal-view__ph { flex: none; width: 100%; height: 100%; scroll-snap-align: center; display: flex; align-items: center; justify-content: center; touch-action: pinch-zoom pan-x pan-y; }
+.gal-view__ph img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.gal-view__n { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); text-align: center; color: rgba(255,255,255,.8); font-size: 13px; font-weight: 600; }
+
+/* Me → Feed posts (views/feed-admin.js inside the app). */
+.fa-app { padding: 4px 16px 24px; }

@@ -62,7 +62,8 @@ const spark = (pts, color) => {
   const last = xy[xy.length - 1].split(',');
   return `<svg class="me-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" points="${xy.join(' ')}"/><circle cx="${last[0]}" cy="${last[1]}" r="2.6" fill="${color}"/></svg>`;
 };
-export function appMePage({ me, positions, todos = [], scoring = null, cover = null, now = null, week = [], doing = null, recent = [], things = 0 }) {
+// feedAdmin: an admin, so Me has the Feed posts row (/app/admin/feed).
+export function appMePage({ me, positions, todos = [], scoring = null, cover = null, now = null, week = [], doing = null, recent = [], things = 0, feedAdmin = false }) {
   // Given names ("Jose Paolo TY" → "Jose Paolo"); the team in title case.
   const words = String(me.name || '').split(' ').filter(Boolean);
   const first = (words.length > 1 ? words.slice(0, -1).join(' ') : words[0]) || 'there';
@@ -96,6 +97,9 @@ export function appMePage({ me, positions, todos = [], scoring = null, cover = n
   <div class="group">${recent.map(recentRow).join('')}</div>` : ''}
   ${scoring ? `<div class="group group--icons me-scoring">
     <a class="cell" href="/app/scoring"><span class="ico ico--amber">${icons.ball}</span><span class="cell__t">${scoring.league || scoring.admin ? 'Scoring' : 'Learn to score Papawis'}<small>${scoring.games ? `${scoring.games} to score now` : scoring.league || scoring.admin ? 'Games to score, practice, guides' : 'A practice run and the guide'}</small></span>${scoring.games ? `<span class="count">${scoring.games}</span>` : ''}${chev}</a>
+  </div>` : ''}
+  ${feedAdmin ? `<div class="group group--icons me-scoring">
+    <a class="cell" href="/app/admin/feed"><span class="ico">${icons.megaphone}</span><span class="cell__t">Feed posts<small>Admin: highlights, photos, Facebook posts, announcements</small></span>${chev}</a>
   </div>` : ''}
   <div class="sec">Profile</div>
   <div class="group group--icons">
@@ -218,4 +222,10 @@ export function appScoringPage(s) {
   ${s.league ? group('Tools', [row('/app/table', 'tablet', 'Table display', 'Show the live score on a big screen', '', ' data-reload')]) : ''}
   ${s.admin ? group('Admin', [row('/app/admin/scorers', 'user', 'Scorers', `Who scores ${s.admin.games && s.admin.papawis ? 'games and Papawis' : s.admin.games ? 'the games' : 'Papawis'}`)]) : ''}
   ${s.pw && !s.league ? '<p class="foot-note">Scoring real runs is for Papawis scorers. Ask an admin if you’d like to be one.</p>' : ''}`;
+}
+
+// Me → Feed posts (admins): the site's Feed posts screen (views/feed-admin.js) in the app.
+export function appFeedAdminPage({ body }) {
+  return `<div class="navbar"><a class="navbar__back" href="/app/me">${backChev}Me</a><span class="navbar__title">Feed posts</span><span></span></div>
+  <div class="fa-app">${body}</div>`;
 }

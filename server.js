@@ -6189,7 +6189,7 @@ import { appThreadPanel, appThreadList, appSocialBar } from './views/app/comment
 import { appSharePage } from './views/app/share.js';
 import { appSetupPhotoPage, appSetupDetailsPage, appSetupSeasonPage, appSetupDonePage, SETUP_STEPS, POSITIONS as APP_POSITIONS, HANDS as APP_HANDS } from './views/app/setup.js';
 import { appPicksPage, pickWhoHtml } from './views/app/picks.js';
-import { appTeamPage, appMePage, appScoringPage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
+import { appTeamPage, appMePage, appScoringPage, appFeedAdminPage, appSettingsPage, appNotificationsPage, appNotificationRows } from './views/app/tabs.js';
 import { appPlayerPage, appPlayerMissing, appSeasonPage } from './views/app/season.js';
 import { appPapawisPage, appLockedBar, appPapawisRunPage, appPapawisPastRows } from './views/app/papawis.js';
 import { appPapawisFinishPage } from './views/app/papawis-score.js';
@@ -6206,8 +6206,10 @@ import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthen
 import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey, deletePasskeysForReg } from './lib/portal-db.js';
 import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
 import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
-import { getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, setAppAnnouncementDate, deleteAppAnnouncement } from './lib/portal-db.js';
-import { adminAnnouncementsBody } from './views/admin/app-announcements.js';
+import { getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, setAppAnnouncementDate, deleteAppAnnouncement,
+  editAppAnnouncement, setAppAnnouncementHidden, addAppPostPhoto, getAppPostPhotoNumbers, getAppPostPhoto } from './lib/portal-db.js';
+import { adminAnnouncementsBody, feedThumb } from './views/admin/app-announcements.js';
+import { feedAdminBody } from './views/feed-admin.js';
 import { savePushSubscription, deletePushSubscription, deletePushSubscriptionsForReg, getPushSubscriptionsForReg, getAllPushSubscriptions, getPushPrefs, setPushPref, claimPushLog, onNotificationCreated } from './lib/portal-db.js';
 import { vapidKeys, pushToPlayer, pushKindOf, PUSH_KINDS } from './lib/push.js';
 import { adminAppBody } from './views/admin/app.js';
@@ -6218,7 +6220,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/player-cards.js', 'views/player-cards.js', 'views/app/papawis-score.js', 'views/app/table.js', 'public/table.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js', 'views/app/season.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/player-cards.js', 'views/player-cards.js', 'views/app/papawis-score.js', 'views/app/table.js', 'public/table.js', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js', 'views/app/season.js', 'views/feed-admin.js', 'public/feed-admin.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6700,7 +6702,7 @@ app.get('/app', requireApp, (req, res) => {
   const rail = picksEnabled() && getUpcomingGames(getAllGames()).length > 0 ? appRailHtml(me) : '';
   const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form' || t.review)
     .map(t => t.icon === 'wallet' ? { ...t, href: `${t.href}?from=home` } : t);
-  const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now());
+  const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now() && !a.hidden_at);
   // The site's poll popup, full screen over Home (views/app/poll.js).
   const poll = popupPollFor(req);
   // The Barkadahan (when it's on): the chat icon's count and the Home card.
@@ -6729,7 +6731,7 @@ const gameAtMs = g => { const y = gameYmd(g.date); const t = /^\d{2}:\d{2}$/.tes
 function appFeedIndex() {
   const now = Date.now();
   const items = [];
-  for (const a of getAppAnnouncements()) if (!(a.pinned_until > now)) items.push({ kind: 'ann', id: a.id, at: a.shown_at || a.created_at, src: a });
+  for (const a of getAppAnnouncements()) if (!(a.pinned_until > now) && !a.hidden_at) items.push({ kind: 'ann', id: a.id, at: a.shown_at || a.created_at, src: a });
   for (const g of getAllGames()) if (isPlayedGame(g)) items.push({ kind: 'game', id: g.id, at: gameAtMs(g), src: g });
   // Posts and Papawis follow the same switches as the site's homepage and /papawis.
   if (getSetting('posts_enabled', '0') === '1') for (const p of getPublicPosts()) items.push({ kind: 'post', id: p.id, at: p.publish_at || p.created_at, src: p });
@@ -6755,8 +6757,13 @@ const feedWhen = ms => manilaFormat(ms, { hour: 'numeric', minute: '2-digit' });
 
 function appAnnItem(a, pinned = false) {
   const at = a.shown_at || a.created_at;
+  const type = FEED_TYPES[a.type] ? a.type : 'announcement';
   return { kind: 'ann', id: a.id, day: pinned ? '' : feedDay(at), pinned, when: pinned ? feedDay(at) : feedWhen(at),
     by: a.created_by && a.created_by !== 'WKND' ? a.created_by : 'WKND League',
+    // Feed post types: the label and chip on the card; a throwback names its original date.
+    type, label: type === 'throwback' ? `Throwback · ${manilaFormat(at, { month: 'short', day: 'numeric', year: 'numeric' })}` : FEED_TYPES[type],
+    photos: a.photos ? getAppPostPhotoNumbers(a.id).map(n => sizedSrc(`/app/announcements/${encodeURIComponent(a.id)}/photos/${n}?v=${a.updated_at}`)) : [],
+    ref: feedRefOf(a.ref), link: a.link_url || '',
     title: a.title, body: a.body, yt: ytId(a.youtube_url), fb: fbEmbedOf(a.fb_url),
     media: a.has_image ? sizedSrc(`/app/announcements/${encodeURIComponent(a.id)}/image?v=${a.updated_at}`) : {} };
 }
@@ -6939,6 +6946,12 @@ const sendAnnImage = (req, res) => {
   return sendPlayerPhoto(req, res, image, { widths: ANN_WIDTHS, maxAge: 86400 });
 };
 app.get('/app/announcements/:id/image', requireAppData, sendAnnImage);
+// One photo of a feed post's gallery.
+app.get('/app/announcements/:id/photos/:n', requireAppData, (req, res) => {
+  const image = getAppPostPhoto(req.params.id, Number(req.params.n));
+  if (!/^data:image\/(?:jpeg|png|webp);base64,/.test(image)) return res.status(404).end();
+  return sendPlayerPhoto(req, res, image, { widths: ANN_WIDTHS, maxAge: 86400 });
+});
 
 // ── Comments in the app (views/app/comments.js) ──
 // A thread is a game's (key = the game id, shared with the site's game page) or an app
@@ -9515,7 +9528,7 @@ app.get('/app/me', requireApp, (req, res) => {
   ].sort((x, y) => String(y.ymd).localeCompare(String(x.ymd))).slice(0, 4);
   const things = todos.length + (now ? 1 : 0);
   sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
-    me, positions: parsePositions(me.player.positions).join(' · '), todos, now, week, doing, recent, things,
+    me, positions: parsePositions(me.player.positions).join(' · '), todos, now, week, doing, recent, things, feedAdmin: appFeedAdmin(req),
   }) });
 });
 
@@ -10357,9 +10370,21 @@ app.get('/admin/app', requireAuth, (req, res) => {
 
 // ── Admin: announcements for the app's feed (views/admin/app-announcements.js) ──
 app.get('/admin/app/announcements', requireAuth, (req, res) => {
-  res.send(renderAdminPage(req, { title: 'App announcements', currentPath: '/admin/app', body: adminAnnouncementsBody({ list: getAppAnnouncements() }) }));
+  res.send(renderAdminPage(req, { title: 'Feed posts', currentPath: '/admin/app', body: adminAnnouncementsBody({ list: getAppAnnouncements(), refOptions: feedRefOptions() }) }));
 });
 app.get('/admin/app/announcements/:id/image', requireAuth, sendAnnImage);
+app.get('/admin/app/announcements/:id/photos/:n', requireAuth, (req, res) => {
+  const image = getAppPostPhoto(req.params.id, Number(req.params.n));
+  if (!/^data:image\/(?:jpeg|png|webp);base64,/.test(image)) return res.status(404).end();
+  return sendPlayerPhoto(req, res, image, { widths: ANN_WIDTHS, maxAge: 86400 });
+});
+// The app's Me → Feed posts (admins): the same screen as the site's (views/feed-admin.js).
+const appFeedAdmin = req => !!req.session?.isAdmin && !req.session.impersonating;
+app.get('/app/admin/feed', requireApp, (req, res) => {
+  const me = appMe(req);
+  if (!appFeedAdmin(req)) return res.redirect('/app/me');
+  sendTab(res, me, { title: 'Feed posts · WKND', tab: 'me', body: appFeedAdminPage({ body: feedAdminBody({ list: getAppAnnouncements(), refOptions: feedRefOptions(), thumb: feedThumb }) }) });
+});
 const annPinUntil = days => { const d = Math.min(30, Math.max(0, Number(days) || 0)); return d ? Date.now() + d * 24 * 60 * 60 * 1000 : 0; };
 // Facebook posts in the feed (Paolo, 2026-11-01): a public post, video or reel on our page,
 // shown as Facebook's own embed (public/app.js initFbEmbeds). { url, video } or null.
@@ -10373,24 +10398,132 @@ function fbEmbedOf(raw) {
 }
 // "2026-11-01T18:30" in Manila → ms, or null.
 const manilaInputMs = v => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(v || '')) ? Date.parse(`${v}:00+08:00`) : null);
+// ── Feed posts (Admin → Players app → Feed posts, and the app's Me → Feed posts) ──
+// Types (2026-11-01, mockup claude.ai/artifact/PoEMwcjVXJxHchuAPdaj5r): what a post is; its media
+// can be written here, a Facebook link, a YouTube link or uploaded photos. A post dated in the
+// past goes into the feed at that date (below everything newer) and never notifies.
+const FEED_TYPES = { announcement: 'Announcement', highlight: 'Highlight', photos: 'Photos', throwback: 'Throwback', facebook: 'Facebook' };
+const FEED_PHOTO_MAX = 30;
+const feedType = v => (FEED_TYPES[v] ? v : 'announcement');
+const feedRefOk = v => !v || /^(game|pw):[\w-]{1,80}$/.test(v);
+// Older than 12 hours: an old post being brought in, so no notification.
+const feedIsPast = ms => !!ms && ms < Date.now() - 12 * 3600e3;
+// The game or run a post is from, as the card's link row.
+function feedRefOf(ref) {
+  const [kind, id] = String(ref || '').split(':');
+  if (kind === 'game') {
+    const g = getGameById(id);
+    if (!g) return null;
+    return { title: `${titleCase(g.team_a_name)} ${g.team_a_score ?? ''}–${g.team_b_score ?? ''} ${titleCase(g.team_b_name)}`.replace(/ –  /, ' vs '), sub: `${shortDate(g.date)} · Box score & recap`, href: `/app/games/${encodeURIComponent(g.id)}` };
+  }
+  if (kind === 'pw') {
+    const r = getPapawisGame(id);
+    return r ? { title: `Papawis · ${pwDay(r.date)}`, sub: 'Results and box score', href: `/app/papawis/${encodeURIComponent(r.id)}` } : null;
+  }
+  return null;
+}
+// The choices for "From a game or run": the last 15 played games and the last 10 scored runs.
+function feedRefOptions() {
+  const games = getAllGames().filter(isPlayedGame).sort((x, y) => gameAtMs(y) - gameAtMs(x)).slice(0, 15)
+    .map(g => [`game:${g.id}`, `${titleCase(g.team_a_name)} ${g.team_a_score}–${g.team_b_score} ${titleCase(g.team_b_name)} · ${shortDate(g.date)}`]);
+  const runs = getSetting('papawis_enabled', '0') === '1' ? getPapawisScoredList().sort((x, y) => y.finished_at - x.finished_at).slice(0, 10)
+    .map(x => getPapawisGame(x.run_id)).filter(Boolean).map(r => [`pw:${r.id}`, `Papawis · ${pwDay(r.date)}`]) : [];
+  return [...games, ...runs];
+}
+const feedMediaOf = (facebook, youtube) => ({ fb: facebook ? fbEmbedOf(facebook) : null, yt: youtube ? ytId(youtube) : null });
+// Checks one post's fields. Returns an error string, or the cleaned fields.
+function feedPostFields(b, { photosComing = false } = {}) {
+  const type = feedType(b.type);
+  const title = String(b.title || '').trim().slice(0, 120), body = String(b.body || '').trim().slice(0, 2000);
+  const facebook = String(b.facebook || '').trim(), youtube = String(b.youtube || '').trim(), link = String(b.link || '').trim().slice(0, 500);
+  const ref = String(b.ref || '');
+  if (facebook && !fbEmbedOf(facebook)) return 'That doesn’t look like a Facebook post or video link.';
+  if (youtube && !ytId(youtube)) return 'That doesn’t look like a YouTube link.';
+  if (link && !/^https:\/\/([\w-]+\.)*(facebook\.com|fb\.watch|youtube\.com|youtu\.be|wkndbasketball\.com)\//i.test(link)) return 'The extra link has to be a Facebook, YouTube or WKND link.';
+  if (!feedRefOk(ref)) return 'Pick the game or run from the list.';
+  const fb = facebook ? fbEmbedOf(facebook) : null;
+  if (type === 'announcement' && !title && !body) return 'Add a title or a message.';
+  if (type === 'highlight' && !(fb?.video || youtube)) return 'A highlight needs a Facebook video or reel, or a YouTube link.';
+  if (type === 'facebook' && !fb) return 'Paste the Facebook post’s link.';
+  if (type === 'photos' && !photosComing) return 'Add at least one photo.';
+  if (type === 'throwback' && !fb && !youtube && !photosComing) return 'A throwback needs a Facebook or YouTube link, or photos.';
+  return { type, title, body, facebook: fb ? fb.url : '', youtube, link, ref };
+}
 app.post('/admin/app/announcements', requireAuth, express.json({ limit: '8mb' }), (req, res) => {
   const b = req.body || {};
   const image = String(b.image || '');
   if (b.image) req.body.image = '(photo)'; // keep the admin log small
-  const title = String(b.title || '').trim().slice(0, 120), body = String(b.body || '').trim().slice(0, 2000);
-  const youtube = String(b.youtube || '').trim();
-  const facebook = String(b.facebook || '').trim();
-  if (facebook && !fbEmbedOf(facebook)) return res.status(400).json({ error: 'That doesn\'t look like a Facebook post or video link.' });
-  if (!title && !body && !facebook) return res.status(400).json({ error: 'Add a title, a message or a Facebook link.' });
-  if (youtube && !ytId(youtube)) return res.status(400).json({ error: 'That doesn\'t look like a YouTube link.' });
-  const shownAt = manilaInputMs(b.date);
+  const f = feedPostFields(b, { photosComing: !!b.draft });
+  if (typeof f === 'string') return res.status(400).json({ error: f });
   if (image && !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) return res.status(400).json({ error: 'That photo couldn\'t be read. Try another.' });
+  const shownAt = manilaInputMs(b.date);
+  if (shownAt && shownAt > Date.now() + 5 * 60e3) return res.status(400).json({ error: 'The date can’t be in the future.' });
   const by = req.session.isElevatedPlayer ? (req.session.playerName || 'admin') : 'WKND';
   const id = crypto.randomUUID();
-  addAppAnnouncement({ id, title, body, image, youtubeUrl: youtube, fbUrl: facebook ? fbEmbedOf(facebook).url : '', shownAt, pinnedUntil: annPinUntil(b.pinDays), createdBy: by });
-  // Notify unless switched off (an old Facebook post added with its own date usually is).
-  const notified = b.notify === false ? 0 : notifyAnnouncement({ id, title: title || (facebook ? (fbEmbedOf(facebook).video ? 'New video from WKND' : 'New post from WKND') : ''), body: body || (facebook ? 'Watch it in the app.' : '') });
+  addAppAnnouncement({ id, title: f.title, body: f.body, image, youtubeUrl: f.youtube, fbUrl: f.facebook, shownAt, type: f.type, ref: f.ref, linkUrl: f.link, pinnedUntil: annPinUntil(b.pinDays), createdBy: by });
+  // A post with photos is created hidden; its photos follow, then Publish shows it (and notifies).
+  if (b.draft) { setAppAnnouncementHidden(id, true); return res.json({ ok: true, id }); }
+  const notified = b.notify === false || feedIsPast(shownAt) ? 0 : notifyFeedPost(id, f);
+  res.json({ ok: true, id, notified });
+});
+// One photo of a Photos or Throwback post: { image } (a JPEG data URL, already shrunk).
+app.post('/admin/app/announcements/:id/photos', requireAuth, express.json({ limit: '4mb' }), (req, res) => {
+  if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  const image = String(req.body?.image || '');
+  req.body.image = '(photo)';
+  if (!/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) return res.status(400).json({ error: 'That photo couldn\'t be read.' });
+  if (getAppPostPhotoNumbers(req.params.id).length >= FEED_PHOTO_MAX) return res.status(400).json({ error: `Up to ${FEED_PHOTO_MAX} photos a post.` });
+  res.json({ ok: true, n: addAppPostPhoto(req.params.id, image) });
+});
+// Shows a post made with photos (it was hidden while they uploaded): { notify }.
+app.post('/admin/app/announcements/:id/publish', requireAuth, express.json(), (req, res) => {
+  const a = getAppAnnouncement(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found.' });
+  setAppAnnouncementHidden(a.id, false);
+  const notified = req.body?.notify === false || feedIsPast(a.shown_at) ? 0 : notifyFeedPost(a.id, { type: a.type, title: a.title, body: a.body, facebook: a.fb_url });
   res.json({ ok: true, notified });
+});
+// Edit its words, type, game or run, extra link: same fields as a new post.
+app.post('/admin/app/announcements/:id/edit', requireAuth, express.json(), (req, res) => {
+  const a = getAppAnnouncement(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found.' });
+  const b = { facebook: a.fb_url, youtube: a.youtube_url, ...req.body };
+  const f = feedPostFields(b, { photosComing: a.photos > 0 || !!a.has_image });
+  if (typeof f === 'string') return res.status(400).json({ error: f });
+  editAppAnnouncement(a.id, { type: f.type, title: f.title, body: f.body, ref: f.ref, linkUrl: f.link });
+  res.json({ ok: true });
+});
+app.post('/admin/app/announcements/:id/hide', requireAuth, express.json(), (req, res) => {
+  if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  setAppAnnouncementHidden(req.params.id, req.body?.hidden !== false);
+  res.json({ ok: true });
+});
+// Bulk add (past Facebook and YouTube links): { lines: "link, YYYY-MM-DD[, type]\n…", dry }.
+// Every line is checked first; with dry it only answers the preview. Nobody is notified.
+app.post('/admin/app/announcements/bulk', requireAuth, express.json({ limit: '200kb' }), (req, res) => {
+  const lines = String(req.body?.lines || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(0, 100);
+  const sixMonths = Date.now() - 183 * 86400e3;
+  const rows = lines.map((l, i) => {
+    const [url = '', date = '', t = ''] = l.split(',').map(x => x.trim());
+    const fb = fbEmbedOf(url), yt = ytId(url);
+    if (!fb && !yt) return { line: i + 1, error: 'Not a Facebook or YouTube link' };
+    const ms = /^\d{4}-\d{2}-\d{2}$/.test(date) ? Date.parse(`${date}T12:00:00+08:00`) : manilaInputMs(date);
+    if (!ms) return { line: i + 1, error: 'Add the date as 2025-08-14' };
+    if (ms > Date.now()) return { line: i + 1, error: 'The date is in the future' };
+    const want = t.toLowerCase();
+    if (want && !FEED_TYPES[want]) return { line: i + 1, error: `Unknown type “${t}”` };
+    const video = !!yt || !!fb?.video;
+    const type = want || (ms < sixMonths ? 'throwback' : video ? 'highlight' : 'facebook');
+    if (type === 'highlight' && !video) return { line: i + 1, error: 'A highlight has to be a video' };
+    if (type === 'photos' || type === 'announcement') return { line: i + 1, error: `Use the New post form for ${FEED_TYPES[type].toLowerCase()}s` };
+    return { line: i + 1, url, fb: fb ? fb.url : '', yt: yt ? url : '', ms, type, label: `${FEED_TYPES[type]}${video ? ' · video' : ''}`, date: manilaFormat(ms, { month: 'short', day: 'numeric', year: 'numeric' }) };
+  });
+  if (!rows.length) return res.status(400).json({ error: 'Paste at least one link.' });
+  const bad = rows.filter(r => r.error);
+  if (req.body?.dry || bad.length) return res.json({ ok: !bad.length, rows });
+  const by = req.session.isElevatedPlayer ? (req.session.playerName || 'admin') : 'WKND';
+  for (const r of rows) addAppAnnouncement({ id: crypto.randomUUID(), fbUrl: r.fb, youtubeUrl: r.yt, shownAt: r.ms, type: r.type, createdBy: by });
+  res.json({ ok: true, added: rows.length });
 });
 // Move a post in the feed: { date: "YYYY-MM-DDTHH:mm" } in Manila, or empty for when it was posted.
 app.post('/admin/app/announcements/:id/date', requireAuth, express.json(), (req, res) => {
@@ -10398,6 +10531,7 @@ app.post('/admin/app/announcements/:id/date', requireAuth, express.json(), (req,
   const v = String(req.body?.date || '');
   const ms = manilaInputMs(v);
   if (v && !ms) return res.status(400).json({ error: 'Pick a date and time.' });
+  if (ms && ms > Date.now() + 5 * 60e3) return res.status(400).json({ error: 'The date can’t be in the future.' });
   setAppAnnouncementDate(req.params.id, ms);
   res.json({ ok: true });
 });
@@ -10410,6 +10544,13 @@ app.post('/admin/app/announcements/:id/delete', requireAuth, (req, res) => {
   deleteAppAnnouncement(req.params.id);
   res.json({ ok: true });
 });
+// The bell for a new feed post: an announcement by its title; the rest by type and caption.
+function notifyFeedPost(id, f) {
+  const label = FEED_TYPES[f.type] || 'Announcement';
+  const title = f.type === 'announcement' ? (f.title || 'WKND Basketball') : `New ${label.toLowerCase()} from WKND`;
+  const body = f.type === 'announcement' ? f.body : (f.title || f.body || (f.type === 'photos' ? 'See the photos in the app.' : 'Watch it in the app.'));
+  return notifyAnnouncement({ id, title, body });
+}
 
 app.post('/balance-bar/dismiss', express.json(), (req, res) => {
   if (!req.session?.playerRegId) return res.status(401).end();
