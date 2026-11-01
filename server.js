@@ -9019,7 +9019,7 @@ function describeScorePlay(e, nm, tname) {
     case 'timeout': return `${tname(e.team)} · timeout`;
     case 'stoppage': return `Referees stopped play${e.kind ? ` (${e.kind})` : ''}`;
     case 'period_end': return `End of ${e.period}`;
-    case 'sub': return `${tname(e.team)} · ${nm(e.in)} in for ${nm(e.out)}`;
+    case 'sub': return e.out ? `${tname(e.team)} · ${nm(e.in)} in for ${nm(e.out)}` : `${tname(e.team)} · ${nm(e.in)} in`;
     default: return e.type;
   }
 }

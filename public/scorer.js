@@ -810,15 +810,18 @@ export async function mount(el) {
     ui.ask = null; ui.peek = null; paint();
   };
   function subSave() {
-    const s = ui.subs; if (!s || !s.out.length || s.out.length !== s.in.length) return;
+    const s = ui.subs; if (!s || !subsOk(s)) return;
     // Each one coming on takes the tile of the one they replace (several at once would
-    // otherwise fill the empty tiles in roster order).
-    const tiles = [...five(s.t)], batch = s.out.length > 1 ? uid() : undefined;
+    // otherwise fill the empty tiles in roster order); any more fill the open spots.
+    const tiles = [...five(s.t)], n = s.in.length, batch = n > 1 ? uid() : undefined;
     s.out.forEach((outId, i) => doSub(s.t, s.in[i], outId, batch));
     slots[s.t] = tiles.map(id => { const i = s.out.indexOf(id); return i >= 0 ? s.in[i] : id; });
-    ui.tip = s.out.length > 1 ? `${s.out.length} subs for ${team[s.t].name}.` : '';
+    s.in.slice(s.out.length).forEach(id => add({ type: 'sub', team: s.t, in: id, ...(batch ? { batch } : {}) }));
+    ui.tip = n > 1 ? `${n} subs for ${team[s.t].name}.` : '';
     ui.subs = null; paint();
   }
+  // In pairs, plus one going on for each open spot (never more than 5 on court).
+  const subsOk = s => s.in.length > 0 && s.in.length >= s.out.length && s.in.length - s.out.length <= openSpots(s.t);
   const subsSheet = () => {
     const s = ui.subs; if (!s) return '';
     const t = s.t, on = five(t), bench = subBench(t);
@@ -831,10 +834,10 @@ export async function mount(el) {
         ${p.number ? `<b class="num">${esc(p.number)}</b>` : ''}<span>${esc(p.short)}</span>
         ${mate ? `<small class="sc-sbp__for">${side === 'out' ? '↑' : '↓'} ${esc(byId[mate].number ? '#' + byId[mate].number : byId[mate].short)}</small>` : flag ? `<small class="sc-sbp__for sc-sbp__for--flag">${esc(flag)}</small>` : side === 'in' && G.dnp.includes(id) ? '<small class="sc-sbp__for">DNP</small>' : ''}</button>`;
     };
-    const nOut = s.out.length, nIn = s.in.length;
-    const label = !nOut && !nIn ? 'Pick who comes off and who goes on'
-      : nOut > nIn ? `Pick ${nOut - nIn} more going on` : nIn > nOut ? `Pick ${nIn - nOut} more coming off`
-      : `Make ${nOut} sub${nOut === 1 ? '' : 's'}`;
+    const nOut = s.out.length, nIn = s.in.length, open = openSpots(t);
+    const label = !nOut && !nIn ? (open ? `Pick who goes on (${open} open spot${open === 1 ? '' : 's'})` : 'Pick who comes off and who goes on')
+      : nOut > nIn ? `Pick ${nOut - nIn} more going on` : nIn - nOut > open ? `Pick ${nIn - nOut - open} more coming off`
+      : `Make ${nIn} sub${nIn === 1 ? '' : 's'}`;
     const allOut = on.every(id => s.out.includes(id));
     return `<div class="sc-sheet sc-sheet--subs" role="dialog" aria-modal="true" aria-label="${esc(team[t].name)}: subs"><div class="sc-sheet__in">
       <div class="sc-sheet__grab" aria-hidden="true"></div>
@@ -843,7 +846,7 @@ export async function mount(el) {
       <div class="sc-sb">${on.map(id => tileP(id, 'out')).join('')}</div>
       <div class="sc-sbh"><span class="sc-mg__l">Bench · going on</span></div>
       <div class="sc-sb sc-sb--bench">${bench.map(id => tileP(id, 'in')).join('')}</div>
-      <button type="button" class="sc-dnp__save" data-act="subs-save"${nOut && nOut === nIn ? '' : ' disabled'}>${esc(label)}</button></div></div>`;
+      <button type="button" class="sc-dnp__save" data-act="subs-save"${subsOk(s) ? '' : ' disabled'}>${esc(label)}</button></div></div>`;
   };
   function timeout(t) {
     if (G.timeouts.left[t] <= 0) return;
@@ -927,6 +930,18 @@ export async function mount(el) {
     add({ type: 'sub', team: t, in: inId, out: outId, ...(batch ? { batch } : {}) });
     ui.tip = '';
   }
+  // Fewer than 5 on court with players on the bench (Paolo, 2026-11-01): a player moved to the
+  // other side, or fouled out, and everyone on the bench had been subbed off, so nobody tops the
+  // five up. The court shows an open spot; a bench player goes straight on (a sub with nobody
+  // coming off).
+  const openSpots = t => Math.max(0, 5 - five(t).length);
+  const fillable = t => (openSpots(t) ? subBench(t).filter(id => !G.dnp.includes(id)) : []);
+  function fillSpot(t, inId, batch) {
+    if (!inId || onCourt(t, inId) || !openSpots(t)) return;
+    add({ type: 'sub', team: t, in: inId, ...(batch ? { batch } : {}) });
+    ui.tip = '';
+  }
+  const fillMenu = t => menu(`${team[t].name}: who goes on?`, subBench(t).map(id => [id, `${short(id)}${G.dnp.includes(id) ? ' · DNP' : ''}`]), id => { fillSpot(t, id); ui.sel = null; paint(); });
 
   // ── Fixing plays ──
   const STATS = [['shot2m', '2PT made', { type: 'shot', pts: 2, made: true }], ['shot2x', '2PT miss', { type: 'shot', pts: 2, made: false }],
@@ -1110,7 +1125,7 @@ export async function mount(el) {
       <div class="sc-th"><button type="button" class="sc-th__n" data-act="teammenu" data-team="${t}" aria-label="${esc(team[t].name)}: team stats, DNP"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}${CHEV}</button>${ui.ask && ui.ask.kind === 'rebound' ? `<span class="sc-th__ans">${ui.ask.miss === t ? 'Offensive' : 'Defensive'}</span>` : ''}
         <button type="button" class="sc-tb" data-act="subq" data-team="${t}"${noSub ? ` disabled aria-label="${esc(team[t].name)}: nobody on the bench"` : ` aria-label="${esc(team[t].name)}: sub"`}>Sub</button>
 </div>
-      <div class="sc-five">${on.map(tile).join('')}</div>
+      <div class="sc-five">${on.map(tile).join('')}${fillable(t).length ? Array.from({ length: openSpots(t) }, () => `<button type="button" class="sc-p sc-p--open" data-act="fill" data-team="${t}" aria-label="${esc(team[t].name)}: open spot. Tap to put a bench player on"><span class="sc-p__open" aria-hidden="true"><b>+</b>Open</span></button>`).join('') : ''}</div>
       ${part === 'five' ? '' : benchHtml}
     </section>`;
   };
@@ -1122,7 +1137,7 @@ export async function mount(el) {
   };
   const playText = r => {
     if (r.type === 'period_end') return r.final ? `<b>Final</b> · game over` : `<b>End of ${esc(r.period)}</b>`;
-    if (r.type === 'sub') return `<b>${esc(short(r.in))}</b> on for ${esc(short(r.out))}`;
+    if (r.type === 'sub') return r.out ? `<b>${esc(short(r.in))}</b> on for ${esc(short(r.out))}` : `<b>${esc(short(r.in))}</b> on, to an open spot`;
     if (r.type === 'dnp') return `<b>${esc(short(r.player))}</b> ${r.on === false ? 'back on the roster' : 'didn’t play'}`;
     if (r.type === 'move') return `<b>${esc(short(r.player))}</b> moved to ${esc(team[r.to] ? team[r.to].name : '')}`;
     if (r.type === 'setup') return `<b>Game ${esc(String(r.game || ui.game))}</b> set up · ${r.stats === 'full' ? 'Full' : 'Basic'} · ${esc(String(r.periods || 4))} × ${esc(String(r.periodMin || 10))} min`;
@@ -1941,6 +1956,7 @@ export async function mount(el) {
     if (name === 'redo') return redo();
     if (name === 'timeout') return timeout(t);
     if (name === 'subq') return subMenu(t);
+    if (name === 'fill') return fillMenu(t);
     if (name === 'reb') return want('reb', () => simple('reb', 'REB'));
     if (name === 'ast') return want('ast', () => simple('ast', 'AST'));
     if (name === 'stl') return want('stl', () => simple('stl', 'STL'));
@@ -1967,6 +1983,7 @@ export async function mount(el) {
     if (a && OPTIONAL.has(a.kind) && followOpts(a).includes(id)) return answer(id);
     ui.queue = [];
     if (ui.arm) { ui.sel = id; ui.ask = null; const run = ui.arm.run; ui.arm = null; return run(); }
+    if (!onCourt(p.team, id) && fillable(p.team).includes(id)) { fillSpot(p.team, id); ui.sel = null; ui.ask = null; ui.tip = `${short(id)} is on for ${team[p.team].name}.`; return paint(); }
     const s = ui.sel && byId[ui.sel];
     if (s && s.team === p.team && !onCourt(p.team, ui.sel) && onCourt(p.team, id)) { doSub(p.team, ui.sel, id); ui.sel = null; ui.ask = null; return paint(); }
     ui.sel = ui.sel === id ? null : id; ui.ask = null; ui.tip = ''; ui.redo = null; paint();

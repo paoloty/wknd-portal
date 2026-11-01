@@ -1674,6 +1674,10 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-p.is-d .sc-p__no { color: var(--loss); }
 .sc-p.on { border: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 12%, var(--surface-2)); }
 .sc-p__sw { display: none; }
+/* An open spot on a short court (public/scorer.js fillSpot): dashed, "+ Open" in the middle. */
+.sc-p--open { justify-content: center; padding: 0; background: transparent; border: 1.5px dashed var(--line, rgba(128,128,128,.45)); box-shadow: none; color: var(--muted); }
+.sc-p__open { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; line-height: 1; }
+.sc-p__open b { color: var(--amber-text); font-size: 18px; line-height: 1; }
 .sc-p.swap .sc-p__sw { display: flex; position: absolute; top: 4px; right: 4px; color: var(--amber-text); }
 .sc-p__sw svg { width: 14px; height: 14px; }
 /* The whole bench, on the court's 5 columns, number first */

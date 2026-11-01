@@ -119,6 +119,7 @@ export const SCORER_GUIDE = [
         '<b>One sub:</b> tap the bench player, then the court player coming off.',
         '<b>Several at once:</b> tap <b>Sub</b> beside the team’s name, tap who comes off and who goes on (they pair up in that order), then Save. <i>All 5</i> is a line change.',
         '<b>Forgot to sub?</b> Just record the bench player’s play. They come on and the scorer asks who went off.',
+        '<b>An open spot:</b> if a team is down to 4 on court (someone fouled out and everyone on the bench had already sat), the court shows <i>Open</i>. Tap a bench player and they go straight on, nobody comes off.',
       ]],
       ['tip', 'Good to know', 'DNP (didn’t play) is under the team’s name → <i>DNP…</i>. A DNP player’s first play takes them off the DNP list.'],
     ],
@@ -274,6 +275,7 @@ export const PW_SCORER_GUIDE = [
       ]],
       ['dl', [
         ['Where the points go', 'Before the move they stay with the old side; from the move on they count for the new one. Their own line keeps everything.'],
+        ['A side down to 4', 'Moving someone off the court leaves an <i>Open</i> spot when nobody on the bench is fresh. Tap a bench player and they go straight on. The player who moved starts on the new side’s bench.'],
         ['Moved the wrong player?', 'Undo the move, or move them back.'],
         ['Someone came late', 'The side’s name → <i>A late arrival…</i> for someone you marked not here.'],
       ]],
