@@ -3067,4 +3067,6 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 @keyframes bkh-wave { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(18deg); } 40% { transform: rotate(-10deg); } 60% { transform: rotate(16deg); } 80% { transform: rotate(-6deg); } }
 @keyframes bkh-bigwave { 0% { opacity: 0; transform: scale(.4); } 20% { opacity: 1; transform: scale(1.1) rotate(18deg); } 40% { transform: scale(1) rotate(-12deg); } 60% { transform: rotate(16deg); } 80% { opacity: 1; transform: rotate(-4deg); } 100% { opacity: 0; transform: scale(.9); } }
 @keyframes bkh-burst { 0% { opacity: 1; transform: translate(0, 0) rotate(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--x), var(--y)) rotate(var(--r)); } }
-@media (prefers-reduced-motion: reduce) { .bkh.is-new, .bkh.is-new .bkh__e, .bkh__wave, .bkh__confetti i { animation: none; } .bkh__wave, .bkh__confetti { display: none; } }
+@media (prefers-reduced-motion: reduce) { .bkh.is-new:not(.is-replay), .bkh.is-new:not(.is-replay) .bkh__e, .bkh:not(.is-replay) .bkh__wave, .bkh:not(.is-replay) .bkh__confetti i { animation: none; } .bkh:not(.is-replay) .bkh__wave, .bkh:not(.is-replay) .bkh__confetti { display: none; } }
+/* The 👋 / 🎂 line replays it on a tap (public/barkadahan.js hiPlay). */
+.bkh__k { cursor: pointer; min-height: 24px; -webkit-tap-highlight-color: transparent; }

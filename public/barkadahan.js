@@ -470,12 +470,18 @@
         es.forEach(function (e) { if (e.isIntersecting && e.intersectionRatio >= 0.5) { hiObs.unobserve(e.target); hiPlay(e.target); } });
       }, { root: list, threshold: [0.5] }) : null;
     }
-    function hiPlay(c) {
+    // again: a tap on the card's 👋 / 🎂 plays it once more (Paolo couldn't see it after it had
+    // played as he posted), even with Reduce Motion, since that tap asks for it.
+    function hiPlay(c, again) {
+      hiInit();
       var id = c.getAttribute('data-bk-hi-card');
-      if (hiSeen.indexOf(id) !== -1) return;
-      hiSeen.push(id); pref.set('wknd-bk-hi', hiSeen.slice(-60).join(','));
-      if (calm) return;
-      c.classList.add('is-new');
+      if (!again) {
+        if (hiSeen.indexOf(id) !== -1) return;
+        hiSeen.push(id); pref.set('wknd-bk-hi', hiSeen.slice(-60).join(','));
+        if (calm) return;
+      }
+      if (c.classList.contains('is-new')) return;
+      c.classList.add('is-new'); c.classList.toggle('is-replay', !!again);
       if (c.classList.contains('bkh--bday')) {
         var box = document.createElement('span'); box.className = 'bkh__confetti'; box.setAttribute('aria-hidden', 'true');
         var COLORS = ['#f59332', '#f2c14e', '#e2554a', '#4a7bd0', '#34d399', '#c084fc'];
@@ -489,7 +495,7 @@
         var hand = document.createElement('span'); hand.className = 'bkh__wave'; hand.setAttribute('aria-hidden', 'true'); hand.textContent = '👋';
         c.appendChild(hand);
       }
-      setTimeout(function () { c.classList.remove('is-new'); c.querySelectorAll('.bkh__confetti, .bkh__wave').forEach(function (x) { x.remove(); }); }, 3200);
+      setTimeout(function () { c.classList.remove('is-new', 'is-replay'); c.querySelectorAll('.bkh__confetti, .bkh__wave').forEach(function (x) { x.remove(); }); }, 3200);
     }
     function hiWatch() {
       hiInit();
@@ -591,6 +597,7 @@
       }
       var rxb = t.closest('[data-bk-rx]'); if (rxb) return react(byId[rxb.closest('[data-id]').getAttribute('data-id')], rxb.getAttribute('data-bk-rx'));
       var hib = t.closest('[data-bk-hi]'); if (hib && !hib.disabled) return hiAct(hib);
+      var hik = t.closest('[data-bk-hi-card] .bkh__k'); if (hik) return hiPlay(hik.closest('[data-bk-hi-card]'), true);
       var sayb = t.closest('[data-bk-say]'); if (sayb && input) { input.value = sayb.getAttribute('data-bk-say'); input.dispatchEvent(new Event('input')); input.focus(); return; }
       var pwb = t.closest('[data-bk-pw]'); if (pwb && !pwb.disabled) return papawisAct(pwb);
       var pkb = t.closest('[data-bk-pick] .pick__opt'); if (pkb) return pickAct(pkb);
