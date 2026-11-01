@@ -1991,7 +1991,10 @@
       // here and in the screens already fetched (their tab bars still carry the old count).
       if (location.pathname === '/app/notifications') {
         nav.setAttribute('data-unread', '0');
-        Object.keys(pages || {}).forEach(function (u) { if (pages[u].html) pages[u].html = pages[u].html.replace(/data-unread="\d+"/, 'data-unread="0"'); });
+        // And the bell's count in the headers of those screens (Home kept in memory too).
+        var noBell = function (h) { return h.replace(/(<a class="bell" href="\/app\/notifications" aria-label="Notifications)[^"]*("[^>]*>[\s\S]*?)<span class="badge-dot">[^<]*<\/span>/, '$1$2'); };
+        Object.keys(pages || {}).forEach(function (u) { if (pages[u].html) pages[u].html = noBell(pages[u].html.replace(/data-unread="\d+"/, 'data-unread="0"')); });
+        Object.keys(kept || {}).forEach(function (u) { $$('a.bell[href="/app/notifications"] .badge-dot', kept[u].el).forEach(function (d) { d.remove(); }); });
       }
       var n = Number(nav.getAttribute('data-unread') || 0);
       (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(function () {});
@@ -2931,12 +2934,16 @@
     if (k) {
       var html = pages[url] ? pages[url].html : '';
       render({ el: k.el, y: k.y, title: k.title, url: url, html: html }, push, false, dir);
-      // The tab bar's badges can have changed meanwhile: take them from a fresh copy, leave
-      // the screen as it was.
+      // The tab bar's badges and the header's bell can have changed meanwhile: take them from a
+      // fresh copy, leave the screen as it was. (The bell kept its old count: read your
+      // notifications, go back to Home, and the count came back. Paolo, 2026-11-01.)
       if (navigator.onLine) fetchPage(url).then(function (fresh) {
         if (id !== navId) return;
-        var nb = new DOMParser().parseFromString(fresh.html, 'text/html').querySelector('nav.tabbar'), cur = $('nav.tabbar');
+        var fd = new DOMParser().parseFromString(fresh.html, 'text/html');
+        var nb = fd.querySelector('nav.tabbar'), cur = $('nav.tabbar');
         if (nb && cur && nb.innerHTML !== cur.innerHTML) cur.innerHTML = nb.innerHTML;
+        var fb = fd.querySelector('a.bell[href="/app/notifications"]'), cb = $('a.bell[href="/app/notifications"]');
+        if (fb && cb && fb.outerHTML !== cb.outerHTML) cb.outerHTML = fb.outerHTML;
       }).catch(function () {});
       return;
     }
