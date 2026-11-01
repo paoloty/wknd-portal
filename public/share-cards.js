@@ -759,9 +759,10 @@ const FONT_FILES = ['/fonts/sairacondensed-black-latin.woff2', '/fonts/archivo-k
 // below each template (server.js renderMyStatCard) and the phone puts it first in the SVG
 // (phoneDrawer.draw), so both look the same. Designed on a 270 x 480 grid, scaled to the card.
 const WM_WORD = (fill, stroke) => `<text x="6" y="34" font-family="${BODY}" font-style="italic" font-weight="900" font-size="30" letter-spacing="-1.3" ${stroke ? `fill="none" stroke="#fff" stroke-width="0.7"` : `fill="#fff"`}>WKND</text>`;
+// The ball as in the real logo (views/app/layout.js appLogo, .logo svg): 0.38em, on the baseline.
 const WM_BALL = stroke => stroke
-  ? '<g transform="translate(93 13) scale(.2)"><circle cx="50" cy="50" r="47" fill="none" stroke="#fff" stroke-width="3.5"/><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></g>'
-  : '<g transform="translate(93 13) scale(.2)"><circle cx="50" cy="50" r="48" fill="#fff"/><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87" fill="none" stroke="#000" stroke-width="6" stroke-linecap="round"/></g>';
+  ? '<g transform="translate(93.5 22.6) scale(.114)"><circle cx="50" cy="50" r="47" fill="none" stroke="#fff" stroke-width="3.5"/><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></g>'
+  : '<g transform="translate(93.5 22.6) scale(.114)"><circle cx="50" cy="50" r="48" fill="#fff"/><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87" fill="none" stroke="#000" stroke-width="6" stroke-linecap="round"/></g>';
 const WM_TILE = stroke => `${WM_WORD(true, stroke)}${WM_BALL(stroke)}<g transform="translate(67 43)">${WM_WORD(true, stroke)}${WM_BALL(stroke)}</g>`;
 const WM_SPARKS = [[18, 95, 4], [250, 70, 3], [30, 300, 5], [245, 250, 4], [20, 420, 3], [258, 395, 5], [60, 40, 4], [212, 440, 3]]
   .map(([x, y, r]) => { const k = r * 0.28; return `<path d="M${x} ${y - r}L${x + k} ${y - k}L${x + r} ${y}L${x + k} ${y + k}L${x} ${y + r}L${x - k} ${y + k}L${x - r} ${y}L${x - k} ${y - k}Z" fill="#fff" opacity=".3"/>`; }).join('');
