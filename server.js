@@ -6173,8 +6173,8 @@ import { appLoginPage, appCodeRequestPage, appCodeVerifyPage, appNotPlayerPage, 
 import { homeHeader, barkadahanCard, setupCard, installCard } from './views/app/home.js';
 import { appFeedRows, appHomeFeedPage, appGamePage, appGamePreviewPage, appPostPage, appRail, ytId, appLiveParts, appLiveNow } from './views/app/feed.js';
 import { appScorerListPage, appScorerPage } from './views/app/score.js';
-import { appPracticePage } from './views/app/practice.js';
-import { appScorerGuidePage, appScorerChapterPage } from './views/app/help.js';
+import { appPracticePage, appPwPracticePage } from './views/app/practice.js';
+import { appScorerGuidePage, appScorerChapterPage, PW_GUIDE_OPTS } from './views/app/help.js';
 import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
@@ -7454,10 +7454,70 @@ app.post('/api/practice/:id', requireAppData, express.json(), (req, res) => {
   const b = req.body || {}, n = v => Math.max(0, Math.min(9999, parseInt(v, 10) || 0));
   if (!/^[a-z0-9]{8,32}$/.test(req.params.id)) return res.status(400).json({ error: 'Bad id.' });
   const name = v => String(v || '').slice(0, 40);
-  savePractice({ id: req.params.id, playerId: req.session.playerPlayerId, teamA: name(b.teamA), teamB: name(b.teamB), periodMin: n(b.q) === 5 ? 5 : 12,
+  savePractice({ id: req.params.id, playerId: req.session.playerPlayerId, teamA: name(b.teamA), teamB: name(b.teamB), periodMin: [3, 5, 10, 12].includes(n(b.q)) ? n(b.q) : 12,
     plays: n(b.plays), period: String(b.period || '').slice(0, 8), a: n(b.a), b: n(b.b), tips: n(b.tips), finished: !!b.finished, reset: !!b.reset });
   res.json({ ok: true });
 });
+// ── Papawis practice and guide (2026-11-01) ──
+// Papawis scorers and Papawis admins (the run's scorer screen asks the same: pwScoreAccess).
+const pwScoringFor = req => !!req.session?.playerPlayerId && (!!getPlayerById(req.session.playerPlayerId)?.is_pw_scorer || pwIsAdmin(req));
+function requirePwScoring(req, res, next) { if (!pwScoringFor(req) && !scoringMenuFor(req.session?.playerPlayerId)) return res.redirect('/app/me'); next(); }
+// The practice's players: the last scored run's, on the sides they finished on; else the last
+// played run's list on its sides; else twelve active players, split.
+function pwPracticePlayers() {
+  const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const scored = getPapawisScoredList().sort((x, y) => (y.finished_at || 0) - (x.finished_at || 0));
+  for (const s of scored) {
+    const run = getPapawisGame(s.run_id), res = run && pwResultsFor(run);
+    const ppl = (res?.people || []).filter(p => p.playerId && byId[p.playerId]);
+    if (ppl.length >= 4) return { label: `${pwDay(run.date)} run`, a: ppl.filter(p => p.side !== 'dark').map(p => pwPerson(byId[p.playerId])), b: ppl.filter(p => p.side === 'dark').map(p => pwPerson(byId[p.playerId])) };
+  }
+  const played = getPapawisGames().filter(g => g.status === 'completed').sort((x, y) => String(y.date).localeCompare(String(x.date)));
+  for (const g of played) {
+    const ppl = getPapawisSignups(g.id).filter(s => s.status === 'confirmed' && !s.guest_name && byId[s.player_id]);
+    if (ppl.length >= 4) {
+      const a = [], b = [];
+      for (const s of ppl) (s.team === 'dark' ? b : s.team === 'light' ? a : a.length <= b.length ? a : b).push(pwPerson(byId[s.player_id]));
+      return { label: `${pwDay(g.date)} run`, a, b };
+    }
+  }
+  const ppl = getAllPlayers().filter(p => p.status === 'active').slice(0, 12).map(pwPerson);
+  return { label: 'Sample run', a: ppl.filter((p, i) => i % 2 === 0), b: ppl.filter((p, i) => i % 2 === 1) };
+}
+app.get('/app/papawis/practice', requireApp, requirePwScoring, (req, res) => {
+  const pl = pwPracticePlayers();
+  sendTab(res, appMe(req), { title: 'Practice a run · WKND', tab: 'me', body: appPwPracticePage({ players: { label: pl.label, light: pl.a, dark: pl.b }, back: { href: '/app/me', label: 'Me' } }) });
+});
+// The practice itself: the real Papawis scorer with `practice` set (public/scorer.js sends
+// nothing, no hold, its own copy on the phone); practice_log hears how far it got (Light/Dark).
+app.get('/app/papawis/practice/play', requireApp, requirePwScoring, (req, res) => {
+  const pl = pwPracticePlayers();
+  const stats = req.query.stats === 'full' ? 'full' : 'basic';
+  const q = String(req.query.q) === '3' ? 3 : 10;
+  const id = /^[a-z0-9]{8,32}$/.test(String(req.query.id || '')) ? String(req.query.id) : randomBytes(8).toString('hex');
+  const bundle = {
+    game: { id: 'pw_practice', date: manilaTodayStr(), tip: '', type: 'papawis' }, fourPoint: false, status: 'live', opensAt: 0,
+    rules: { ...PW_SCORE_RULES, periodMin: q },
+    a: { id: 'light', name: 'Light', color: 'var(--team-white, #d7dce5)', players: pl.a },
+    b: { id: 'dark', name: 'Dark', color: 'var(--team-black, #6b7486)', players: pl.b },
+    events: [], pass: 'live', video: '',
+    papawis: { runId: 'practice', title: 'Practice run', day: pwDay(manilaTodayStr()), place: '', extra: [], finish: '', hold: '', done: false,
+      defaults: { stats, periodMin: q, periods: PW_SCORE_RULES.periods } },
+    practice: { id, log: `/api/practice/${id}`, teams: ['Light', 'Dark'], stats, q },
+    over: { back: '/app/papawis/practice' },
+  };
+  res.set('Cache-Control', 'private, no-store');
+  sendApp(res, { title: 'Practice run · WKND', bare: true, body: appScorerPage({ bundle, back: { href: '/app/papawis/practice', label: 'Practice' } }) });
+});
+app.get('/app/help/papawis', requireApp, requirePwScoring, (req, res) => {
+  sendTab(res, appMe(req), { title: 'How to score Papawis · WKND', tab: 'me', body: appScorerGuidePage({ back: { href: '/app/me', label: 'Me' }, opts: PW_GUIDE_OPTS }) });
+});
+app.get('/app/help/papawis/:slug', requireApp, requirePwScoring, (req, res) => {
+  const body = appScorerChapterPage({ slug: req.params.slug, opts: PW_GUIDE_OPTS });
+  if (!body) return res.redirect('/app/help/papawis');
+  sendTab(res, appMe(req), { title: 'How to score Papawis · WKND', tab: 'me', body });
+});
+
 app.get('/app/help/scoring', requireApp, requireScoringMenu, (req, res) => {
   sendTab(res, appMe(req), { title: 'How to score · WKND', tab: 'me', body: appScorerGuidePage({ back: { href: '/app/me', label: 'Me' } }) });
 });
@@ -9387,7 +9447,7 @@ app.get('/app/me', requireApp, (req, res) => {
   if (toScore) todos.unshift({ icon: 'ball', title: toScore === 1 ? '1 game to score' : `${toScore} games to score`, sub: meP?.is_scorer || meP?.is_pw_scorer ? 'You’re a scorer' : 'You’re picked to score', pill: 'Score', href: '/app/score', solid: true });
   // Admins who pick scorers (games or Papawis) get the Scoring menu with its Scorers screen.
   const scorersAdmin = appScorersAdmin(req);
-  const scoring = scoringMenuFor(me.playerId) || scorersAdmin ? { games: toScore, admin: scorersAdmin } : null;
+  const scoring = scoringMenuFor(me.playerId) || scorersAdmin ? { games: toScore, admin: scorersAdmin, pw: pwScoringFor(req) } : null;
   sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
     me, positions: parsePositions(me.player.positions).join(' · '), todos,
     season: { label: `Season ${season} · per game`, gp: inSeason.length, ppg: per('pts'), rpg: per('reb'), apg: per('ast') },
@@ -12835,7 +12895,8 @@ function scorersAdminData(kind) {
     if (pw) { const run = pwRunOfScore(r.game_id); return run ? `Papawis · ${run.title || pwDay(run.date)}` : ''; }
     const g = getGameById(r.game_id); return g ? scoreGameTitle(g) : '';
   };
-  const practice = pw ? [] : getPracticeLog(300).map(r => ({ ...r, name: displayPlayerName(byId[r.player_id]?.name || ''), color: teamColorById(teams, byId[r.player_id]?.team_id) }));
+  // Papawis practice runs log as Light vs Dark (/app/papawis/practice): on the Papawis page, the rest on the games one.
+  const practice = getPracticeLog(300).filter(r => (r.team_a === 'Light' && r.team_b === 'Dark') === !!pw).map(r => ({ ...r, name: displayPlayerName(byId[r.player_id]?.name || ''), color: teamColorById(teams, byId[r.player_id]?.team_id) }));
   const prBy = {}; for (const r of practice) { const x = prBy[r.player_id] || (prBy[r.player_id] = { n: 0, last: 0 }); x.n++; x.last = Math.max(x.last, r.started_at); }
   // getAllPlayers doesn't carry the switches: the scorer list comes from its own query.
   const scorerIds = new Set(pw ? getPwScorerPlayerIds() : getScorerPlayerIds());

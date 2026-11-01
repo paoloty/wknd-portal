@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { SCORER_GUIDE } from '../views/app/help.js';
+import { SCORER_GUIDE, PW_SCORER_GUIDE } from '../views/app/help.js';
 
 const root = new URL('../', import.meta.url);
 const scorer = readFileSync(new URL('public/scorer.js', root), 'utf8');
@@ -48,4 +48,15 @@ test('every screenshot the guide shows exists', () => {
   const imgs = SCORER_GUIDE.flatMap(ch => ch.blocks.filter(b => b[0] === 'img').map(b => b[1]));
   const missing = imgs.filter(f => !existsSync(new URL(`public/help/scorer/${f}`, root)));
   assert.deepEqual(missing, [], `missing in public/help/scorer: ${missing.join(', ')}`);
+});
+
+// How to score Papawis (views/app/help.js PW_SCORER_GUIDE, 2026-11-01): its screenshots exist,
+// switching sides keeps its own chapter, and its switches (thumb mode, hand) are explained.
+test('the Papawis guide: screenshots, the switching chapter, thumb mode', () => {
+  const imgs = PW_SCORER_GUIDE.flatMap(ch => ch.blocks.filter(b => b[0] === 'img').map(b => b[1]));
+  const missing = imgs.filter(f => !existsSync(new URL(`public/help/papawis/${f}`, root)));
+  assert.deepEqual(missing, [], `missing in public/help/papawis: ${missing.join(', ')}`);
+  assert.ok(PW_SCORER_GUIDE.some(ch => ch.slug === 'switch'), 'switching Light and Dark has its own chapter');
+  const pw = PW_SCORER_GUIDE.flatMap(ch => [ch.title, ...ch.blocks.flat(2)]).join(' ');
+  for (const s of ['Thumb mode', 'Hand: right', '⇄', 'Finish the run']) assert.ok(pw.includes(s), `the Papawis guide explains "${s}"`);
 });

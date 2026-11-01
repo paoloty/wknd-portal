@@ -2861,3 +2861,53 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 /* Games to score: one that isn't open yet (2 hours before tip-off), greyed with when it opens. */
 .cell--soon .ico--off { color: var(--muted); }
 .cell--soon .cell__v { font-weight: 600; }
+
+/* Scorer thumb mode (public/scorer.js thumbOn; Paolo, 2026-11-01): the top keeps what's read
+   or rarely tapped (score, benches, the plays before the last); the clock, the five on court
+   and the buttons dock at the bottom. .is-left mirrors the clock row and the buttons. */
+.is-thumb .sc-up { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 6px 12px 4px; }
+.is-thumb .sc-up > :first-child { margin-top: auto; }
+.is-thumb .sc-teams { flex: none; overflow: visible; gap: 6px; padding: 6px 12px 4px; border-top: 1px solid var(--hair); }
+.is-thumb.is-roomy .sc-p { height: 62px; }
+.is-thumb .sc-board { padding: 4px 10px; }
+.sc-clkbar { justify-content: space-between; gap: 6px; }
+.sc-clkbar .sc-clk__t { flex: 1; text-align: left; font-size: 24px; }
+.is-left .sc-clkbar { flex-direction: row-reverse; }
+.is-left .sc-clkbar .sc-clk__t { text-align: right; }
+.is-left .sc-pad { direction: rtl; }
+.is-left .sc-pad > * { direction: ltr; }
+.sc-upbench { display: flex; flex-direction: column; gap: 4px; }
+.sc-upbench__n { display: flex; align-items: center; gap: 6px; font: 600 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.sc-feed { display: flex; flex-direction: column; gap: 4px; }
+.sc-feed__r { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--surface-2) 60%, transparent); color: var(--muted); font-size: 13px; text-align: left; line-height: 1.3; }
+.sc-feed__r b { color: var(--text); font-weight: 600; }
+.sc-st--move { font-size: 22px; }
+/* Thumb mode's benches: one row each, swiped sideways, so both fit up top. */
+.sc-upbench .sc-bench { display: flex; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; gap: 5px; }
+.sc-upbench .sc-bench::-webkit-scrollbar { display: none; }
+.sc-upbench .sc-bn { flex: none; min-width: 76px; }
+
+/* Papawis practice run (public/scorer.js): the switching tips stand out, the setup screen's
+   tip, and the practice Finish the run. */
+.sc-try.is-switch { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 18%, transparent); }
+.su .sc-try { margin-bottom: 10px; }
+.pp-fin { display: flex; flex-direction: column; gap: 8px; }
+.pp-res { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 13px; }
+.pp-res b { font: 700 16px/1.1 var(--font-num); }
+.pp-res em { font-style: normal; font-size: 12px; color: var(--muted); }
+.pp-res--sw { background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.pp-res--sw small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.pp-res--sw b { color: var(--win); font-size: 18px; }
+.pp-potd { padding: 10px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.pp-potd b { font-weight: 600; } .pp-potd small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+/* Practice a Papawis run (views/app/practice.js): the run's players as Light/Dark chips. The
+   Papawis guide's highlighted chapter (switching sides). */
+.pp-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px; }
+.pp-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; background: var(--surface-2); font-size: 13px; line-height: 1; }
+.pp-chip::before { content: ''; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--shirt-edge, rgba(255,255,255,.4)); }
+.pp-chip--light::before { background: var(--shirt-light, #e7eaf0); }
+.pp-chip--dark::before { background: var(--shirt-dark, #262d3b); }
+.pr-guide { margin: 10px 16px 0; width: auto; }
+.hg__hot { background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.hg__hot .cell__t { font-weight: 600; }

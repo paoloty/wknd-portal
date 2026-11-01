@@ -171,7 +171,9 @@ export async function mount(el) {
   // real rosters, but nothing leaves the phone. No sending, no fetching, no sides; the server only
   // hears how far it got (practice_log, for the admin Scorers page). One practice is kept.
   const practice = B.practice || null;
-  const key = practice ? 'practice' : video ? `${gid}:video` : gid;
+  // A Papawis practice run (Me → Scoring → Practice a run, 2026-11-01) is kept apart from the
+  // league practice game.
+  const key = practice ? (pw ? 'practice-pw' : 'practice') : video ? `${gid}:video` : gid;
   // Tablet landscape and laptops: the Scoresheet docks on the right.
   const wide = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false };
   const multi = !video && !published && !practice && !pw;
@@ -240,7 +242,8 @@ export async function mount(el) {
   const save = () => {
     clockNow();
     // The practice setup screen offers "Carry on" from this (public/app.js initPractice).
-    if (practice && !practice.gone) pref.set('wknd-practice', JSON.stringify({ id: practice.id, a: team.a.id, b: team.b.id, an: team.a.name, bn: team.b.name, q: rules.periodMin, sa: G.score.a, sb: G.score.b, period: G.period, final: !!G.final || !!ui.published, at: Date.now() }));
+    if (practice && !practice.gone && pw) pref.set('wknd-practice-pw', JSON.stringify({ id: practice.id, stats: practice.stats, q: practice.q, game: ui.game, sa: G.score.a, sb: G.score.b, period: G.period, final: !!ui.pracDone, at: Date.now() }));
+    else if (practice && !practice.gone) pref.set('wknd-practice', JSON.stringify({ id: practice.id, a: team.a.id, b: team.b.id, an: team.a.name, bn: team.b.name, q: rules.periodMin, sa: G.score.a, sb: G.score.b, period: G.period, final: !!G.final || !!ui.published, at: Date.now() }));
     if (pw) ui.clocks[ui.game] = { secs: ui.secs, running: ui.running, at: Date.now() };
     return store.put({ id: key, events: list(), sent: [...sent], secs: ui.secs, running: ui.running, savedAt: Date.now(), clocks: pw ? ui.clocks : undefined, practiceId: practice ? practice.id : undefined });
   };
@@ -273,6 +276,14 @@ export async function mount(el) {
     };
     if (now || Date.now() - lastReport > 20000) go(); else reportT = setTimeout(go, 20000 - (Date.now() - lastReport));
   }
+  // Thumb mode (Paolo, 2026-11-01): one hand. Everything tapped every play (clock, the five on
+  // court, the buttons) docks at the bottom; the top keeps what's read or rarely tapped (the
+  // score, the benches, the last plays). On by default for Papawis, off for league games; the
+  // phone remembers each, and which hand. Phones only (a wide screen has the docked scoresheet).
+  const thumbKey = pw ? 'wknd-sc-thumb-pw' : 'wknd-sc-thumb';
+  const thumbOn = () => pref.get(thumbKey, pw ? 'on' : 'off') === 'on';
+  const leftHand = () => pref.get('wknd-sc-hand', 'right') === 'left';
+
   // Try tips (practice only, Paolo 2026-10-27): one move at a time, ticked off when the scorer
   // does it, so a new scorer learns the screen by using it. Hide tips turns them off for good
   // on this phone; the manual (How to score) has the same moves in full.
@@ -288,19 +299,41 @@ export async function mount(el) {
     { t: 'Swipe a green 2PT up for an and-one: the basket plus the foul.', done: e => e.type === 'foul' && e.kind === 'shooting' },
     { t: 'When the time runs out, tap End beside the clock to end the quarter.', done: e => e.type === 'period_end' },
   ];
+  // A Papawis practice run teaches the Papawis moves, and above all switching sides (Paolo,
+  // 2026-11-01: the one scorers miss). Tip 8 plays it out: it names a player on Light who
+  // "just switched to Dark".
+  const movedNow = () => new Set(counted().filter(e => e.type === 'move').map(e => e.player));
+  const switcher = () => { const on = five('a'); const p = team.a.players.find(x => on.includes(x.id)) || team.a.players[0]; return p ? p.id : null; };
+  const PW_TIPS = [
+    { t: 'Set up Game 1: Basic stats, check who’s here, then tap Start Game 1.', done: e => e.type === 'setup' },
+    { t: 'A made basket: tap a player, then 2PT.', done: e => e.type === 'shot' && e.made && e.pts === 2 },
+    { t: 'A three: tap a player, then 3PT.', done: e => e.type === 'shot' && e.made && e.pts === 3 },
+    { t: 'A free throw: tap a player, then FT.', done: e => e.type === 'ft' && e.made },
+    { t: 'A rebound: tap a player, then REB.', done: e => e.type === 'reb' },
+    { t: 'An assist: tap who passed, then AST.', done: e => e.type === 'ast' },
+    { t: 'Made a mistake? Tap Undo on the last play.', done: e => e.type === 'void' },
+    { t: () => { const id = switcher(); return `⇄ ${id ? short(id) : 'A player'} just switched to Dark. It happens every run. Tap ⇄, then ${id ? short(id) : 'them'} (or hold their tile, then Move to Dark). Their points so far stay with Light.`; }, done: e => e.type === 'move' },
+    { t: '⇄ Check the move: they’re under Dark now (on the bench if Dark already has five: tap them there). Tap them, then 2PT. It counts for Dark.', done: e => (e.type === 'shot' || e.type === 'ft') && e.made && movedNow().has(e.player) },
+    { t: 'End the game: let the clock run out or tap ••• → End, then Game over.', done: e => e.type === 'period_end' && !!e.final },
+    { t: '⇄ Start Game 2. Its setup starts with the sides as they finished: ⇄ beside a name switches someone before the tip.', done: e => e.type === 'setup' && Number(e.game) >= 2 },
+    { t: 'Done playing? ••• → Finish the run.', done: () => false },
+  ];
+  const tipList = pw ? PW_TIPS : TIPS;
+  const tipKey = pw ? 'wknd-prac-tip-pw' : 'wknd-prac-tip';
   const tipsOn = () => !!practice && pref.get('wknd-prac-tips', 'on') !== 'off';
-  const tipAt = () => Math.min(TIPS.length, Number(pref.get('wknd-prac-tip', '0')) || 0);
+  const tipAt = () => Math.min(tipList.length, Number(pref.get(tipKey, '0')) || 0);
   function tipCheck(e) {
     if (!tipsOn()) return;
     const i = tipAt();
-    if (i < TIPS.length && TIPS[i].done(e)) { pref.set('wknd-prac-tip', String(i + 1)); ui.tipDone = Date.now(); report({}, true); }
+    if (i < tipList.length && tipList[i].done(e)) { pref.set(tipKey, String(i + 1)); ui.tipDone = Date.now(); report({}, true); }
   }
   function tipBox() {
     if (!tipsOn() || ui.ask || ui.locked) return '';
     const i = tipAt();
-    if (i >= TIPS.length) return `<div class="sc-try is-done"><b class="num">DONE</b><span>That's every move. Keep practising, or read How to score for the rest.</span><button type="button" data-act="tips-off">Hide</button></div>`;
+    if (i >= tipList.length) return `<div class="sc-try is-done"><b class="num">DONE</b><span>That's every move. Keep practising, or read ${pw ? 'How to score Papawis' : 'How to score'} for the rest.</span><button type="button" data-act="tips-off">Hide</button></div>`;
     const just = ui.tipDone && Date.now() - ui.tipDone < 2500;
-    return `<div class="sc-try${just ? ' is-new' : ''}"><b class="num">TRY ${i + 1}/${TIPS.length}</b><span>${esc(TIPS[i].t)}</span><button type="button" data-act="tips-next" aria-label="Skip this tip">Skip</button></div>`;
+    const t = typeof tipList[i].t === 'function' ? tipList[i].t() : tipList[i].t;
+    return `<div class="sc-try${just ? ' is-new' : ''}${/^⇄/.test(t) ? ' is-switch' : ''}"><b class="num">TRY ${i + 1}/${tipList.length}</b><span>${esc(t)}</span><button type="button" data-act="tips-next" aria-label="Skip this tip">Skip</button></div>`;
   }
 
   // ── Sending ──
@@ -867,13 +900,17 @@ export async function mount(el) {
     download();
   }
   const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ...(basic() ? [] : [['follow', followOn() ? 'Follow-up questions: on (tap to turn off)' : 'Follow-up questions: off (tap to turn on)']]), ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : []),
+    ...(!wide.matches ? [['thumb', thumbOn() ? 'Thumb mode: on (tap to turn off)' : 'Thumb mode: off (tap to turn on)'], ...(thumbOn() ? [['hand', leftHand() ? 'Hand: left (tap for right)' : 'Hand: right (tap for left)']] : [])] : []),
     ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game of this run…']] : []), ...(pw ? [['pw-finish', 'Finish the run…']] : []), ['table', tblOn() ? 'Table display: linked ✓' : 'Table display (tablet)…']], k => {
     if (k === 'send') return sendMyPlays();
     if (k === 'pw-games') return menu('Which game?', games().filter(n => setupFor(n)).map(n => [String(n), `Game ${n}${n === ui.game ? ' · on screen' : ''}`]), v => goGame(Number(v)));
+    if (k === 'pw-finish' && practice) { ui.pracFinish = true; if (tipAt() === tipList.length - 1) { pref.set(tipKey, String(tipList.length)); report({}, true); } return paint(); }
     if (k === 'pw-finish') { if (unsent().length) { ui.tip = `Finish the run once every play is sent: ${unsent().length} still on this phone.`; return paint(); } location.href = pw.finish; return; }
     if (k === 'table') return tableOpen();
     if (k === 'sheet') { ui.sheet = true; return paint(); }
     if (k === 'follow') { pref.set('wknd-sc-follow', followOn() ? 'off' : 'on'); ui.tip = followOn() ? 'Follow-up questions on: Rebound?, Assisted? and the rest.' : 'Follow-up questions off. Foul-outs and free throws still ask.'; return paint(); }
+    if (k === 'thumb') { pref.set(thumbKey, thumbOn() ? 'off' : 'on'); ui.tip = thumbOn() ? 'Thumb mode on: everything you tap is in the bottom half.' : 'Thumb mode off.'; return paint(); }
+    if (k === 'hand') { pref.set('wknd-sc-hand', leftHand() ? 'right' : 'left'); ui.tip = leftHand() ? 'Left hand: the clock and buttons mirror to your side.' : 'Right hand.'; return paint(); }
     if (k === 'sound') { pref.set('wknd-sc-sound', soundOn() ? 'off' : 'on'); ui.tip = soundOn() ? 'Sounds on.' : 'Sounds off.'; if (soundOn()) chime('yes'); return paint(); }
     if (k === 'refs') return menu('Refs stopped play: why?', [['injury', 'Injury'], ['equipment', 'Equipment'], ['clock', 'Clock / scoreboard'], ['coach', 'Talking to a coach'], ['other', 'Other']], r => { whistle(); teamPlay(null, 'stoppage', { kind: r }); });
     if (k === 'end') return endPeriod();
@@ -1047,8 +1084,11 @@ export async function mount(el) {
   };
   // The latest play by a team (for the folded side with two scorers)
   const lastOf = t => { for (let i = G.rows.length - 1; i >= 0; i--) if (G.rows[i].team === t) return G.rows[i]; return null; };
-  const teamBlock = t => {
+  // part: 'all' (header, five, bench), 'five' (header and five: thumb mode's dock) or 'bench'
+  // (thumb mode's top).
+  const teamBlock = (t, part = 'all') => {
     if (!mine(t)) {
+      if (part !== 'all') return '';
       const h = holderOf(t), r = lastOf(t);
       return `<section class="sc-team sc-team--off"><button type="button" class="sc-fold" data-act="sides" aria-label="${esc(team[t].name)}: ${h ? `${esc(h.name)} scores them` : 'nobody scores them yet'}. Sides">
         <span class="dot" style="--c:${esc(team[t].color)}"></span><span class="sc-fold__n">${esc(team[t].name)}</span>
@@ -1060,17 +1100,25 @@ export async function mount(el) {
     const bench = team[t].players.filter(p => !on.includes(p.id) && !G.dnp.includes(p.id));
     const rest = [...bench.filter(p => !G.flags[p.id]), ...bench.filter(p => G.flags[p.id])];
     const noSub = !rest.some(p => !G.flags[p.id]);
+    const benchHtml = rest.length || dnps.length ? `<div class="sc-bench">${rest.map(p => {
+        const out = G.flags[p.id];
+        const ans = ansIds && !out ? (ansIds.has(p.id) ? ' is-ans' : ' is-dim') : '';
+        return `<button type="button" class="sc-bn${out ? ' is-out' : ui.sel === p.id ? ' on' : ''}${ans}" data-pick="${esc(p.id)}"${out ? ' disabled' : ''} aria-pressed="${ui.sel === p.id}" aria-label="${esc(short(p.id))}, bench${out ? `, ${out}` : ''}">${p.number ? `<i class="num">${esc(p.number)}</i>` : ''}<s>${esc(p.short)}</s></button>`;
+      }).join('')}${dnps.length ? `<button type="button" class="sc-bn is-dnp" data-act="dnp" data-team="${t}" aria-label="${dnps.length} didn’t play: ${esc(dnps.map(p => p.short).join(', '))}. Tap to change">DNP · ${dnps.length}</button>` : ''}</div>` : '';
+    if (part === 'bench') return benchHtml ? `<section class="sc-upbench"><span class="sc-upbench__n"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)} bench</span>${benchHtml}</section>` : '';
     return `<section class="sc-team${multi && ui.lane === t ? ' sc-team--solo' : ''}">
       <div class="sc-th"><button type="button" class="sc-th__n" data-act="teammenu" data-team="${t}" aria-label="${esc(team[t].name)}: team stats, DNP"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}${CHEV}</button>${ui.ask && ui.ask.kind === 'rebound' ? `<span class="sc-th__ans">${ui.ask.miss === t ? 'Offensive' : 'Defensive'}</span>` : ''}
         <button type="button" class="sc-tb" data-act="subq" data-team="${t}"${noSub ? ` disabled aria-label="${esc(team[t].name)}: nobody on the bench"` : ` aria-label="${esc(team[t].name)}: sub"`}>Sub</button>
 </div>
       <div class="sc-five">${on.map(tile).join('')}</div>
-      ${rest.length || dnps.length ? `<div class="sc-bench">${rest.map(p => {
-        const out = G.flags[p.id];
-        const ans = ansIds && !out ? (ansIds.has(p.id) ? ' is-ans' : ' is-dim') : '';
-        return `<button type="button" class="sc-bn${out ? ' is-out' : ui.sel === p.id ? ' on' : ''}${ans}" data-pick="${esc(p.id)}"${out ? ' disabled' : ''} aria-pressed="${ui.sel === p.id}" aria-label="${esc(short(p.id))}, bench${out ? `, ${out}` : ''}">${p.number ? `<i class="num">${esc(p.number)}</i>` : ''}<s>${esc(p.short)}</s></button>`;
-      }).join('')}${dnps.length ? `<button type="button" class="sc-bn is-dnp" data-act="dnp" data-team="${t}" aria-label="${dnps.length} didn’t play: ${esc(dnps.map(p => p.short).join(', '))}. Tap to change">DNP · ${dnps.length}</button>` : ''}</div>` : ''}
+      ${part === 'five' ? '' : benchHtml}
     </section>`;
+  };
+  // Thumb mode's top: the plays before the last one (the last is in the dock with Undo),
+  // newest at the bottom. Tap one to fix it.
+  const feedRows = () => {
+    const rows = G.rows.filter(r => !r.dev || r.dev === deviceId).slice(-4, -1);
+    return rows.length ? `<div class="sc-feed">${rows.map(r => `<button type="button" class="sc-feed__r" data-fix="${esc(r.id)}" aria-label="Fix: ${esc(playText(r).replace(/<[^>]+>/g, ''))}">${playText(r)}${scores(r) ? ` <span class="num">· ${r.score.a}–${r.score.b}</span>` : ''}</button>`).join('')}</div>` : '';
   };
   const playText = r => {
     if (r.type === 'period_end') return r.final ? `<b>Final</b> · game over` : `<b>End of ${esc(r.period)}</b>`;
@@ -1200,9 +1248,10 @@ export async function mount(el) {
     if (basic()) return `<div class="sc-pad sc-pad--${shots.length} sc-pad--basic">
         ${shots.map(p => `<button type="button" class="sc-st sc-st--made${arm(`s${p}m`)}" data-shot="${p}" data-made="1" aria-pressed="${!!arm(`s${p}m`)}" aria-label="${lab(p)} made">${lab(p)}</button>`).join('')}
       </div>
-      <div class="sc-pad sc-pad--2">
+      <div class="sc-pad sc-pad--3">
         <button type="button" class="sc-st${ui.arm && /^reb/.test(ui.arm.key) ? ' arm' : ''}" data-act="reb" aria-label="Rebound">REB</button>
         <button type="button" class="sc-st${arm('ast')}" data-act="ast" aria-label="Assist">AST</button>
+        <button type="button" class="sc-st sc-st--move${ui.moveArm ? ' arm' : ''}" data-act="move-arm" aria-pressed="${!!ui.moveArm}" aria-label="Switch sides: then tap the player who moved">⇄</button>
       </div>`;
     return `<div class="sc-pad sc-pad--${shots.length}">
         ${shots.map(p => `<button type="button" class="sc-st sc-st--made${p > 1 ? ' up' : ''}${arm(`s${p}m`) || arm(`s${p}a`)}" data-shot="${p}" data-made="1" aria-pressed="${!!(arm(`s${p}m`) || arm(`s${p}a`))}" aria-label="${lab(p)} made${p > 1 ? '. Swipe up for and-one' : ''}">${lab(p)}</button>`).join('')}
@@ -1732,13 +1781,47 @@ export async function mount(el) {
   }
   const nextGame = () => goGame(Math.max(ui.game, ...games()) + 1);
   // Game over in a Papawis run: the next game, or Finish the run (that needs signal).
+  // A practice run's Finish the run: each game's score, the Player of the Day (points, rebounds
+  // and assists over the games), and where the points of anyone who switched sides went: before
+  // the move with the old side, after it with the new one.
+  function pracFinishView() {
+    const SIDE = { a: team.a.name, b: team.b.name };
+    const lines = {}, moved = {};
+    const res = games().filter(n => setupFor(n)).map(n => {
+      const evs = list().filter(e => !e.late && gameOf(e) === n);
+      const live = livePlays(evs);
+      const sc = { a: 0, b: 0 };
+      for (const e of live) {
+        if (e.player && ['shot', 'ft', 'reb', 'ast'].includes(e.type)) {
+          const L = lines[e.player] || (lines[e.player] = { pts: 0, reb: 0, ast: 0, side: {} });
+          if ((e.type === 'shot' || e.type === 'ft') && e.made) { const p = e.type === 'ft' ? 1 : e.pts; L.pts += p; L.side[e.team] = (L.side[e.team] || 0) + p; if (sc[e.team] != null) sc[e.team] += p; }
+          if (e.type === 'reb') L.reb++;
+          if (e.type === 'ast') L.ast++;
+        }
+        if (e.type === 'move' && e.player) moved[e.player] = { game: n, to: e.to };
+      }
+      return { n, a: sc.a, b: sc.b };
+    });
+    const best = Object.entries(lines).sort((x, y) => (y[1].pts + y[1].reb + y[1].ast) - (x[1].pts + x[1].reb + x[1].ast))[0];
+    const sw = Object.entries(moved).map(([id, m]) => { const L = lines[id] || { side: {} }; const from = m.to === 'a' ? 'b' : 'a';
+      return `<div class="pp-res pp-res--sw"><span>⇄ ${esc(short(id))} switched in Game ${m.game}<small>Points: ${L.side[from] || 0} for ${esc(SIDE[from])} before the move, ${L.side[m.to] || 0} for ${esc(SIDE[m.to])} after</small></span><b>✓</b></div>`; }).join('');
+    return `<div class="sc-over pp-fin" role="status">
+      <div class="sc-over__h"><b>Practice run · ${res.length} game${res.length === 1 ? '' : 's'}</b></div>
+      ${res.map(g => `<div class="pp-res"><span>Game ${g.n}</span><b class="num">${esc(SIDE.a)} ${g.a} – ${g.b} ${esc(SIDE.b)}</b><em>Keep ✓</em></div>`).join('')}
+      ${best ? `<div class="pp-potd"><span><b>${esc(short(best[0]))} · Player of the Day</b><small>${best[1].pts} PTS · ${best[1].reb} REB · ${best[1].ast} AST</small></span></div>` : ''}
+      ${sw || '<p class="sc-over__n">Nobody switched sides this time. In a real run, check anyone who did: their points before the move stay with the old side.</p>'}
+      <p class="sc-over__n">In a real run you keep or leave out each game, check the Player of the Day, and Save puts the results on the run’s page and in everyone’s Papawis stats. Here nothing is sent.</p>
+      <div class="sc-over__b"><button type="button" class="sc-over__btn" data-act="pw-prac-save">Save (practice)</button><button type="button" class="sc-over__btn sc-over__btn--ghost" data-act="pw-prac-back">Back to the games</button></div></div>`;
+  }
+
   function pwOverPanel(n, all) {
     const later = games().filter(x => x > ui.game && setupFor(x));
     const sendLine = n ? `${n} play${n === 1 ? '' : 's'} still sending${ui.sync === 'offline' ? ': waiting for signal' : '…'}` : `All ${all} play${all === 1 ? '' : 's'} saved.`;
     return `<div class="sc-over" role="status"><div class="sc-over__h"><b>Game ${ui.game} over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>
       <p class="sc-over__s${n ? ' is-wait' : ''}">${sendLine}</p>
       <div class="sc-over__b">${later.length ? `<button type="button" class="sc-over__btn" data-act="pw-goto" data-v="${later[0]}">Back to Game ${later[0]}</button>` : `<button type="button" class="sc-over__btn" data-act="pw-next">Start Game ${ui.game + 1}</button>`}
-        ${n ? `<button type="button" class="sc-over__btn sc-over__btn--ghost" disabled>Finish the run · ${n} play${n === 1 ? '' : 's'} still sending</button>` : `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(pw.finish)}">${pw.done ? 'Finish the run again' : 'Done playing · Finish the run'}</a>`}</div>
+        ${practice ? '<button type="button" class="sc-over__btn sc-over__btn--ghost" data-act="pw-prac-finish">Done playing · Finish the run</button>'
+          : n ? `<button type="button" class="sc-over__btn sc-over__btn--ghost" disabled>Finish the run · ${n} play${n === 1 ? '' : 's'} still sending</button>` : `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(pw.finish)}">${pw.done ? 'Finish the run again' : 'Done playing · Finish the run'}</a>`}</div>
       <p class="sc-over__n">${later.length ? '' : `Game ${ui.game + 1} starts set up like this one: same minutes, sides as they finished. `}${n ? 'Finishing the run needs signal: every play has to reach the server first.' : 'Undo the last play to reopen this game.'}</p></div>`;
   }
 
@@ -1747,7 +1830,9 @@ export async function mount(el) {
     const title = el.querySelector('.sc-nav .navbar__title');
     if (pw && title) title.textContent = `Game ${ui.game} · ${pw.title}`;
     if (pw && !hold.mine) { root.innerHTML = holdView() + (ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''); ui.tip = ''; paintPill(); return; }
-    if (pw && !setupFor(ui.game) && !ui.locked) { root.innerHTML = setupView() + (ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''); ui.tip = ''; paintPill(); return; }
+    if (pw && !setupFor(ui.game) && !ui.locked) { root.innerHTML = setupView().replace('<div class="su">', `<div class="su">${practice ? tipBox() : ''}`) + (ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''); ui.tip = ''; paintPill(); return; }
+    // A practice run's Finish the run: what a real one does, from this phone's plays.
+    if (pw && practice && ui.pracFinish) { root.innerHTML = pracFinishView(); paintPill(); return; }
     const quiet = a => !!a && SKIPPABLE.has(a.kind) && !followOn();
     if (quiet(ui.ask)) ui.ask = null;
     while (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) { ui.ask = ui.queue.shift(); if (quiet(ui.ask)) ui.ask = null; }
@@ -1764,7 +1849,19 @@ export async function mount(el) {
       a._timer = setTimeout(() => { if (ui.ask === a) { ui.ask = null; paint(); } }, Math.max(0, followMs(a) - (Date.now() - a.at)));
     }
     const docked = wide.matches && !ui.hideDock;
+    const thumb = thumbOn() && !wide.matches;
     root.classList.toggle('is-docked', docked);
+    root.classList.toggle('is-thumb', thumb);
+    root.classList.toggle('is-left', thumb && leftHand());
+    // Roomy: one side's five in the dock (Papawis, or one of two scorers): taller tiles.
+    root.classList.toggle('is-roomy', thumb && (!!pw || ['a', 'b'].filter(mine).length < 2));
+    // The clock, its start/end and the ••• menu: on the board, or in thumb mode the dock's top row.
+    const clockCtl = () => `
+              <button type="button" class="sc-clk__t num" data-act="clockset" data-sc-clock aria-label="Game clock ${clockStr()}. Tap to fix it">${clockStr()}</button>
+              ${keepsClock() && !ui.running && ui.secs === 0 && !G.final && !ui.locked ? `<button type="button" class="sc-cb sc-cb--go sc-cb--end" data-act="end" aria-label="End ${esc(G.period)}">End</button>`
+                : keepsClock() ? `<button type="button" class="sc-cb sc-cb--go${ui.whistle && !ui.running ? ' is-pulse' : ''}" data-act="clock" aria-label="${ui.running ? 'Pause clock' : 'Start clock'}">${ui.running ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>'}</button>`
+                : `<span class="sc-keeper num" aria-label="${esc(keeper().name)} keeps the clock">${esc(keeper().name.split(' ')[0])}</span>`}
+              <button type="button" class="sc-cb" data-act="game" aria-label="Game: refs stopped play, end the period, fix the clock"><svg viewBox="0 0 12 4" fill="currentColor" aria-hidden="true"><circle cx="2" cy="2" r="1.6"/><circle cx="6" cy="2" r="1.6"/><circle cx="10" cy="2" r="1.6"/></svg></button>`;
     root.innerHTML = `
       <div class="sc-left">
         ${ui.locked ? `<div class="msg msg--info sc-msg">${practice ? 'Practice finished. Reset at the top to play another one.' : 'The box score is saved. The scorer is read-only now.'}</div>` : ''}
@@ -1772,23 +1869,19 @@ export async function mount(el) {
         <div class="sc-board">
           ${sideBoard('a')}
           <div class="sc-clk"><span class="sc-clk__p num">${video ? 'Video · ' : ''}${G.final ? 'FINAL' : esc(G.period)}</span>
-            <div class="sc-clk__row">
-              <button type="button" class="sc-clk__t num" data-act="clockset" data-sc-clock aria-label="Game clock ${clockStr()}. Tap to fix it">${clockStr()}</button>
-              ${keepsClock() && !ui.running && ui.secs === 0 && !G.final && !ui.locked ? `<button type="button" class="sc-cb sc-cb--go sc-cb--end" data-act="end" aria-label="End ${esc(G.period)}">End</button>`
-                : keepsClock() ? `<button type="button" class="sc-cb sc-cb--go${ui.whistle && !ui.running ? ' is-pulse' : ''}" data-act="clock" aria-label="${ui.running ? 'Pause clock' : 'Start clock'}">${ui.running ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>'}</button>`
-                : `<span class="sc-keeper num" aria-label="${esc(keeper().name)} keeps the clock">${esc(keeper().name.split(' ')[0])}</span>`}
-              <button type="button" class="sc-cb" data-act="game" aria-label="Game: refs stopped play, end the period, fix the clock"><svg viewBox="0 0 12 4" fill="currentColor" aria-hidden="true"><circle cx="2" cy="2" r="1.6"/><circle cx="6" cy="2" r="1.6"/><circle cx="10" cy="2" r="1.6"/></svg></button>
-            </div></div>
+            ${thumb ? '' : `<div class="sc-clk__row">${clockCtl()}</div>`}</div>
           ${sideBoard('b')}
         </div>
-        <div class="sc-teams">${teamBlock('a')}${teamBlock('b')}</div>
+        ${thumb ? `<div class="sc-up">${teamBlock('a', 'bench')}${teamBlock('b', 'bench')}${['a', 'b'].filter(t => !mine(t)).map(t => teamBlock(t)).join('')}${feedRows()}</div>
+        <div class="sc-teams"><div class="sc-clk__row sc-clkbar">${clockCtl()}</div>${teamBlock('a', 'five')}${teamBlock('b', 'five')}</div>`
+          : `<div class="sc-teams">${teamBlock('a')}${teamBlock('b')}</div>`}
         <div class="sc-bottom">
           ${ui.tip || restarted || started ? `<p class="sc-tip" role="status">${esc(ui.tip || (started ? 'Clock started with the first play. Tap the time to fix it.' : 'Clock restarted. Tap the time to fix it.'))}</p>` : ''}
           ${tipBox()}
           ${lastRow()}
           ${optional && !docked ? q : ''}
           ${q && !optional ? q : G.final && !ui.after ? overPanel() : `<div class="sc-padw">${pad()}</div>`}
-          ${!docked ? `<button type="button" class="sc-sheetbtn" data-act="sheet">${SHEET_ICON}Scoresheet</button>` : ''}
+          ${!docked && !thumb ? `<button type="button" class="sc-sheetbtn" data-act="sheet">${SHEET_ICON}Scoresheet</button>` : ''}
         </div>
       </div>
       ${docked ? `<aside class="sc-dock" aria-label="Scoresheet">${optional ? `<div class="sc-dock__q">${q}</div>` : ''}<div class="sc-dock__h"><b>Scoresheet</b><button type="button" class="sc-hbtn" data-act="dock-hide" aria-label="Hide the scoresheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></div>${sheetTabs(ui.dockTab, 'data-dtab')}<div class="sc-dock__b">${sheetBody(ui.dockTab)}</div></aside>`
@@ -1809,6 +1902,10 @@ export async function mount(el) {
     const t = b.getAttribute('data-team');
     if (name === 'clock') { clockNow(); ui.running = !ui.running; syncRun(); ui.whistle = false; if (ui.running) ui.tip = ''; save(); return paint(); }
     if (name === 'end') return endPeriod();
+    if (name === 'pw-prac-finish') { ui.pracFinish = true; if (tipAt() === tipList.length - 1) { pref.set(tipKey, String(tipList.length)); report({}, true); } return paint(); }
+    if (name === 'pw-prac-back') { ui.pracFinish = false; return paint(); }
+    if (name === 'pw-prac-save') { ui.pracDone = true; ui.pracFinish = false; ui.locked = true; save(); report({ finished: true }); ui.tip = 'Practice run finished. In a real run, the results are on the run’s page now.'; return paint(); }
+    if (name === 'move-arm') { ui.moveArm = !ui.moveArm; ui.arm = null; ui.sel = null; ui.tip = ui.moveArm ? 'Now tap the player who switched sides.' : ''; return paint(); }
     if (name === 'move') { const id = b.getAttribute('data-pid'); ui.peek = null; return byId[id] ? movePlayer(id, other(byId[id].team)) : paint(); }
     if (name === 'pw-next') return nextGame();
     if (name === 'hold-take') return holdPing('take');
@@ -1835,7 +1932,7 @@ export async function mount(el) {
     if (name === 'sheet') { ui.sheet = true; ui.sel = null; ui.arm = null; return paint(); }
     if (name === 'sheet-close') { ui.sheet = false; return paint(); }
     if (name === 'fouls') { ui.sheetTeam = t; if (wide.matches) { ui.hideDock = false; ui.dockTab = 'fouls'; } else { ui.sheet = true; ui.tab = 'fouls'; } return paint(); }
-    if (name === 'tips-next') { pref.set('wknd-prac-tip', String(tipAt() + 1)); return paint(); }
+    if (name === 'tips-next') { pref.set(tipKey, String(tipAt() + 1)); return paint(); }
     if (name === 'tips-off') { pref.set('wknd-prac-tips', 'off'); ui.tip = 'Tips off. How to score (Me → Scoring) has every move.'; return paint(); }
     if (name === 'dock-hide') { ui.hideDock = true; return paint(); }
     if (name === 'dock-show') { ui.hideDock = false; return paint(); }
@@ -1853,6 +1950,8 @@ export async function mount(el) {
   // otherwise it picks (or unpicks) them.
   function pickPlayer(id) {
     const p = byId[id];
+    // ⇄ then a player (Papawis Basic): they switch to the other side.
+    if (ui.moveArm && p) { ui.moveArm = false; return movePlayer(id, other(p.team)); }
     const a = ui.ask;
     if (a && a.kind === 'fp') {
       // No free throws: the panel just says what the foul was; the next tap carries on.

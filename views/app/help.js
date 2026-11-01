@@ -10,6 +10,7 @@ import { esc, backChev, chev } from './layout.js';
 export const SCORER_GUIDE = [
   {
     slug: 'before', title: 'Before tip-off', blocks: [
+      ['tip', 'Scoring Papawis?', 'It has its own guide: Me → Scoring → <i>How to score Papawis</i>, and a practice run to try it.'],
       ['p', 'You can score a game when an admin picks you for it, or when you’re a scorer, which lets you score any game with scoring turned on. Your games are under <b>Me → Scoring → Games to score</b>, and Home reminds you on game day.'],
       ['img', 'list.jpg', 'Games to score: every game you can score, with the ones being scored now marked.'],
       ['steps', [
@@ -161,25 +162,21 @@ export const SCORER_GUIDE = [
     ],
   },
   {
-    slug: 'papawis', title: 'Scoring Papawis', blocks: [
-      ['p', 'Papawis uses the same scorer, Light against Dark. Papawis scorers score it (an admin adds them: it’s separate from scoring league games). On the run’s day, its card on the Papawis tab has <b>Start scoring</b>. One phone scores at a time, every game of the run.'],
+    slug: 'thumb', title: 'One hand: thumb mode', blocks: [
+      ['p', 'Scoring with one hand? <b>Thumb mode</b> puts everything you tap every play in the bottom half of the screen: the clock, the five on court and the buttons. The top keeps what you read or tap now and then: the score, the benches and the plays before the last one.'],
+      ['img', 'thumb.jpg', 'Thumb mode: the benches and the last plays up top, the clock, both fives and the buttons at the bottom.'],
       ['steps', [
-        '<b>Set up the game.</b> Before each game: <i>Basic</i> or <i>Full</i> stats, the quarter length, how many quarters, and who’s here. Tap a name if they didn’t come; the ⇄ beside it moves them to the other side. A guest who isn’t on the list: type their name and tap <i>+ Light</i> or <i>+ Dark</i>.',
-        '<b>Start Game 1.</b> The clock starts on the first play, or tap ▶.',
-        '<b>Score.</b> <i>Basic</i>: tap a player, then FT, 2PT or 3PT for a make, or REB or AST. Misses aren’t logged and nothing asks a follow-up question. <i>Full</i>: everything works like a league game.',
-        '<b>Someone switches sides?</b> Hold their tile → <i>Move to Light</i> (or Dark). Their points so far stay with the old side; from then on they count for the new one. The team’s name menu has <i>Move someone to Light…</i> too, and <i>A late arrival…</i> for someone you marked not here.',
-        '<b>End the last quarter</b> with End beside the clock: <i>Game over</i> (a tie is fine), <i>Extra time</i> if there’s still time, or <i>Not yet</i>.',
-        '<b>Game over</b>, then <i>Start Game 2</i>. It’s set up like the last game: same minutes, sides as they finished. Change anything that’s different and start.',
-        '<b>Done playing?</b> Tap <i>Finish the run</i> once every play is sent (it needs signal). Keep or discard each game, check the Player of the Day, and save.',
+        '<b>Turn it on</b> in the game menu (•••): <i>Thumb mode: off (tap to turn on)</i>. It says <i>Thumb mode: on</i> once it’s on. Your phone remembers it for league games.',
+        '<b>Left-handed?</b> ••• → <i>Hand: right (tap for left)</i> moves the clock’s ▶ and mirrors the buttons to your side.',
+        '<b>Subs:</b> the benches are up top, one row per team; swipe a row for more. Tap a bench player, then who comes off, as always. Sub beside the team name works too.',
+        '<b>An older play:</b> tap it in the list at the top to fix it. The last play is in the dock with Undo and Fix.',
       ]],
-      ['dl', [
-        ['No timeouts, penalty or foul-outs', 'Papawis has none of them, so the scoreboard shows no timeout dots or team-foul pips, and nobody fouls out.'],
-        ['Someone else is scoring', 'Opening a run another scorer has shows who. Between games you can <i>Take over</i> once their phone has sent every play; mid-game, <i>Ask</i> them and they get <i>Let you score</i> or <i>Keep it</i>. If their phone goes quiet for 2 minutes, any scorer can take over.'],
-        ['Guests', 'A guest’s stats stay with the run under their name and count in nobody’s career. Tell an admin, so they’re added to the run and charged.'],
-        ['Another game of this run', 'The ••• menu switches back to an earlier game to fix it.'],
-        ['Finish the run', 'Each game has Edit (opens it here) and Discard (left out of everything). The Player of the Day is the best rating over the games you keep (points, rebounds and assists when a game was Basic); pick someone else if they ran the show. Anyone who scored the run, or an admin, finishes it.'],
-      ]],
-      ['tip', 'Good to know', 'The results go on the run’s page with the box score and the top 3 as player cards. Papawis stats count in Papawis careers, separate from league totals.'],
+      ['tip', 'Good to know', 'Everything works the same: every button, hold, swipe and question. Only the order on the screen changes. The Scoresheet is in the game menu (•••). With two scorers each phone docks only its own five, so the tiles are taller.'],
+    ],
+  },
+  {
+    slug: 'papawis', title: 'Scoring Papawis', blocks: [
+      ['p', 'Papawis uses the same scorer, Light against Dark, and has its own guide: Me → Scoring → <i>How to score Papawis</i>. It covers setting up each game, Basic stats, switching sides between Light and Dark, and Finish the run. There’s a practice run to try it too.'],
     ],
   },
   {
@@ -217,44 +214,174 @@ export const SCORER_GUIDE = [
   },
 ];
 
+
+// How to score Papawis (Me → Scoring, 2026-11-01, mockup claude.ai/artifact/XpZnj9bEgij8cvqacFbCE1):
+// its own guide, same reader. Screenshots in public/help/papawis/*.jpg, taken from a practice run.
+// Switching sides (Light ↔ Dark) has its own chapter and is highlighted in the contents (Paolo:
+// the one scorers miss most).
+export const PW_SCORER_GUIDE = [
+  {
+    slug: 'before', title: 'Before the run', blocks: [
+      ['p', 'Papawis scorers score the runs (an admin adds you in Papawis → Scorers; it’s separate from league scoring). One phone scores the whole run, game after game, Light against Dark.'],
+      ['steps', [
+        '<b>Find the run</b> under Me → Scoring → <i>Games to score</i>, or on its card on the Papawis tab: <i>Score today’s games</i>.',
+        '<b>Scoring opens 2 hours before the run.</b> Until then it shows greyed with when it opens, so nobody starts it by accident.',
+        '<b>Open it once with signal</b> (at home is fine). It’s then saved on your phone and opens by itself on time, even with no signal at the court.',
+        '<b>New to it?</b> Me → Scoring → <i>Practice a run</i>: the same scorer on a past run’s players, only on your phone, with tips.',
+      ]],
+      ['tip', 'Good to know', 'Thumb mode is on for Papawis: everything you tap is in the bottom half, for one hand. Chapter 5 explains it.'],
+    ],
+  },
+  {
+    slug: 'setup', title: 'Setting up a game', blocks: [
+      ['p', 'Every game of the run starts with its setup. Game 1 takes the run’s list on the sides the admin set; each next game starts set up like the one before.'],
+      ['img', 'setup.jpg', 'A game’s setup: stats, minutes, quarters and who’s here, on their sides.'],
+      ['steps', [
+        '<b>Stats:</b> <i>Basic</i> (makes, rebounds and assists: the usual) or <i>Full</i> (everything a league game records).',
+        '<b>Minutes and quarters</b> for this game.',
+        '<b>Who’s here:</b> tap a name if they didn’t come. The <b>⇄</b> beside a name puts them on the other side.',
+        '<b>A guest</b> who isn’t on the list: type their name and tap <i>+ Light</i> or <i>+ Dark</i>.',
+        '<b>Start Game 1.</b> The clock starts with the first play, or tap ▶.',
+      ]],
+    ],
+  },
+  {
+    slug: 'basic', title: 'Scoring: Basic stats', blocks: [
+      ['p', 'Basic records the makes, rebounds and assists. One tap for the player, one for what they did. No misses, no follow-up questions.'],
+      ['img', 'basic.jpg', 'Basic stats: the players at the bottom, then FT, 2PT, 3PT, REB, AST and ⇄.'],
+      ['steps', [
+        '<b>A basket:</b> tap the player, then <b>2PT</b> or <b>3PT</b> (or <b>4PT</b> at a court with a 4-point line). The other way round works too.',
+        '<b>A free throw:</b> the player, then <b>FT</b>.',
+        '<b>A rebound or an assist:</b> the player, then <b>REB</b> or <b>AST</b>.',
+        '<b>Made a mistake?</b> <b>Undo</b> on the last play takes it back.',
+      ]],
+      ['tip', 'Good to know', 'Full stats work like a league game: misses, the Rebound? and Assisted? questions, steals, blocks, turnovers and fouls. How to score (the league guide) explains each.'],
+    ],
+  },
+  {
+    slug: 'switch', title: '⇄ Switching Light and Dark', blocks: [
+      ['p', 'Players switch sides during a run all the time: someone leaves, a game is lopsided, a late arrival evens it out. <b>Move them the moment it happens</b>, so every point after it counts for the right side.'],
+      ['img', 'switch.jpg', '⇄ then the player: they move to the other side.'],
+      ['h', 'During a game'],
+      ['steps', [
+        '<b>Tap ⇄, then the player</b> who switched. They move to the other side.',
+        'Or <b>hold their tile</b>, then <i>Move to Dark</i> (or Light).',
+        'Or tap the side’s name → <i>Move someone to Light…</i>.',
+      ]],
+      ['h', 'Between games'],
+      ['steps', [
+        'The next game’s setup starts with the sides as they finished. Tap <b>⇄</b> beside a name to put them on the other side before you start.',
+      ]],
+      ['dl', [
+        ['Where the points go', 'Before the move they stay with the old side; from the move on they count for the new one. Their own line keeps everything.'],
+        ['Moved the wrong player?', 'Undo the move, or move them back.'],
+        ['Someone came late', 'The side’s name → <i>A late arrival…</i> for someone you marked not here.'],
+      ]],
+      ['tip', 'Good to know', 'The practice run plays this out: halfway through a game it tells you someone “just switched to Dark”, and its Finish the run shows where their points went.'],
+    ],
+  },
+  {
+    slug: 'thumb', title: 'One hand: thumb mode', blocks: [
+      ['p', 'Thumb mode is on for Papawis. Everything you tap every play is in the bottom half: the clock, both sides’ players, the buttons. The top shows the score, the bench and the plays before the last one.'],
+      ['steps', [
+        '<b>Left-handed?</b> ••• → <i>Hand: right (tap for left)</i> moves the clock’s ▶ and mirrors the buttons.',
+        '<b>Prefer the old layout?</b> ••• → <i>Thumb mode: on (tap to turn off)</i>. Your phone remembers it.',
+        '<b>An older play:</b> tap it in the list at the top to fix it.',
+      ]],
+    ],
+  },
+  {
+    slug: 'next', title: 'Ending a game, the next game', blocks: [
+      ['steps', [
+        '<b>End the last quarter</b> with End beside the clock: <i>Game over</i> (a tie is fine), <i>Extra time</i> if there’s still time, or <i>Not yet</i>.',
+        '<b>Start Game 2.</b> It’s set up like the last game: same minutes, sides as they finished. Change anything that’s different, then start.',
+        '<b>Back to an earlier game</b> to fix it: ••• → <i>Another game of this run…</i>.',
+      ]],
+      ['dl', [
+        ['No timeouts, penalty or foul-outs', 'Papawis has none of them, so the scoreboard shows no timeout dots or team-foul pips, and nobody fouls out.'],
+      ]],
+    ],
+  },
+  {
+    slug: 'two', title: 'Two phones and taking over', blocks: [
+      ['p', 'One phone scores at a time. Opening a run someone else is scoring shows who.'],
+      ['dl', [
+        ['Between games', '<i>Take over</i> once their phone has sent every play.'],
+        ['Mid-game', '<i>Ask</i> them: they get <i>Let you score</i> or <i>Keep it</i>.'],
+        ['Their phone went quiet', 'After 2 minutes, any scorer can take over.'],
+      ]],
+    ],
+  },
+  {
+    slug: 'finish', title: 'Finish the run', blocks: [
+      ['p', 'When the playing’s done, ••• → <i>Finish the run</i> (or <i>Done playing · Finish the run</i> after a game). It needs signal: every play has to reach the server first.'],
+      ['steps', [
+        '<b>Each game:</b> keep it, <i>Edit</i> it (opens it in the scorer) or <i>Discard</i> it (left out of everything).',
+        '<b>The Player of the Day</b> is the best rating over the games you keep (points, rebounds and assists when a game was Basic). Pick someone else if they ran the show.',
+        '<b>Save.</b> The results go on the run’s page with the box score and the top 3 as cards, and into everyone’s Papawis stats.',
+      ]],
+      ['tip', 'Good to know', 'Anyone who scored the run, or an admin, finishes it. Saving again later replaces the results.'],
+    ],
+  },
+  {
+    slug: 'fix', title: 'Fixing mistakes', blocks: [
+      ['dl', [
+        ['Undo', 'Takes back the last play. <i>Redo</i> brings it back until your next play.'],
+        ['Fix', 'On the last play, or tap an older one at the top: change who did it or what, or remove it.'],
+        ['A player on the wrong side', 'Move them (⇄). Points before the move stay where they were; fix those plays one by one if they were on the wrong side all along.'],
+        ['A guest', 'Their stats stay with the run under their name and count in nobody’s career. Tell an admin, so they’re added to the run and charged.'],
+        ['After saving', 'Finish the run again from the run’s card, or ask an admin.'],
+      ]],
+    ],
+  },
+];
+
 const words = b => b.flat(2).join(' ').replace(/<[^>]+>/g, '').split(/\s+/).filter(Boolean).length;
 const minsOf = ch => Math.max(1, Math.round(words(ch.blocks) / 180));
 const plain = ch => [ch.title, ...ch.blocks.flat(2)].join(' ').replace(/<[^>]+>/g, '').toLowerCase();
 
-export function appScorerGuidePage({ back }) {
-  const total = SCORER_GUIDE.reduce((n, ch) => n + minsOf(ch), 0);
-  return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">How to score</span><span></span></div>
+// The Papawis guide's look and links (the league guide's are the defaults below).
+export const PW_GUIDE_OPTS = { guide: PW_SCORER_GUIDE, base: '/app/help/papawis', img: '/help/papawis/', tryHref: '/app/papawis/practice', tryText: 'Try it in a practice run',
+  kicker: 'Papawis scorer guide', title: 'How to score a Papawis run', nav: 'How to score Papawis', intro: 'From opening the run to Finish the run: Light against Dark, game after game, on one phone.', hot: 'switch', hotSub: 'The one scorers miss most' };
+const LEAGUE_OPTS = { guide: SCORER_GUIDE, base: '/app/help/scoring', img: '/help/scorer/', tryHref: '/app/practice', tryText: 'Try it in a practice game',
+  kicker: 'WKND scorer guide', title: 'How to score a game', nav: 'How to score', intro: 'Everything you need to keep the box score of a league game from your phone: what to tap, what the questions mean, and how to finish.', hot: '', hotSub: '' };
+
+export function appScorerGuidePage({ back, opts = LEAGUE_OPTS }) {
+  const G = opts.guide;
+  const total = G.reduce((n, ch) => n + minsOf(ch), 0);
+  return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">${esc(opts.nav)}</span><span></span></div>
   <div class="hg">
-    <p class="hg__k">WKND scorer guide · ${total} min read</p>
-    <h1 class="hg__t">How to score a game</h1>
-    <p class="hg__p">Everything you need to keep the box score of a league game from your phone: what to tap, what the questions mean, and how to finish.</p>
+    <p class="hg__k">${esc(opts.kicker)} · ${total} min read</p>
+    <h1 class="hg__t">${esc(opts.title)}</h1>
+    <p class="hg__p">${esc(opts.intro)}</p>
     <label class="hg__search"><span class="sr-only">Search the guide</span><input type="search" placeholder="Search the guide" enterkeyhint="search" autocomplete="off" data-hg-search></label>
   </div>
   <div class="sec">Contents</div>
-  <ol class="group hg__toc" data-hg-toc>${SCORER_GUIDE.map((ch, i) => `<li><a class="cell" href="/app/help/scoring/${ch.slug}" data-text="${esc(plain(ch))}"><span class="hg__n num">${i + 1}</span><span class="cell__t">${esc(ch.title)}</span><span class="cell__v">${minsOf(ch)} min</span>${chev}</a></li>`).join('')}</ol>
+  <ol class="group hg__toc" data-hg-toc>${G.map((ch, i) => `<li><a class="cell${ch.slug === opts.hot ? ' hg__hot' : ''}" href="${opts.base}/${ch.slug}" data-text="${esc(plain(ch))}"><span class="hg__n num">${i + 1}</span><span class="cell__t">${esc(ch.title)}${ch.slug === opts.hot ? `<small>${esc(opts.hotSub)}</small>` : ''}</span><span class="cell__v">${minsOf(ch)} min</span>${chev}</a></li>`).join('')}</ol>
   <p class="empty hg__none" data-hg-none hidden>Nothing in the guide matches that.</p>
-  <a class="btn btn--ghost hg__try" href="/app/practice">Try it in a practice game</a>`;
+  <a class="btn btn--ghost hg__try" href="${opts.tryHref}">${esc(opts.tryText)}</a>`;
 }
 
-export function appScorerChapterPage({ slug }) {
-  const i = SCORER_GUIDE.findIndex(ch => ch.slug === slug);
+export function appScorerChapterPage({ slug, opts = LEAGUE_OPTS }) {
+  const G = opts.guide;
+  const i = G.findIndex(ch => ch.slug === slug);
   if (i === -1) return null;
-  const ch = SCORER_GUIDE[i], prev = SCORER_GUIDE[i - 1], next = SCORER_GUIDE[i + 1];
+  const ch = G[i], prev = G[i - 1], next = G[i + 1];
   const block = ([kind, a, b]) => {
     if (kind === 'p') return `<p>${a}</p>`;
     if (kind === 'h') return `<h2>${a}</h2>`;
-    if (kind === 'img') return `<figure><img src="/help/scorer/${esc(a)}" alt="${esc(b)}" loading="lazy" decoding="async"><figcaption>${b}</figcaption></figure>`;
+    if (kind === 'img') return `<figure><img src="${opts.img}${esc(a)}" alt="${esc(b)}" loading="lazy" decoding="async"><figcaption>${b}</figcaption></figure>`;
     if (kind === 'steps') return `<ol>${a.map(s => `<li>${s}</li>`).join('')}</ol>`;
     if (kind === 'tip') return `<aside class="hg__tip"><b>${a}</b><p>${b}</p></aside>`;
     if (kind === 'dl') return `<dl>${a.map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join('')}</dl>`;
     return '';
   };
-  return `<div class="navbar"><a class="navbar__back" href="/app/help/scoring">${backChev}Contents</a><span class="navbar__title">${i + 1} of ${SCORER_GUIDE.length}</span><span></span></div>
+  return `<div class="navbar"><a class="navbar__back" href="${opts.base}">${backChev}Contents</a><span class="navbar__title">${i + 1} of ${G.length}</span><span></span></div>
   <article class="hg hg--ch">
     <p class="hg__k">Chapter ${i + 1} · ${minsOf(ch)} min</p>
     <h1 class="hg__t">${esc(ch.title)}</h1>
     ${ch.blocks.map(block).join('\n    ')}
-    <a class="btn btn--ghost hg__try" href="/app/practice">Try it in a practice game</a>
-    <nav class="hg__pn" aria-label="Chapters">${prev ? `<a href="/app/help/scoring/${prev.slug}">‹ ${esc(prev.title)}</a>` : '<span></span>'}${next ? `<a href="/app/help/scoring/${next.slug}">${esc(next.title)} ›</a>` : '<span></span>'}</nav>
+    <a class="btn btn--ghost hg__try" href="${opts.tryHref}">${esc(opts.tryText)}</a>
+    <nav class="hg__pn" aria-label="Chapters">${prev ? `<a href="${opts.base}/${prev.slug}">‹ ${esc(prev.title)}</a>` : '<span></span>'}${next ? `<a href="${opts.base}/${next.slug}">${esc(next.title)} ›</a>` : '<span></span>'}</nav>
   </article>`;
 }

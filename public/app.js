@@ -714,6 +714,29 @@
       } catch (x) {}
     });
   }
+  // Practice a Papawis run (views/app/practice.js appPwPracticePage): Carry on from this phone's
+  // note of the last one, and the tips switch (their progress starts again with each new one).
+  function initPwPractice() {
+    var form = $('[data-pw-practice]');
+    if (!form || form._bound) return;
+    form._bound = true;
+    var last = null;
+    try { last = JSON.parse(localStorage.getItem('wknd-practice-pw') || 'null'); } catch (e) {}
+    var carry = $('[data-practice-carry]', form);
+    if (last && last.id && !last.final && carry) {
+      carry.href = '/app/papawis/practice/play?stats=' + encodeURIComponent(last.stats || 'basic') + '&q=' + encodeURIComponent(last.q || 10) + '&id=' + encodeURIComponent(last.id);
+      carry.textContent = 'Carry on: Game ' + (last.game || 1) + ', Light ' + last.sa + '–' + last.sb + ' Dark';
+      carry.hidden = false;
+    }
+    var tips = $('[data-practice-tips]', form);
+    if (tips) { try { tips.checked = localStorage.getItem('wknd-prac-tips') !== 'off'; } catch (e) {} }
+    form.addEventListener('submit', function () {
+      try {
+        if (tips && tips.checked) { localStorage.setItem('wknd-prac-tips', 'on'); localStorage.setItem('wknd-prac-tip-pw', '0'); }
+        else localStorage.setItem('wknd-prac-tips', 'off');
+      } catch (x) {}
+    });
+  }
   // ════ How to score (views/app/help.js): the contents' search ════
   function initGuide() {
     var q = $('[data-hg-search]');
@@ -757,7 +780,7 @@
     initScorer();
     initLive(); initChat();
     initGameRecap();
-    initPractice(); initGuide(); initBarkadahan(); initOnlineSwitch(); initProfile();
+    initPractice(); initPwPractice(); initGuide(); initBarkadahan(); initOnlineSwitch(); initProfile();
     if (window.wkndBkSync) window.wkndBkSync();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s

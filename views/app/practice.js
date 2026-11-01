@@ -25,3 +25,34 @@ export function appPracticePage({ teams, back }) {
     <div class="pr-go"><button type="submit" class="btn">Start practice</button></div>
   </form>`;
 }
+
+// Practice a Papawis run (Me → Scoring, 2026-11-01, mockup claude.ai/artifact/XpZnj9bEgij8cvqacFbCE1):
+// a past run's players on their sides, Basic or Full, the game length and the tips, then the
+// real Papawis scorer with nothing leaving the phone. "Carry on" from the phone's own note
+// (localStorage wknd-practice-pw, public/app.js initPwPractice).
+// players: { label, light: [{ name }], dark: [{ name }] }
+export function appPwPracticePage({ players, back }) {
+  const chip = (p, side) => `<span class="pp-chip pp-chip--${side}">${esc(p.name)}</span>`;
+  return `<div class="navbar"><a class="navbar__back" href="${esc(back.href)}">${backChev}${esc(back.label)}</a><span class="navbar__title">Practice a run</span><span></span></div>
+  <form class="pr" method="get" action="/app/papawis/practice/play" data-pw-practice>
+    <div class="msg msg--info pr-note">Only on this phone. Nothing is sent, saved to the site or shown to anyone. Reset any time.</div>
+    <a class="btn pr-carry" href="#" data-practice-carry hidden></a>
+    <div class="sec">Players · ${esc(players.label)} · ${players.light.length + players.dark.length}</div>
+    <div class="group"><div class="pp-chips">${players.light.map(p => chip(p, 'light')).join('')}${players.dark.map(p => chip(p, 'dark')).join('')}</div></div>
+    <p class="foot-note">Light ○ and Dark ●, as they played.</p>
+    <div class="sec">Stats</div>
+    <div class="group"><div class="cell"><div class="seg" style="flex:1">
+      <label><input type="radio" name="stats" value="basic" checked><span>Basic</span></label>
+      <label><input type="radio" name="stats" value="full"><span>Full</span></label>
+    </div></div></div>
+    <div class="sec">Game length</div>
+    <div class="group"><div class="cell"><div class="seg" style="flex:1">
+      <label><input type="radio" name="q" value="10" checked><span>10 min, like a run</span></label>
+      <label><input type="radio" name="q" value="3"><span>3 min, quick</span></label>
+    </div></div></div>
+    <div class="sec">Try tips</div>
+    <div class="group"><label class="cell"><span class="cell__t">Show tips while I practise<small>12 moves, ticked off as you do them. Three are about switching Light and Dark.</small></span><input type="checkbox" class="switch" data-practice-tips checked></label></div>
+    <div class="pr-go"><button type="submit" class="btn">Start practice</button></div>
+    <a class="btn btn--ghost pr-guide" href="/app/help/papawis">How to score Papawis</a>
+  </form>`;
+}

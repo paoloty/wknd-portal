@@ -62,6 +62,8 @@ export function appMePage({ me, season, games, positions, todos = [], scoring = 
     <a class="cell" href="/app/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice game<small>Real teams, only on this phone</small></span>${chev}</a>
     <a class="cell" href="/app/table" data-reload><span class="ico">${icons.tablet}</span><span class="cell__t">Table display<small>Show the live score on a big screen</small></span>${chev}</a>
     <a class="cell" href="/app/help/scoring"><span class="ico">${icons.book}</span><span class="cell__t">How to score<small>The guide, with pictures</small></span>${chev}</a>
+    ${scoring.pw ? `<a class="cell" href="/app/papawis/practice"><span class="ico">${icons.play}</span><span class="cell__t">Practice a Papawis run<small>A past run’s players, only on this phone</small></span>${chev}</a>
+    <a class="cell" href="/app/help/papawis"><span class="ico">${icons.book}</span><span class="cell__t">How to score Papawis<small>Light and Dark, switching sides, Finish the run</small></span>${chev}</a>` : ''}
     ${scoring.admin ? `<a class="cell" href="/app/admin/scorers"><span class="ico">${icons.user}</span><span class="cell__t">Scorers<small>Admin: who scores ${scoring.admin.games && scoring.admin.papawis ? 'games and Papawis' : scoring.admin.games ? 'the games' : 'Papawis'}</small></span>${chev}</a>` : ''}
   </div>` : ''}
   <div class="sec">${esc(season.label)}</div>
