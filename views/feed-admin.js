@@ -26,7 +26,7 @@ export function feedAdminBody({ list = [], refOptions = [], now = Date.now(), th
   const typeSelect = value => `<select class="fa-in" name="type">${TYPES.map(([k, , l]) => `<option value="${k}"${k === value ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
   const row = a => {
     const at = a.shown_at || a.created_at, pinned = a.pinned_until > now;
-    const what = [LABEL[a.type] || 'Announcement', a.photos ? `${a.photos} photo${a.photos === 1 ? '' : 's'}` : '', a.fb_url ? 'Facebook' : '', a.youtube_url ? 'YouTube' : ''].filter(Boolean).join(' · ');
+    const what = [LABEL[a.type] || 'Announcement', a.photos ? `${a.photos} photo${a.photos === 1 ? '' : 's'}` : '', a.fb_url && a.type !== 'facebook' ? 'Facebook' : '', a.youtube_url ? 'YouTube' : ''].filter(Boolean).join(' · ');
     const img = a.photos || a.has_image ? thumb(a) : '';
     return `<div class="fa-post${a.hidden_at ? ' is-hidden' : ''}" data-fa-post="${esc(a.id)}">
       <div class="fa-post__top">

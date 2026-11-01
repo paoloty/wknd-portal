@@ -10471,7 +10471,8 @@ function feedPostFields(b, { photosComing = false, videoComing = false } = {}) {
   if (!feedRefOk(ref)) return 'Pick the game or run from the list.';
   const fb = facebook ? fbEmbedOf(facebook) : null;
   if (type === 'announcement' && !title && !body) return 'Add a title or a message.';
-  if (type === 'highlight' && !(fb?.video || youtube || videoComing)) return 'A highlight needs a video: a file, a Facebook video or reel, or a YouTube link.';
+  // Any Facebook link will do: a video post's address often doesn't say it's a video (/posts/…, permalink.php).
+  if (type === 'highlight' && !(fb || youtube || videoComing)) return 'A highlight needs a video: a file, a Facebook link, or a YouTube link.';
   if (type === 'facebook' && !fb) return 'Paste the Facebook post’s link.';
   if (type === 'photos' && !photosComing) return 'Add at least one photo.';
   if (type === 'throwback' && !fb && !youtube && !photosComing && !videoComing) return 'A throwback needs a video, a Facebook or YouTube link, or photos.';
@@ -10548,7 +10549,6 @@ app.post('/admin/app/announcements/bulk', requireAuth, express.json({ limit: '20
     if (want && !FEED_TYPES[want]) return { line: i + 1, error: `Unknown type “${t}”` };
     const video = !!yt || !!fb?.video;
     const type = want || (ms < sixMonths ? 'throwback' : video ? 'highlight' : 'facebook');
-    if (type === 'highlight' && !video) return { line: i + 1, error: 'A highlight has to be a video' };
     if (type === 'photos' || type === 'announcement') return { line: i + 1, error: `Use the New post form for ${FEED_TYPES[type].toLowerCase()}s` };
     return { line: i + 1, url, fb: fb ? fb.url : '', yt: yt ? url : '', ms, type, label: `${FEED_TYPES[type]}${video ? ' · video' : ''}`, date: manilaFormat(ms, { month: 'short', day: 'numeric', year: 'numeric' }) };
   });
