@@ -2445,7 +2445,10 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 
 /* Cards an admin shares (views/app/barkadahan.js bkCardHtml, 2026-10-28): a compact .card
    inside the message, with the pick bars of Who wins? (.pick__opt) and one amber action. */
-.bk-m:has(.bk-cardw) { width: 86%; }
+/* Cards an admin shares (Papawis, Who wins?, welcomes, birthdays) are for everyone: full width, not a chat bubble (Paolo, 2026-11-01). */
+.bk-m:has(.bk-cardw) { width: 100%; max-width: 100%; }
+.bk-m:has(.bk-cardw) > .bk-av { display: none; }
+.bk-m.is-cont:has(.bk-cardw) { padding-left: 0; }
 .bk-m:has(.bk-cardw) .bk-m__b { flex: 1; }
 .bk-cardw { width: 100%; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .bk-cardw.is-busy { opacity: .7; }
