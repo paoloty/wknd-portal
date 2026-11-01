@@ -79,7 +79,7 @@
       });
       out.push(seenHtml());
       list.innerHTML = out.join('');
-      tickClocks();
+      tickClocks(); hiWatch();
       if (keep === 'top') list.scrollTop = list.scrollHeight - oldH + oldTop;
       else if (keep === 'stay' && !atEnd) list.scrollTop = oldTop;
       else toBottom();
@@ -115,7 +115,7 @@
       if (pending.length || !prev || !last || dayOf(prev.at) !== dayOf(m.at) || !nodeOf(prev.id)) return false;
       var atEnd = nearBottom();
       list.insertAdjacentHTML('beforeend', msgHtml(m, prev));
-      paintSeen(); tickClocks();
+      paintSeen(); tickClocks(); hiWatch();
       if (atEnd || m.pid === me.pid) toBottom();
       return true;
     }
@@ -143,7 +143,7 @@
     function paintCard(key) {
       list.querySelectorAll('[data-bk-card]').forEach(function (n) { if (n.getAttribute('data-bk-card') === key && cards[key]) { n.innerHTML = cards[key]; n.classList.remove('is-busy'); } });
     }
-    function takeCards(c) { if (!c) return; Object.keys(c).forEach(function (k) { cards[k] = c[k]; paintCard(k); }); tickClocks(); }
+    function takeCards(c) { if (!c) return; Object.keys(c).forEach(function (k) { cards[k] = c[k]; paintCard(k); }); tickClocks(); hiWatch(); }
     var cardsBusy = {};
     function fetchCards(keys) {
       keys = keys.filter(function (k) { return !cardsBusy[k]; });
@@ -288,6 +288,7 @@
       p.failed = false; draw('stay');
       post('/app/barkadahan/messages', { body: p.body, replyTo: p.replyTo || null, mentions: p.mentions, cid: p.id, card: p.card || undefined }).then(function (j) {
         Object.keys(j.cards || {}).forEach(function (k) { cards[k] = j.cards[k]; });
+        if (p.card === 'hi:bday' || p.card === 'hi:welcome') el.querySelectorAll('[data-bk-quick] [data-bk-share-pick="' + p.card + '"]').forEach(function (q) { var bar = q.parentNode; q.remove(); if (!bar.children.length) bar.remove(); });
         pending = pending.filter(function (x) { return x !== p; });
         if (!byId[j.m.id]) { msgs.push(j.m); byId[j.m.id] = j.m; }
         draw();
@@ -449,6 +450,55 @@
       if (q) return ask(q, act === 'cancel' ? (b.textContent.trim() === 'Leave' ? 'Leave the waitlist' : 'Cancel my spot') : 'Claim it', go);
       go();
     }
+    // Welcome / birthday cards: greet one person (again to take it back) or everyone on it.
+    function hiAct(b) {
+      var w = b.closest('[data-bk-card]');
+      if (!navigator.onLine) return toast('You’re offline. This needs a connection, so nothing was sent.', 'err');
+      cardBusy(w, true);
+      post('/app/barkadahan/hi/' + encodeURIComponent(b.getAttribute('data-bk-hi')), { to: b.getAttribute('data-bk-to') })
+        .then(function (j) { takeCards(j.cards); }, function (err) { toast(err.message, 'err'); fetchCards([w.getAttribute('data-bk-card')]); });
+    }
+    // The first time this phone shows a welcome or birthday card, it plays once: the card pops
+    // in, a welcome waves a big hand, a birthday bursts with confetti (not with Reduce Motion).
+    // Set up on first use: the room's first draw runs before this part of mount() does.
+    var hiSeen, calm, hiObs;
+    function hiInit() {
+      if (hiSeen) return;
+      hiSeen = (pref.get('wknd-bk-hi', '') || '').split(',').filter(Boolean);
+      calm = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      hiObs = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting && e.intersectionRatio >= 0.5) { hiObs.unobserve(e.target); hiPlay(e.target); } });
+      }, { root: list, threshold: [0.5] }) : null;
+    }
+    function hiPlay(c) {
+      var id = c.getAttribute('data-bk-hi-card');
+      if (hiSeen.indexOf(id) !== -1) return;
+      hiSeen.push(id); pref.set('wknd-bk-hi', hiSeen.slice(-60).join(','));
+      if (calm) return;
+      c.classList.add('is-new');
+      if (c.classList.contains('bkh--bday')) {
+        var box = document.createElement('span'); box.className = 'bkh__confetti'; box.setAttribute('aria-hidden', 'true');
+        var COLORS = ['#f59332', '#f2c14e', '#e2554a', '#4a7bd0', '#34d399', '#c084fc'];
+        for (var i = 0; i < 28; i++) {
+          var a = (i / 28) * Math.PI * 2, d = 60 + (i * 37) % 80, p = document.createElement('i');
+          p.style.cssText = '--k:' + COLORS[i % 6] + ';--x:' + Math.round(Math.cos(a) * d * 1.4) + 'px;--y:' + Math.round(Math.sin(a) * d - 30) + 'px;--r:' + ((i * 97) % 540 - 270) + 'deg';
+          box.appendChild(p);
+        }
+        c.appendChild(box);
+      } else {
+        var hand = document.createElement('span'); hand.className = 'bkh__wave'; hand.setAttribute('aria-hidden', 'true'); hand.textContent = '👋';
+        c.appendChild(hand);
+      }
+      setTimeout(function () { c.classList.remove('is-new'); c.querySelectorAll('.bkh__confetti, .bkh__wave').forEach(function (x) { x.remove(); }); }, 3200);
+    }
+    function hiWatch() {
+      hiInit();
+      list.querySelectorAll('[data-bk-hi-card]:not([data-hi-w])').forEach(function (c) {
+        c.setAttribute('data-hi-w', '1');
+        if (hiSeen.indexOf(c.getAttribute('data-bk-hi-card')) !== -1) return;
+        if (hiObs) hiObs.observe(c); else hiPlay(c);
+      });
+    }
     function pickAct(b) {
       var w = b.closest('[data-bk-card]'), card = b.closest('[data-bk-pick]'), key = w.getAttribute('data-bk-card'), side = b.getAttribute('data-side');
       if (b.disabled || b.classList.contains('is-mine') || w.classList.contains('is-busy')) return;
@@ -540,6 +590,8 @@
         return;
       }
       var rxb = t.closest('[data-bk-rx]'); if (rxb) return react(byId[rxb.closest('[data-id]').getAttribute('data-id')], rxb.getAttribute('data-bk-rx'));
+      var hib = t.closest('[data-bk-hi]'); if (hib && !hib.disabled) return hiAct(hib);
+      var sayb = t.closest('[data-bk-say]'); if (sayb && input) { input.value = sayb.getAttribute('data-bk-say'); input.dispatchEvent(new Event('input')); input.focus(); return; }
       var pwb = t.closest('[data-bk-pw]'); if (pwb && !pwb.disabled) return papawisAct(pwb);
       var pkb = t.closest('[data-bk-pick] .pick__opt'); if (pkb) return pickAct(pkb);
       var sn = t.closest('[data-bk-seen]'); if (sn && byId[sn.getAttribute('data-bk-seen')]) return openWho(byId[sn.getAttribute('data-bk-seen')], 'seen');

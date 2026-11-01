@@ -34,3 +34,7 @@ Mockup: claude.ai/artifact/4XcqkzEiEoLdspw4M1NdmP.
 - Banned players read but can't post or react; muted players read and react, not post. Viewing as a player is read-only.
 - Flood guard: one message per 0.6 s, 20 a minute. 500 characters. Plain text and emoji, no links or photos; admins can add a card.
 - Super admins read and delete in admin; they never post there (Paolo).
+
+## Welcomes and birthdays (2026-11-01)
+
+Mockup claude.ai/artifact/55vBHqHBfJUwk6dznXuQiY. Admins see chips above the message box (bundle.quick, server.js bkHiItems) while someone is due: an active player's birthday today (lib/birthday.js birthdaysAround, the birthday emails' rule) or a member approved in the last 14 days not yet welcomed. The chip (or the + sheet) attaches `hi:bday` / `hi:welcome`; posting makes one card (`hi:<greeting id>`, tables barkadahan_greetings + barkadahan_greets) for everyone due, and each gets one bell (barkadahan_birthday / barkadahan_welcome). Everyone greets each person (POST /app/barkadahan/hi/:gid, `to` = a player or `all`); greets do not notify. A greeting counts as posted while its message is up. First time a phone shows the card: pop + big wave or confetti (public/barkadahan.js hiPlay, stored in wknd-bk-hi), none with Reduce Motion.

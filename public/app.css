@@ -3019,3 +3019,48 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .ax__vid video { display: block; width: 100%; max-height: 78vh; background: #000; }
 .ax__vid-snd { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; height: 32px; padding: 0 12px; border: 0; border-radius: 16px; background: rgba(0,0,0,.62); color: #fff; font-size: 13px; font-weight: 600; line-height: 1; }
 .ax__vid-snd[hidden] { display: none; }
+
+/* Barkadahan welcomes and birthdays (views/app/barkadahan.js hiCard, public/barkadahan.js hiPlay). */
+.bk__quick { flex: none; display: flex; gap: 8px; margin: 0 12px 8px; overflow-x: auto; scrollbar-width: none; }
+.bk__quick::-webkit-scrollbar { display: none; }
+.bk__qa { flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface); border: 1px solid rgba(245,147,50,.45); color: var(--text); font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; }
+.bk__qa b { color: var(--amber-text); font-weight: 600; }
+.bkh { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 12px; padding: 17px 14px 14px; }
+.bkh__band { position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--amber); }
+.bkh--bday .bkh__band { background: linear-gradient(90deg, #f59332, #f2c14e); }
+.bkh__k { display: flex; align-items: center; gap: 6px; line-height: 1; color: var(--amber-text); }
+.bkh__e { display: inline-block; transform-origin: 70% 80%; font-size: 14px; line-height: 1; }
+.bkh__who { display: flex; align-items: center; gap: 12px; }
+.bkh__av { flex: none; display: flex; }
+.bkh__av .avatar-wrap, .bkh__av .avatar { width: 52px; height: 52px; font-size: 17px; }
+.bkh__av--sm .avatar-wrap, .bkh__av--sm .avatar { width: 36px; height: 36px; font-size: 13px; }
+.bkh__t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.bkh__t b { font-size: 15px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bkh__t small { font-size: 12px; line-height: 1.3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bkh__intro { margin: 0; padding: 10px 12px; border-radius: var(--r-in); background: var(--surface-2); font-size: 13px; line-height: 1.45; }
+.bkh__foot { display: flex; align-items: center; gap: 12px; }
+.bkh__by { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--muted); }
+.bkh__by > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bkh__faces { display: flex; flex: none; }
+.bkh__faces .avatar-wrap, .bkh__faces .avatar { width: 24px; height: 24px; font-size: 9px; }
+.bkh__faces .avatar-wrap + .avatar-wrap { margin-left: -7px; }
+.bkh__faces .avatar { box-shadow: 0 0 0 2px var(--card-bg, var(--surface)); }
+.bkh__you { color: var(--win); font-weight: 600; }
+.bkh .bkc__btn { flex: none; width: auto; height: 40px; min-height: 0; padding: 0 16px; font-size: 14px; line-height: 1; }
+.bkh .bkc__btn.is-on { background: rgba(245,147,50,.16); color: var(--amber-text); }
+.bkh .bkh__sm { height: 36px; padding: 0 12px; font-size: 13px; }
+.bkh__rows { display: flex; flex-direction: column; margin: -6px 0; }
+.bkh__row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; border-bottom: 1px solid var(--hair); }
+.bkh__row:last-child { border-bottom: 0; }
+.bkh .bkh__all { width: 100%; justify-content: center; background: var(--surface-2); color: var(--text); }
+/* The first time: pop in, a big wave or confetti. */
+.bkh.is-new { animation: bkh-pop .5s cubic-bezier(.2,1.4,.4,1) both; }
+.bkh.is-new .bkh__e { animation: bkh-wave 1.1s ease-in-out .5s 2; }
+.bkh__wave { position: absolute; right: 14px; top: 22px; font-size: 44px; pointer-events: none; transform-origin: 70% 80%; animation: bkh-bigwave 1.6s ease-out .3s both; }
+.bkh__confetti { position: absolute; inset: 0; pointer-events: none; }
+.bkh__confetti i { position: absolute; top: 40%; left: 50%; width: 7px; height: 11px; border-radius: 2px; background: var(--k); animation: bkh-burst 1.5s cubic-bezier(.15,.7,.3,1) .2s both; }
+@keyframes bkh-pop { from { transform: translateY(14px) scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes bkh-wave { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(18deg); } 40% { transform: rotate(-10deg); } 60% { transform: rotate(16deg); } 80% { transform: rotate(-6deg); } }
+@keyframes bkh-bigwave { 0% { opacity: 0; transform: scale(.4); } 20% { opacity: 1; transform: scale(1.1) rotate(18deg); } 40% { transform: scale(1) rotate(-12deg); } 60% { transform: rotate(16deg); } 80% { opacity: 1; transform: rotate(-4deg); } 100% { opacity: 0; transform: scale(.9); } }
+@keyframes bkh-burst { 0% { opacity: 1; transform: translate(0, 0) rotate(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--x), var(--y)) rotate(var(--r)); } }
+@media (prefers-reduced-motion: reduce) { .bkh.is-new, .bkh.is-new .bkh__e, .bkh__wave, .bkh__confetti i { animation: none; } .bkh__wave, .bkh__confetti { display: none; } }

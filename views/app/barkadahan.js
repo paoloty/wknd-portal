@@ -16,6 +16,7 @@ export function appBarkadahanPage({ bundle }) {
     <div class="bk__reply" data-bk-reply hidden></div>
     <div class="bk__mention" data-bk-mention hidden role="listbox" aria-label="Mention someone"></div>
     <div class="bk__reply bk__attach" data-bk-attach hidden></div>
+    ${bundle.quick?.length ? `<div class="bk__quick" data-bk-quick>${bundle.quick.map(q => `<button type="button" class="bk__qa" data-bk-share-pick="${esc(q.key)}" data-title="${esc(q.title)}" data-sub="${esc(q.sub)}">${esc(q.chip)} · <b>${esc(q.act)}</b></button>`).join('')}</div>` : ''}
     ${cant ? `<p class="bk__cant">${esc(cant)}</p>` : `<form class="bk__bar" data-bk-form autocomplete="off">
       ${bundle.me.mod ? `<button type="button" class="bk__emo bk__plus" data-bk-share aria-label="Share a Papawis run or a game">${icons.plus}</button>` : ''}
       <button type="button" class="bk__emo" data-bk-emoji aria-label="Emoji">🙂</button>
@@ -43,7 +44,7 @@ export function appBarkadahanOnlinePage({ now, earlier, hiddenMe }) {
 // a Papawis run or a Who wins? game, drawn fresh for the player looking (server.js bkCards), so
 // seats, picks and results are always current. The buttons post to the site's own routes
 // (public/barkadahan.js), so every rule stays in one place.
-const cardIcon = { pw: icons.ball, pick: icons.picks };
+const cardIcon = { pw: icons.ball, pick: icons.picks, bday: '🎂', welcome: '👋' };
 const more = (href, label = 'Details') => `<a class="bkc__more" href="${esc(href)}">${label}${chev}</a>`;
 function seatDots(c) {
   if (!c.max || c.max > 24) return `<small>${c.filled} of ${c.max || '?'} in</small>`;
@@ -65,8 +66,40 @@ function pwAction(c) {
     default: return '';
   }
 }
+// A welcome or birthday card (server.js bkHiCard): a row per person with their own Greet and
+// who greeted; one person gets the big layout (and their intro, for a welcome). The person
+// themselves sees the count and Say hi / Say thanks. public/barkadahan.js plays the
+// first-time animation.
+function hiCard(c) {
+  const verb = c.bday ? '🎉 Greet' : '👋 Welcome', done = c.bday ? '🎉 Greeted' : '👋 Welcomed';
+  const faces = p => p.faces.length ? `<span class="bkh__faces" aria-hidden="true">${p.faces.map(f => appAvatar({ playerId: f.pid, initials: f.initials, ring: f.ring, photoUrl: f.photo })).join('')}</span>` : '';
+  const say = c.bday ? 'Say thanks 🙏' : 'Say hi 👋', sayText = c.bday ? 'Thank you, barkada! 🙏' : 'Hi everyone! 👋';
+  // A row's button is one word (the name keeps the room); the one-person card's has the emoji.
+  const word = p => (p.mine ? done : verb).replace(/^\S+ /, '');
+  const action = (p, big) => p.me
+    ? `<button type="button" class="btn bkc__btn bkh__say${big ? '' : ' bkh__sm'}" data-bk-say="${esc(sayText)}">${big ? say : say.replace(/ \S+$/, '')}</button>`
+    : `<button type="button" class="btn bkc__btn${p.mine ? ' is-on' : ''}${big ? '' : ' bkh__sm'}" data-bk-hi="${esc(c.id)}" data-bk-to="${esc(p.pid)}" aria-pressed="${p.mine}" aria-label="${esc(word(p))} ${esc(p.full)}">${big ? (p.mine ? done : verb) : word(p)}</button>`;
+  const line = p => p.me ? `<span class="bkh__you">${p.n ? `${p.n} ${c.bday ? 'greeted' : 'welcomed'} you` : 'That’s you'}</span>` : `<span>${esc(p.line)}</span>`;
+  const kicker = c.bday ? (c.people.length === 1 ? 'Birthday today' : `${c.people.length} birthdays today`) : (c.people.length === 1 ? 'New in the barkada' : `${c.people.length} new in the barkada`);
+  const head = `<div class="bkh__band" aria-hidden="true"></div><span class="bkc__k bkh__k"><span class="bkh__e" aria-hidden="true">${c.bday ? '🎂' : '👋'}</span> ${kicker}</span>`;
+  if (c.people.length === 1) {
+    const p = c.people[0];
+    return `<div class="bkc bkh${c.bday ? ' bkh--bday' : ''}" data-bk-hi-card="${esc(c.id)}">${head}
+      <div class="bkh__who"><span class="bkh__av">${appAvatar({ playerId: p.pid, initials: p.initials, ring: p.ring, photoUrl: p.photo })}</span><span class="bkh__t"><b>${esc(p.full)}</b>${p.sub ? `<small>${esc(p.sub)}</small>` : ''}</span></div>
+      ${p.intro ? `<p class="bkh__intro">“${esc(p.intro)}”</p>` : ''}
+      <div class="bkh__foot">${action(p, true)}<span class="bkh__by">${faces(p)}${line(p)}</span></div>
+    </div>`;
+  }
+  const left = c.people.filter(p => !p.me && !p.mine).length;
+  return `<div class="bkc bkh${c.bday ? ' bkh--bday' : ''}" data-bk-hi-card="${esc(c.id)}">${head}
+    <div class="bkh__rows">${c.people.map(p => `<div class="bkh__row"><span class="bkh__av bkh__av--sm">${appAvatar({ playerId: p.pid, initials: p.initials, ring: p.ring, photoUrl: p.photo })}</span>
+      <span class="bkh__t"><b>${esc(p.full)}</b><small>${p.me || p.n ? '' : p.sub ? esc(p.sub) + ' · ' : ''}${p.me ? line(p) : esc(p.line)}</small></span>${action(p, false)}</div>`).join('')}</div>
+    ${left > 1 ? `<button type="button" class="btn bkc__btn bkh__all" data-bk-hi="${esc(c.id)}" data-bk-to="all">${c.bday ? '🎉 Greet' : '👋 Welcome'} all ${c.people.filter(p => !p.me).length}</button>` : ''}
+  </div>`;
+}
 export function bkCardHtml(c) {
   if (!c || c.gone) return `<div class="bkc is-gone">${c?.goneText ? esc(c.goneText) : 'No longer available'}</div>`;
+  if (c.kind === 'hi') return hiCard(c);
   if (c.kind === 'pw') {
     return `<div class="bkc">
       <div class="bkc__top"><span class="bkc__ic" aria-hidden="true">${cardIcon.pw}</span>
@@ -90,8 +123,8 @@ export function bkCardHtml(c) {
 
 // The admin's share list: what's open right now.
 export function bkShareHtml(items) {
-  if (!items.length) return '<p class="bk-sheet__empty">Nothing open right now. Upcoming Papawis runs and games still taking picks show up here.</p>';
-  const groups = [['pw', 'Papawis'], ['pick', 'Who wins? · open']];
+  if (!items.length) return '<p class="bk-sheet__empty">Nothing open right now. Birthdays, new members, upcoming Papawis runs and games still taking picks show up here.</p>';
+  const groups = [['bday', 'Birthday today'], ['welcome', 'New members'], ['pw', 'Papawis'], ['pick', 'Who wins? · open']];
   return groups.map(([k, label]) => {
     const list = items.filter(i => i.kind === k);
     return list.length ? `<div class="bk-sheet__l">${label}</div><div class="bk-sheet__list">${list.map(i => `<button type="button" class="bk-row" data-bk-share-pick="${esc(i.key)}" data-title="${esc(i.title)}" data-sub="${esc(i.sub)}">

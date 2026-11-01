@@ -6182,7 +6182,7 @@ import { appScorerGuidePage, appScorerChapterPage, PW_GUIDE_OPTS } from './views
 import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
-import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince } from './lib/portal-db.js';
+import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince, addBarkadahanGreeting, getBarkadahanGreeting, getBarkadahanGreetedIds, getBarkadahanGreets, toggleBarkadahanGreet, addBarkadahanGreets } from './lib/portal-db.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
@@ -7615,7 +7615,8 @@ app.get('/app/barkadahan', requireApp, requireBarkadahan, (req, res) => {
   const me = appMe(req);
   const cant = req.session.impersonating ? 'Viewing as a player is read-only.' : bkCantPost(me.playerId);
   const messages = bkMessages({ limit: BK_PAGE });
-  const bundle = { me: { pid: me.playerId, mod: bkIsMod(me.playerId) && !req.session.impersonating, cant }, messages, cards: bkCardsFor(messages, me), seen: bkSeenSummary(), online: bkOnlineIds().length, reactions: BK_REACTIONS,
+  const mod = bkIsMod(me.playerId) && !req.session.impersonating;
+  const bundle = { me: { pid: me.playerId, mod, cant }, quick: mod && !cant ? bkHiItems() : [], messages, cards: bkCardsFor(messages, me), seen: bkSeenSummary(), online: bkOnlineIds().length, reactions: BK_REACTIONS,
     people: getAllPlayers().filter(p => p.status !== 'inactive').map(p => ({ pid: p.id, name: displayPlayerName(p.name || '') })) };
   sendApp(res, { title: 'Barkadahan · WKND', bare: true, body: appBarkadahanPage({ bundle }) });
 });
@@ -7641,8 +7642,8 @@ app.post('/app/barkadahan/messages', requireAppData, requireBarkadahan, express.
   // Cut by characters, not UTF-16 units, so a cut never splits an emoji.
   const body = Array.from(String(req.body?.body || '').replace(/\s+$/g, '').replace(/^\s+/, '')).slice(0, BK_MAX).join('');
   // A card (admins): only something open right now.
-  const card = BK_CARD.test(String(req.body?.card || '')) ? String(req.body.card) : null;
-  if (req.body?.card && (!card || !bkIsMod(pid) || !bkShareItems(appMe(req)).some(i => i.key === card))) return res.status(400).json({ error: 'That can’t be shared right now.' });
+  let card = BK_CARD.test(String(req.body?.card || '')) ? String(req.body.card) : null;
+  if (req.body?.card && (!card || !bkIsMod(pid) || !bkShareItems(appMe(req)).some(i => i.key === card))) return res.status(400).json({ error: card && card.startsWith('hi:') ? 'Already posted.' : 'That can’t be shared right now.' });
   if (!body && !card) return res.status(400).json({ error: 'Type a message first.' });
   // The phone's id for this send: a retry after a lost answer gets the stored message back.
   const cid = /^[\w-]{4,40}$/.test(String(req.body?.cid || '')) ? String(req.body.cid) : null;
@@ -7656,7 +7657,17 @@ app.post('/app/barkadahan/messages', requireAppData, requireBarkadahan, express.
   const mentions = [...new Set((Array.isArray(req.body?.mentions) ? req.body.mentions : []).map(String))]
     .filter(id => id !== pid && getPlayerById(id) && body.includes(`@${displayPlayerName(getPlayerById(id).name || '')}`)).slice(0, 10);
   const id = `bk_${now.toString(36)}_${randomBytes(4).toString('hex')}`;
+  // A welcome or birthday card: everyone due right now, on one card, and a bell each.
+  let greeted = null;
+  if (card === 'hi:bday' || card === 'hi:welcome') {
+    const kind = card.slice(3), ids = bkHiDue()[kind];
+    if (!ids.length) return res.status(400).json({ error: 'Already posted.' });
+    const gid = `g${now.toString(36)}${randomBytes(3).toString('hex')}`;
+    addBarkadahanGreeting({ id: gid, kind, ymd: manilaTodayStr(), playerIds: ids, createdBy: pid });
+    card = `hi:${gid}`; greeted = { kind, ids };
+  }
   const m = addBarkadahanMessage({ id, playerId: pid, body, replyTo: reply && !reply.deleted_at ? reply.id : null, mentions, clientId: cid, card });
+  if (greeted) for (const to of greeted.ids) if (to !== pid) createNotification({ playerId: to, type: greeted.kind === 'bday' ? 'barkadahan_birthday' : 'barkadahan_welcome', title: greeted.kind === 'bday' ? 'Happy birthday from the barkada 🎂' : 'The barkada welcomed you 👋', body: 'Open the Barkadahan to see who greeted you.', link: '/app/barkadahan', actorId: pid });
   markBarkadahanRead(pid, m.created_at);
   const shaped = { ...bkShape(m), cid }; // cid: the sender's phone swaps its "Sending…" copy for this
   bkSend({ type: 'msg', m: shaped });
@@ -7734,7 +7745,65 @@ app.get('/app/barkadahan/messages/:id/who', requireAppData, requireBarkadahan, (
 // looking (bkCards), and its buttons post to the site's own /papawis/:id/join | cancel and
 // /games/:id/pick, so every rule stays in one place. When a run's list or a game's picks change,
 // the rooms are told (bkCardChanged) and fetch that card again.
-const BK_CARD = /^(pw|pick):[\w.-]{1,80}$/;
+const BK_CARD = /^(pw|pick|hi):[\w.-]{1,80}$/;
+
+// ── Welcomes and birthdays (2026-11-01, mockup claude.ai/artifact/55vBHqHBfJUwk6dznXuQiY) ──
+// Admins see a chip above the message box while someone is due: a birthday today (active
+// players, the birthday emails' rule) or a member approved in the last 14 days who hasn't had a
+// welcome. The chip (or the + sheet) attaches 'hi:bday' / 'hi:welcome'; posting it makes one
+// card for everyone due ('hi:<greeting id>'), and each of them gets one bell. Everyone greets
+// each person on the card (or all at once); greets don't notify one by one.
+const BK_NEW_DAYS = 14;
+function bkHiDue() {
+  const today = manilaTodayStr();
+  const bdayDone = getBarkadahanGreetedIds('bday', today), welDone = getBarkadahanGreetedIds('welcome');
+  const bday = birthdaysAround(today, { back: 0, forward: 1 }).filter(e => e.inDays === 0 && e.activity.active && !bdayDone.has(e.player.id)).map(e => e.player.id);
+  const welcome = [...new Set(getRecentlyApprovedMembers(BK_NEW_DAYS, 60).members.map(m => m.player_id).filter(Boolean))]
+    .filter(pid => { const p = getPlayerById(pid); return p && p.status !== 'inactive' && !p.banned_at && !welDone.has(pid); });
+  return { bday, welcome };
+}
+const bkFirst = pid => bkPerson(pid).full.split(' ')[0] || 'Someone';
+function bkHiItems() {
+  const due = bkHiDue(), out = [];
+  const names = ids => ids.map(id => bkPerson(id).full).join(', ');
+  if (due.bday.length) out.push({ key: 'hi:bday', kind: 'bday', title: names(due.bday), sub: due.bday.length === 1 ? 'Birthday today' : `${due.bday.length} birthdays today`,
+    chip: due.bday.length === 1 ? `🎂 ${bkFirst(due.bday[0])}’s birthday` : `🎂 ${due.bday.length} birthdays`, act: 'Greet' });
+  if (due.welcome.length) out.push({ key: 'hi:welcome', kind: 'welcome', title: names(due.welcome), sub: due.welcome.length === 1 ? 'New member' : `${due.welcome.length} new members`,
+    chip: due.welcome.length === 1 ? `👋 ${bkFirst(due.welcome[0])} is new` : `👋 ${due.welcome.length} new`, act: 'Welcome' });
+  return out;
+}
+// The card for the player looking.
+function bkHiCard(gid, me) {
+  const g = getBarkadahanGreeting(gid);
+  if (!g) return { gone: true };
+  const greets = getBarkadahanGreets(gid), bday = g.kind === 'bday';
+  const teams = getAllTeams();
+  const people = g.playerIds.map(pid => {
+    const p = getPlayerById(pid), who = bkPerson(pid);
+    const by = greets.filter(r => r.to_id === pid).map(r => r.player_id);
+    const mine = by.includes(me.playerId), others = by.filter(x => x !== me.playerId).map(bkFirst);
+    const named = [...(mine ? ['You'] : []), ...others];
+    const line = !by.length ? (pid === me.playerId ? '' : 'Be the first') : named.length <= 2 ? named.join(' and ') : `${named.slice(0, 2).join(', ')} and ${named.length - 2} other${named.length - 2 === 1 ? '' : 's'}`;
+    const reg = !bday ? getRegistrationByPlayerId(pid) : null;
+    const tn = teams.find(t => t.id === p?.team_id)?.name || '', team = tn.charAt(0) + tn.slice(1).toLowerCase();
+    let pos = ''; try { pos = (JSON.parse(p?.positions || '[]') || [])[0] || ''; } catch {}
+    const sub = bday ? [team].filter(Boolean).join(' · ') : [reg?.approved_at ? `Joined ${manilaFormat(reg.approved_at, { month: 'short', day: 'numeric' })}` : '', pos].filter(Boolean).join(' · ');
+    return { ...who, sub, n: by.length, mine, line, me: pid === me.playerId, faces: by.slice(-3).map(bkPerson), intro: !bday && g.playerIds.length === 1 ? String(p?.writeup || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) : '' };
+  });
+  return { kind: 'hi', id: gid, bday, people };
+}
+app.post('/app/barkadahan/hi/:gid', requireAppData, requireBarkadahan, express.json(), (req, res) => {
+  const pid = req.session.playerPlayerId, g = getBarkadahanGreeting(req.params.gid);
+  if (req.session.impersonating) return res.status(403).json({ error: 'Viewing as a player is read-only.' });
+  if (!g || !barkadahanCardShown(`hi:${g.id}`)) return res.status(404).json({ error: 'That card is gone.' });
+  if (getPlayerById(pid)?.banned_at) return res.status(403).json({ error: bkCantPost(pid) });
+  const to = String(req.body?.to || '');
+  if (to === 'all') addBarkadahanGreets(g.id, g.playerIds.filter(x => x !== pid), pid);
+  else if (g.playerIds.includes(to) && to !== pid) toggleBarkadahanGreet(g.id, to, pid);
+  else return res.status(400).json({ error: 'Can’t greet that one.' });
+  bkCardChanged(`hi:${g.id}`);
+  res.json({ ok: true, cards: bkCards([`hi:${g.id}`], appMe(req)) });
+});
 function bkPickCtx() {
   const all = getAllGames(), pgs = all.map(g => toPickGame(g, gameYmd));
   return { all: pgs, played: pgs.filter(g => g.played), byId: Object.fromEntries(pgs.map(g => [g.id, g])), games: Object.fromEntries(all.map(g => [g.id, g])),
@@ -7783,7 +7852,7 @@ function bkCards(keys, me) {
   for (const key of [...new Set(keys)].filter(k => BK_CARD.test(k)).slice(0, 60)) {
     const kind = key.slice(0, key.indexOf(':')), id = key.slice(key.indexOf(':') + 1);
     try {
-      out[key] = bkCardHtml(kind === 'pw' ? bkPwCard(id, runs ??= appPapawisRuns(me)) : bkPickCard(id, me, ctx ??= bkPickCtx()));
+      out[key] = bkCardHtml(kind === 'pw' ? bkPwCard(id, runs ??= appPapawisRuns(me)) : kind === 'hi' ? bkHiCard(id, me) : bkPickCard(id, me, ctx ??= bkPickCtx()));
     } catch (e) { console.error('[bk card]', key, e.message); out[key] = bkCardHtml({ gone: true }); }
   }
   return out;
@@ -7791,8 +7860,8 @@ function bkCards(keys, me) {
 const bkCardsFor = (messages, me) => bkCards(messages.map(m => m.card).filter(Boolean), me);
 // What an admin can share right now: upcoming Papawis runs and games still taking picks.
 function bkShareItems(me) {
-  const items = appPapawisRuns(me).map(r => ({ key: `pw:${r.id}`, kind: 'pw', title: [r.place, r.startClock || r.time].filter(Boolean).join(' · '),
-    sub: [r.today ? 'Today' : r.day, r.scheduled ? 'sign-ups not open yet' : `${r.filled}/${r.max}`, !r.scheduled && (r.open ? `${r.open} left` : 'Full')].filter(Boolean).join(' · ') }));
+  const items = [...bkHiItems(), ...appPapawisRuns(me).map(r => ({ key: `pw:${r.id}`, kind: 'pw', title: [r.place, r.startClock || r.time].filter(Boolean).join(' · '),
+    sub: [r.today ? 'Today' : r.day, r.scheduled ? 'sign-ups not open yet' : `${r.filled}/${r.max}`, !r.scheduled && (r.open ? `${r.open} left` : 'Full')].filter(Boolean).join(' · ') }))];
   if (picksEnabled()) {
     const ctx = bkPickCtx(), upcoming = getUpcomingGames(Object.values(ctx.games)), counts = getGamePickCounts(upcoming.map(g => g.id));
     for (const g of upcoming) {
