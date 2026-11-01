@@ -2972,6 +2972,8 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .ax__fb .fb-post { display: block; width: max-content; transform-origin: 0 0; }
 .ax__fb:not(.is-loaded) { min-height: 120px; background: var(--surface-2); }
 .ax__fb.is-video:not(.is-loaded) { aspect-ratio: 16 / 9; min-height: 0; }
+/* Facebook keeps a reel's tall space even when it won't play there (e.g. music from its library): dark like its own message, not a white gap. */
+.ax__fb.is-video { background: #1c1e21; }
 .ax__fb-open { display: flex; align-items: center; justify-content: center; height: 40px; margin: 8px 16px 0; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; text-decoration: none; }
 
 /* Feed post types (views/app/feed.js annCard, 2026-11-01): chips, the photo gallery (swipe,
