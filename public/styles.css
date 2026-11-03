@@ -10840,7 +10840,7 @@ html.ppop-lock { overflow: hidden; }
 .pwr-basic.bs-table { min-width: 0; width: 100%; }
 .pwr--site .gd-box + .gd-sd { margin: 10px 0 0; }
 .pwr--site .gd-sd + .gd-sd { margin: 6px 0 0; }
-@media (max-width: 984px) { .pwr--site .gd-cols__rail { order: -1; flex-basis: 100%; } }
+@media (max-width: 959px) { .pwr--site .hs-summary { order: -2; } .pwr--site .pwr-games, .pwr--site .pwx-share { order: -1; } }
 @media (min-width: 761px) { .pwr--site .pcd-row { overflow: visible; scroll-snap-type: none; } .pwr--site .pcd { flex: 1 1 0; width: auto; min-width: 0; } }
 
 /* ── Player cards (views/player-cards.js + public/player-cards.js): the top 3 above a box score,
