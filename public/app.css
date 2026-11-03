@@ -2735,7 +2735,7 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .pwf-save { margin: 16px 16px 0; width: calc(100% - 32px); }
 
 /* ── Papawis results (views/papawis-results.js), in the run screen ── */
-.pwx { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.pwr { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
 .pwx-games { display: flex; flex-direction: column; border-radius: var(--r-in); background: var(--surface-2); overflow: hidden; }
 .pwx-res { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; row-gap: 2px; padding: 10px 12px; }
 .pwx-res + .pwx-res { border-top: 1px solid var(--border); }
@@ -2758,9 +2758,9 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .pwx-pname { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; max-width: 180px; }
 .pwx-pname i { font: 700 14px/1 var(--font-num); font-style: normal; color: var(--muted); }
 .pwx-pname small { font-size: 11px; font-weight: 400; color: var(--muted); }
-.pwx-more summary { min-height: 44px; display: flex; align-items: center; font-size: 14px; font-weight: 600; color: var(--amber-text); cursor: pointer; }
-.pwx-more .pwx-box { margin-top: 8px; }
-.pwx-note { margin: 0; font-size: 12px; color: var(--muted); }
+.pwr-more summary { min-height: 44px; display: flex; align-items: center; font-size: 14px; font-weight: 600; color: var(--amber-text); cursor: pointer; }
+.pwr-more .pwx-box { margin-top: 8px; }
+.pwr-note { margin: 0; font-size: 12px; color: var(--muted); }
 
 /* ── Player cards (views/player-cards.js + public/player-cards.js): the top 3 above a box score,
    and the sheet a row opens. Same markup on the site (styles.css "Player cards"). ── */

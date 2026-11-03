@@ -51,13 +51,13 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
     const rows = people.filter(p => p.games[g.n] && p.games[g.n].side === s).map(p => ({ key: p.key, name: p.name, number: p.number, L: p.games[g.n] })).sort((x, y) => (y.L.pts || 0) - (x.L.pts || 0));
     return rows.length ? table(`Game ${g.n} · ${SIDE[s]} <b class="num">${s === 'light' ? g.a : g.b}</b>`, rows) : '';
   }).join('')).join('');
-  return `<div class="pwx">
+  return `<div class="pwr">
     <div class="pwx-games">${games.map(result).join('')}</div>
     ${topThreeCards(cards, { firstLabel: 'Player of the Day', label: 'Player of the Day · top 3' })}
     ${day}
     ${noSide.length ? table('Didn’t play', [], noSide) : ''}
-    <details class="pwx-more"><summary>Each game</summary>${perGame}</details>
-    <p class="pwx-note">Papawis stats count in Papawis careers and leaders, separate from league totals.${full ? '' : ' Basic stats: points, rebounds and assists.'}</p>
+    <details class="pwr-more"><summary>Each game</summary>${perGame}</details>
+    <p class="pwr-note">Papawis stats count in Papawis careers and leaders, separate from league totals.${full ? '' : ' Basic stats: points, rebounds and assists.'}</p>
     ${playerCardTemplates(cards)}
   </div>`;
 }
@@ -67,12 +67,12 @@ export function papawisResultsBody(results, { profileHref = id => `/players/${en
 // share: { game, stat, locked } for a signed-in player with a line (server.js pwShareFacts): the
 // game page's Share my stats editor, on the run
 export function papawisResultsPage({ run, results, summary = null, share = null }) {
-  return `<div class="container"><div class="page-content">
+  return `<div class="page-content">
     <div class="section-header"><h2>${esc(run.title)} · results</h2><a href="/papawis">All runs</a></div>
     <p class="pwx-sub">${esc([run.day, run.place].filter(Boolean).join(' · '))}</p>
     ${summary ? summaryPanel(summary, 'papawis-run', false) : ''}
     ${share ? `<p class="pwx-share"><button type="button" class="gd-btn gd-btn--amber" data-ssc-open>Share my stats</button></p>${shareStatsModal(share.game, share.stat, share.locked, share.lockText || '')}
     <script>if (/[?&]share=1(&|$)/.test(location.search)) { var b = document.querySelector('[data-ssc-open]'); if (b) setTimeout(function () { b.click(); }, 0); }</script>` : ''}
     ${papawisResultsBody(results)}
-  </div></div>`;
+  </div>`;
 }

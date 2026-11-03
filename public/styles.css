@@ -10789,14 +10789,13 @@ html.ppop-lock { overflow: hidden; }
 
 /* ── Papawis results + Player cards (2026-10-30): the same markup and rules as public/app.css
    (views/papawis-results.js, views/player-cards.js), on the site's tokens. ── */
-.pwx, .pcd-row, .pcd-h, .pcd-sheet { --muted: var(--text-muted); --font-num: 'Saira Condensed', 'Arial Narrow', sans-serif; --r-card: var(--radius-lg); --r-in: 12px; --card-bg: var(--surface); --hair: rgba(255,255,255,.08); --shadow: 0 0 #0000; --card-hi: 0 0 #0000; --amber-text: var(--amber); --loss: #f87171; --safe-b: 0px; --team-white: #d7dce5; --team-black: #6b7486; --shirt-light: #e7eaf0; --shirt-dark: #262d3b; --shirt-edge: rgba(255,255,255,.32); }
+.pwr, .pcd-row, .pcd-h, .pcd-sheet { --muted: var(--text-muted); --font-num: 'Saira Condensed', 'Arial Narrow', sans-serif; --r-card: var(--radius-lg); --r-in: 12px; --card-bg: var(--surface); --hair: rgba(255,255,255,.08); --shadow: 0 0 #0000; --card-hi: 0 0 #0000; --amber-text: var(--amber); --loss: #f87171; --safe-b: 0px; --team-white: #d7dce5; --team-black: #6b7486; --shirt-light: #e7eaf0; --shirt-dark: #262d3b; --shirt-edge: rgba(255,255,255,.32); }
 .pw-shirt { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--shirt-edge, rgba(255,255,255,.32)); }
 .pw-shirt--light { background: var(--shirt-light, #e7eaf0); }
 .pw-shirt--dark { background: var(--shirt-dark, #262d3b); }
 .pwx-sub { margin: -8px 0 16px; color: var(--text-muted); font-size: 14px; }
-.pwx { max-width: 760px; }
 /* ── Papawis results (views/papawis-results.js), in the run screen ── */
-.pwx { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.pwr { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
 .pwx-games { display: flex; flex-direction: column; border-radius: var(--r-in); background: var(--surface-2); overflow: hidden; }
 .pwx-res { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; row-gap: 2px; padding: 10px 12px; }
 .pwx-res + .pwx-res { border-top: 1px solid var(--border); }
@@ -10822,9 +10821,9 @@ html.ppop-lock { overflow: hidden; }
 .pwx-pname { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; max-width: 180px; }
 .pwx-pname i { font: 700 14px/1 var(--font-num); font-style: normal; color: var(--muted); }
 .pwx-pname small { font-size: 11px; font-weight: 400; color: var(--muted); }
-.pwx-more summary { min-height: 44px; display: flex; align-items: center; font-size: 14px; font-weight: 600; color: var(--amber-text); cursor: pointer; }
-.pwx-more .pwx-box { margin-top: 8px; }
-.pwx-note { margin: 0; font-size: 12px; color: var(--muted); }
+.pwr-more summary { min-height: 44px; display: flex; align-items: center; font-size: 14px; font-weight: 600; color: var(--amber-text); cursor: pointer; }
+.pwr-more .pwx-box { margin-top: 8px; }
+.pwr-note { margin: 0; font-size: 12px; color: var(--muted); }
 
 /* ── Player cards (views/player-cards.js + public/player-cards.js): the top 3 above a box score,
    and the sheet a row opens. Same markup on the site (styles.css "Player cards"). ── */
