@@ -10824,6 +10824,24 @@ html.ppop-lock { overflow: hidden; }
 .pwr-more summary { min-height: 44px; display: flex; align-items: center; font-size: 14px; font-weight: 600; color: var(--amber-text); cursor: pointer; }
 .pwr-more .pwx-box { margin-top: 8px; }
 .pwr-note { margin: 0; font-size: 12px; color: var(--muted); }
+/* The site's results page, on the game page's layout (views/papawis-results.js). */
+.pwr--site { margin-top: 0; }
+.pwr--site .pcd-h { margin-bottom: 10px; }
+.pwr-no { margin-right: 8px; font-style: normal; font-weight: 600; color: var(--text-muted); }
+.pwr-also { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.bs-table tr.is-potd > td { background: color-mix(in srgb, var(--amber) 7%, transparent); }
+.pwr-gh { margin: 16px 0 8px; }
+.pwr-gh b { margin-left: auto; }
+.pwr-games { display: flex; flex-direction: column; gap: 10px; padding: 18px; }
+.pwr-games h3 { margin: 0; font-size: 16px; }
+.pwr-games .pwx-games { background: none; border-radius: 0; }
+.pwr-games .pwx-res { padding: 10px 0; }
+.pwx-share .gd-btn { width: 100%; }
+.pwr-basic.bs-table { min-width: 0; width: 100%; }
+.pwr--site .gd-box + .gd-sd { margin: 10px 0 0; }
+.pwr--site .gd-sd + .gd-sd { margin: 6px 0 0; }
+@media (max-width: 984px) { .pwr--site .gd-cols__rail { order: -1; flex-basis: 100%; } }
+@media (min-width: 761px) { .pwr--site .pcd-row { overflow: visible; scroll-snap-type: none; } .pwr--site .pcd { flex: 1 1 0; width: auto; min-width: 0; } }
 
 /* ── Player cards (views/player-cards.js + public/player-cards.js): the top 3 above a box score,
    and the sheet a row opens. Same markup on the site (styles.css "Player cards"). ── */
