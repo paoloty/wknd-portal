@@ -1,69 +1,35 @@
+// /admin/season/liveness: every liveness photo, to compare and clean up (rewrite, 2026-11). Super
+// admin only. Deleting is permanent, which is the point: these photos shouldn't sit around forever
+// once a registration has been reviewed.
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
 import { LIVENESS_SOURCE_LABEL } from './liveness-review.js';
+import { pageHeader, breadcrumb, emptyState, button } from './ui.js';
 
-const ICON_TRASH = `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M12 3.5l-.9 8a1 1 0 0 1-1 .9H3.9a1 1 0 0 1-1-.9L2 3.5"/></svg>`;
+const fmtDate = ts => (ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }) : '');
 
-function fmtDate(ts) {
-  return ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
-}
-
-// Super-admin-only tool for reviewing and purging liveness_captures — separate from the
-// per-registration compare view (liveness-review.js), this is the "see and clean up
-// everything at once" surface. Deletion here is permanent (no soft-delete/undo): the row
-// is gone and photo_data with it, which is the point — this exists so sensitive capture
-// photos don't have to sit around forever once a registration's been reviewed.
 export function adminLivenessListBody({ captures = [] } = {}) {
-  const rows = captures.length === 0
-    ? `<div class="p-12 text-center text-sm text-slate-500">No liveness captures on file.</div>`
-    : `
-<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 p-5">
-  ${captures.map(c => {
-    const name = c.signupName ? displayPlayerName(c.signupName) : (c.player_id ? c.player_id : 'Unlinked');
-    // Player profile is the more useful destination when linked (photo/stats to actually
-    // compare against); fall back to the registration/application page otherwise — both
-    // beat leaving the admin stuck reading a bare reg_id/player_id with nowhere to go.
-    const profileHref = c.player_id ? `/admin/players/${escHtml(c.player_id)}` : `/admin/users/${escHtml(c.reg_id)}`;
-    return `
-  <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden" data-capture-row="${escHtml(c.id)}">
-    <a href="/admin/season/liveness/${escHtml(c.id)}" style="display:block;aspect-ratio:3/4;background:#0d1424">
-      <img src="/admin/season/liveness/${escHtml(c.id)}/photo" alt="Liveness capture" style="width:100%;height:100%;object-fit:cover">
-    </a>
-    <div class="p-3">
-      <a href="${profileHref}" class="text-xs font-semibold text-slate-200 hover:text-brand truncate block no-underline" title="${escHtml(name)}">${escHtml(name)}</a>
-      <div class="text-[10px] text-slate-500 mt-0.5">${escHtml(LIVENESS_SOURCE_LABEL[c.via] || c.via || '')} &middot; Season ${escHtml(String(c.season))} &middot; ${fmtDate(c.captured_at)}</div>
-      <div class="flex items-center justify-between mt-2.5">
-        <a href="/admin/season/liveness/${escHtml(c.id)}" class="text-[11px] font-semibold text-sky-400 hover:text-sky-300 no-underline">Compare</a>
-        <button onclick="lvDelete('${escHtml(c.id)}', ${escHtml(JSON.stringify(name))})" class="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-400 hover:text-rose-300">${ICON_TRASH} Delete</button>
+  const card = c => {
+    const name = c.signupName ? displayPlayerName(c.signupName) : (c.player_id || 'Unlinked');
+    const id = escHtml(c.id);
+    // The player page has a photo and stats to compare with; otherwise the registration.
+    const profile = c.player_id ? `/admin/players/${escHtml(c.player_id)}` : `/admin/users/${escHtml(c.reg_id)}`;
+    return `<div class="alv-card">
+      <a class="alv-card__photo" href="/admin/season/liveness/${id}"><img src="/admin/season/liveness/${id}/photo" alt="Liveness photo of ${escHtml(name)}" loading="lazy"></a>
+      <div class="alv-card__body">
+        <a class="alv-card__name" href="${profile}" title="${escHtml(name)}">${escHtml(name)}</a>
+        <div class="alv-card__sub">${escHtml(LIVENESS_SOURCE_LABEL[c.via] || c.via || '')} · Season ${escHtml(String(c.season))} · ${escHtml(fmtDate(c.captured_at))}</div>
+        <div class="alv-card__actions">
+          ${button('Compare', { size: 'sm', href: `/admin/season/liveness/${c.id}` })}
+          ${button('Delete', { size: 'sm', kind: 'ghost', attrs: `data-post-json="/admin/season/liveness/${id}" data-method="DELETE" data-confirm data-confirm-title="Delete ${escHtml(name)}'s photo?" data-confirm-body="The stored image goes for good. This can't be undone." data-confirm-send="Delete" data-done="Photo deleted."` })}
+        </div>
       </div>
-    </div>
-  </div>`;
-  }).join('')}
-</div>`;
+    </div>`;
+  };
 
-  return `
-<div>
-  <a href="/admin/season/waitlist" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Waitlist</a>
-  <div class="flex items-center justify-between mb-1 mt-2 gap-4 flex-wrap">
-    <h1 class="text-xl font-bold text-slate-100">Liveness Check Photos</h1>
-    <span class="text-[10px] font-bold uppercase tracking-widest text-rose-400 bg-rose-400/10 border border-rose-400/30 rounded-full px-2.5 py-1">Super admin only</span>
-  </div>
-  <p class="text-xs text-slate-500 mb-5">${captures.length} capture${captures.length === 1 ? '' : 's'} on file. Deleting a photo here is permanent — it removes the stored image entirely, not just from view.</p>
-  <div class="bg-admin-surface border border-admin-border rounded-lg">
-    ${rows}
-  </div>
-</div>
-<script>
-async function lvDelete(id, name) {
-  if (!confirm('Permanently delete the liveness photo for ' + name + '? This cannot be undone.')) return;
-  const row = document.querySelector('[data-capture-row="' + id + '"]');
-  try {
-    const r = await fetch('/admin/season/liveness/' + encodeURIComponent(id), { method: 'DELETE' });
-    if (!r.ok) { alert('Could not delete — try again.'); return; }
-    if (row) row.remove();
-  } catch (e) {
-    alert('Network error — try again.');
-  }
-}
-</script>`;
+  return `<div class="aui-page">
+    ${breadcrumb([{ label: 'Sign-ups', href: '/admin/season/waitlist' }, { label: 'Liveness photos' }])}
+    ${pageHeader({ title: 'Liveness photos', sub: `${captures.length} on file. Only super admins can see these. Deleting one removes the stored image for good.` })}
+    ${captures.length ? `<div class="alv-grid">${captures.map(card).join('')}</div>` : emptyState({ title: 'No liveness photos on file' })}
+  </div>`;
 }

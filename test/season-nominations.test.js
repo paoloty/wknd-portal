@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cleanNominations, summarizeNominations } from '../lib/season-nominations.js';
+import { cleanNominations, summarizeNominations, namedByText } from '../lib/season-nominations.js';
 import { playerAuditRoute } from '../lib/activity-log.js';
 
 const validIds = new Set(['a', 'b', 'c', 'me']);
@@ -55,4 +55,11 @@ test('answers stay out of the sign-up row, and off the player-facing sign-up sum
   const form = readFileSync(new URL('views/season-signup.js', root), 'utf8');
   assert.ok(form.includes('name="avoid_1"'));
   assert.ok(!form.includes('existing.avoid'));
+});
+
+test('the one line admins read', () => {
+  const s = summarizeNominations(rows, { viewerPlayerId: 'admin' });
+  assert.equal(namedByText(s.x), 'Ana, Ben');
+  assert.match(namedByText(s.admin), /^1 person \(you can't see who/);
+  assert.equal(namedByText(undefined), 'No one');
 });

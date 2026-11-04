@@ -1,174 +1,80 @@
+// /admin/season/signups/:id: one member's sign-up (rewrite, 2026-11). Everything the Sign-ups list
+// leaves out, and the Confirm / Reject / Withdraw buttons.
 import { escHtml } from '../layout.js';
-import { emailStatusChip } from './email-status.js';
 import { displayPlayerName } from '../utils.js';
+import { emailStatus, fmtAgo } from './email-status.js';
 import { REVIEW_TAG_LABELS } from '../../lib/assessment-scoring.js';
+import { namedByText } from '../../lib/season-nominations.js';
+import { pageHeader, breadcrumb, section, banner, badge, button, facts, field, formCard, formSection } from './ui.js';
 
-const STATUS_BADGE = {
-  waitlisted: `<span style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WAITLISTED</span>`,
-  confirmed:  `<span style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">CONFIRMED</span>`,
-  rejected:   `<span style="background:#64748b22;color:#64748b;border:1px solid #64748b44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">REJECTED</span>`,
-  withdrawn:  `<span style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">WITHDRAWN</span>`,
-};
-
-const TAG_COLOR = { '': '#64748b', no_concerns: '#22c55e', worth_conversation: '#f59332', discuss_admin: '#f87171' };
-function tagPill(tag) {
-  const color = TAG_COLOR[tag] || TAG_COLOR[''];
-  return `<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap">${escHtml((REVIEW_TAG_LABELS[tag] || 'Not reviewed').toUpperCase())}</span>`;
-}
-
-const ALIGNMENT_FLAG_BADGE = {
-  optimistic: `<span title="Self-rated a tier above their actual rating" style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">OPTIMISTIC</span>`,
-  gap:        `<span title="Self-rated two or more tiers above their actual rating" style="background:#f8717122;color:#f87171;border:1px solid #f8717144;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">SELF-RATING GAP</span>`,
-};
+const STATUS = { waitlisted: ['Waitlisted', 'amber'], confirmed: ['Confirmed', 'green'], rejected: ['Rejected', 'gray'], withdrawn: ['Withdrawn', 'red'] };
+const TAG_TONE = { no_concerns: 'green', worth_conversation: 'amber', discuss_admin: 'red' };
+const ALIGNMENT = { optimistic: ['Optimistic', 'amber'], gap: ['Self-rating gap', 'red'] };
+const EMAIL_TONE = { complained: 'red', bounced: 'red', failed: 'red', delayed: 'amber', clicked: 'green', opened: 'green' };
+const none = '<span class="asr-none">None</span>';
 
 function fmtDate(ts) {
-  return ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+  return ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' }) : '—';
 }
 
-function field(label, value) {
-  return `<div><dt class="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">${escHtml(label)}</dt><dd class="text-slate-200 text-sm">${value}</dd></div>`;
+function emailFact(row) {
+  const st = emailStatus(row);
+  if (!st) return null;
+  return ['Season email', `<span class="aui-cell__badges">${badge(`${row.kind === 'season_confirmed' ? "You're in" : 'Not selected'}: ${st.label}`, EMAIL_TONE[st.key] || 'gray')}<span class="asr-none">${escHtml(fmtAgo(st.at))}</span></span>`];
 }
 
-// The detail counterpart to the trimmed waitlist table — Jersey, Signed Up, and Assessment
-// dropped off the list view to keep it scannable, but nothing was actually removed from the
-// app: it all lives here, one click away via the member's name.
-// seasonEmail: latest email_log row for this signup's Start Season email (confirmed or not
-// selected), or null if it hasn't gone out.
-export function adminSignupDetailBody({ signup, isSuperAdmin = false, seasonEmail = null } = {}) {
-  const s = signup;
+function assessmentFact(s) {
+  if (!s.assessment) return ['Assessment', none];
+  const r = s.reviewSummary;
+  const flag = ALIGNMENT[s.alignmentFlag];
+  return ['Assessment', `<a class="aui-cell__badges" href="/admin/season/assessments/${escHtml(s.assessment.id)}">${badge(REVIEW_TAG_LABELS[r?.tag ?? ''] || 'Not reviewed', TAG_TONE[r?.tag] || 'gray')}${flag ? badge(...flag) : ''}${r?.count ? `<span class="asr-none">${r.yes} yes, ${r.no} no</span>` : ''}</a>`];
+}
+
+function livenessFact(s, isSuperAdmin) {
+  if (s.liveness) return ['Liveness photo', isSuperAdmin ? `<a href="/admin/season/liveness/${escHtml(s.liveness.id)}">View photo</a>` : '<span class="asr-none">On file, super admin only</span>'];
+  return ['Liveness photo', s.liveness_skipped_at ? '<span class="asr-none">Skipped</span>' : none];
+}
+
+const pref = s => (s.team_pref === 'stick' ? `Stick${s.prev_team_name ? ` (${escHtml(s.prev_team_name)})` : ''}` : s.team_pref === 'reshuffle' ? 'Shuffle' : none);
+
+// seasonEmail: latest email_log row for this sign-up's start-of-season email, or null.
+// started: the season has started, so a status change here charges and emails nobody.
+// named: this player's entry from summarizeNominations, or undefined.
+export function adminSignupDetailBody({ signup: s, isSuperAdmin = false, seasonEmail = null, started = false, named } = {}) {
   const name = displayPlayerName(s.full_name || '—');
+  const post = (action, label, opts, extra = '') => button(label, { ...opts, attrs: `data-post-json="/admin/season/signups/${escHtml(s.id)}/${action}" ${extra}` });
+  const lateNote = started ? ' The season has already started: this charges, refunds and emails nobody. Handle those in the Ledger.' : '';
+  const actions = [
+    s.status !== 'confirmed' ? post('confirm', 'Confirm', { kind: 'primary' }, `data-done="Confirmed."${started ? ` data-confirm data-confirm-title="Confirm ${escHtml(name)}?" data-confirm-body="${escHtml(lateNote.trim())}" data-confirm-send="Confirm"` : ''}`) : '',
+    s.status === 'confirmed' ? post('withdraw', 'Withdraw', { kind: 'danger' }, `data-done="Withdrawn." data-confirm data-confirm-title="Withdraw ${escHtml(name)}?" data-confirm-body="${escHtml(`This frees their spot and promotes the earliest waitlisted sign-up.${lateNote}`)}" data-confirm-send="Withdraw"`) : '',
+    s.status !== 'rejected' ? post('reject', 'Reject', {}, `data-done="Rejected."${s.status === 'confirmed' ? ` data-confirm data-confirm-title="Reject ${escHtml(name)}?" data-confirm-body="${escHtml(`This takes them off their team.${lateNote}`)}" data-confirm-send="Reject"` : ''}`) : '',
+  ].join('');
 
-  const teamPref = s.team_pref === 'stick'
-    ? `<span class="inline-flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full" style="background:${escHtml(s.prev_team_color || '#64748b')}"></span><span class="text-sky-400 font-medium">Stick</span>${s.prev_team_name ? `<span class="text-slate-600">(${escHtml(s.prev_team_name)})</span>` : ''}</span>`
-    : s.team_pref === 'reshuffle'
-      ? `<span class="text-violet-400 font-medium">Shuffle</span>`
-      : `<span class="text-slate-600">—</span>`;
+  const rows = [
+    ['Status', badge(...(STATUS[s.status] || [s.status, 'gray']))],
+    ['Season', escHtml(String(s.season))],
+    ['Signed up', escHtml(fmtDate(s.created_at))],
+    ['Jersey top', s.jersey_top ? escHtml(s.jersey_top) : none],
+    ['Jersey shorts', s.jersey_shorts ? escHtml(s.jersey_shorts) : none],
+    !isSuperAdmin && ['Team preference', pref(s)],
+    ['League shuffle vote', s.reshuffle_vote === 'yes' ? 'Yes' : s.reshuffle_vote === 'no' ? 'No' : none],
+    ['Balance', s.has_balance ? badge(`₱${Number(s.balance_amt).toLocaleString()}`, 'amber') : none],
+    assessmentFact(s),
+    livenessFact(s, isSuperAdmin),
+    ["Wouldn't play with them again", named ? escHtml(namedByText(named)) : 'No one'],
+    emailFact(seasonEmail),
+  ];
 
-  // Editable for super admins — corrects a registrant's own poll answer after the fact
-  // (e.g. they meant the other option) without needing a raw SQL fix.
-  const teamPrefField = isSuperAdmin ? `
-    <div>
-      <dt class="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Team Preference</dt>
-      <dd class="flex items-center gap-2 flex-wrap">
-        <select id="team-pref-select" class="admin-input" style="width:auto">
-          <option value="" ${!s.team_pref ? 'selected' : ''}>—</option>
-          <option value="stick" ${s.team_pref === 'stick' ? 'selected' : ''}>Stick${s.prev_team_name ? ` (${escHtml(s.prev_team_name)})` : ''}</option>
-          <option value="reshuffle" ${s.team_pref === 'reshuffle' ? 'selected' : ''}>Shuffle</option>
-        </select>
-        <button onclick="saveTeamPref()" class="text-[11px] font-semibold text-brand hover:opacity-80 transition-opacity">Save</button>
-        <span id="team-pref-msg" class="text-[11px] text-slate-500"></span>
-      </dd>
-    </div>` : field('Team Preference', teamPref);
-
-  const reshuffleVote = s.reshuffle_vote === 'yes' ? '<span class="text-emerald-400 font-medium">Yes</span>'
-    : s.reshuffle_vote === 'no' ? '<span class="text-rose-400 font-medium">No</span>'
-    : '<span class="text-slate-600">—</span>';
-
-  const balance = s.has_balance
-    ? `<span class="text-amber-400 font-medium">⚠ ₱${Number(s.balance_amt).toLocaleString()}</span>`
-    : '<span class="text-slate-600">—</span>';
-
-  const reviewSummary = s.reviewSummary;
-  const voteTally = reviewSummary && reviewSummary.count > 0
-    ? `<span class="text-[11px] text-slate-500">${reviewSummary.yes}&#10003; &middot; ${reviewSummary.no}&#10007; &middot; ${reviewSummary.count} review${reviewSummary.count === 1 ? '' : 's'}</span>`
-    : '';
-  const assessment = s.assessment
-    ? `<a href="/admin/season/assessments/${escHtml(s.assessment.id)}" class="no-underline hover:opacity-80 inline-flex flex-col items-start gap-1.5">
-        <span class="flex items-center gap-2">${tagPill(reviewSummary?.tag ?? '')}${ALIGNMENT_FLAG_BADGE[s.alignmentFlag] || ''}</span>
-        ${voteTally}
-      </a>`
-    : '<span class="text-slate-600 text-sm">—</span>';
-
-  const liveness = s.liveness
-    ? (isSuperAdmin
-        ? `<a href="/admin/season/liveness/${escHtml(s.liveness.id)}" class="text-sky-400 hover:text-sky-300 text-sm no-underline">📷 View liveness capture</a>`
-        : `<span class="text-slate-500 text-sm">📷 On file — super admin only</span>`)
-    : s.liveness_skipped_at ? '<span class="text-slate-600 text-sm">📷 Skipped by registrant</span>' : '<span class="text-slate-600 text-sm">—</span>';
-
-  const actions = `
-  <div class="flex items-center gap-2">
-    ${s.status === 'confirmed' ? `<button class="admin-btn admin-btn--sm admin-btn--danger signup-withdraw-btn" data-id="${escHtml(s.id)}">Withdraw</button>` : ''}
-    ${s.status !== 'confirmed' ? `<button class="admin-btn admin-btn--sm admin-btn--success signup-confirm-btn" data-id="${escHtml(s.id)}">Confirm</button>` : ''}
-    ${s.status !== 'rejected'  ? `<button class="admin-btn admin-btn--sm admin-btn--muted signup-reject-btn" data-id="${escHtml(s.id)}">Reject</button>` : ''}
+  return `<div class="aui-page">
+    ${breadcrumb([{ label: 'Sign-ups', href: '/admin/season/waitlist' }, { label: name }])}
+    ${pageHeader({ title: name, sub: [s.email, s.phone].filter(Boolean).join(' · '), actionsHtml: actions })}
+    ${s.contact_changed_at ? banner('warn', `Emergency contact or birthday differs from what's on file.${s.contact_change_note ? ` ${s.contact_change_note}` : ''}`) : ''}
+    ${section({ title: 'Sign-up', bodyHtml: `<div class="aui-panel">${facts(rows)}</div>` })}
+    ${s.comments ? section({ title: 'Comments', bodyHtml: `<div class="aui-panel"><span class="asu-comment">${escHtml(s.comments)}</span></div>` }) : ''}
+    ${isSuperAdmin ? `<form data-json-action="/admin/season/signups/${escHtml(s.id)}/team-pref" data-done="Saved.">${formCard(formSection({
+      title: 'Team preference',
+      sub: 'Correct their answer if they picked the wrong one.',
+      bodyHtml: `${field({ label: 'Stick or shuffle', name: 'team_pref', type: 'select', value: s.team_pref || '', options: [['', 'No answer'], ['stick', `Stick${s.prev_team_name ? ` (${s.prev_team_name})` : ''}`], ['reshuffle', 'Shuffle']] })}<div class="aui-row">${button('Save', { kind: 'primary', type: 'submit' })}</div>`,
+    }))}</form>` : ''}
   </div>`;
-
-  return `
-<div>
-  <a href="/admin/season/waitlist" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Waitlist</a>
-  <div class="flex items-center justify-between mb-1 mt-2 gap-4 flex-wrap">
-    <h1 class="text-xl font-bold text-slate-100 flex items-center gap-2">${escHtml(name)} ${STATUS_BADGE[s.status] ?? ''}</h1>
-  </div>
-  <div class="text-sm text-slate-500 mb-1">${escHtml(s.email || '')}${s.phone ? ` &middot; ${escHtml(s.phone)}` : ''}</div>
-  ${s.contact_changed_at ? `<div class="text-[11px] text-amber-400 mt-1" title="${escHtml(s.contact_change_note || '')}">⚠ Emergency contact or birthday differs from what is on file</div>` : ''}
-
-  <div class="bg-admin-surface border border-admin-border rounded-lg p-5 mt-5">
-    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Signup Details</div>
-    <dl class="grid grid-cols-2 gap-x-6 gap-y-4">
-      ${field('Season', escHtml(String(s.season)))}
-      ${field('Signed Up', escHtml(fmtDate(s.created_at)))}
-      ${field('Jersey Top', s.jersey_top ? escHtml(s.jersey_top) : '<span class="text-slate-600">—</span>')}
-      ${field('Jersey Shorts', s.jersey_shorts ? escHtml(s.jersey_shorts) : '<span class="text-slate-600">—</span>')}
-      ${teamPrefField}
-      ${field('League Shuffle Vote', reshuffleVote)}
-      ${field('Balance', balance)}
-      ${field('Assessment', assessment)}
-      ${field('Liveness Photo', liveness)}
-      ${seasonEmail ? field('Season Email', emailStatusChip(seasonEmail, { prefix: seasonEmail.kind === 'season_confirmed' ? "You're in" : 'Not selected' })) : ''}
-    </dl>
-    ${s.comments ? `<div class="mt-4 pt-4 border-t border-admin-border"><div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Comments</div><div class="text-sm text-slate-300 leading-relaxed">${escHtml(s.comments)}</div></div>` : ''}
-  </div>
-
-  <div class="bg-admin-surface border border-admin-border rounded-lg p-5 mt-5">
-    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Actions</div>
-    ${actions}
-  </div>
-</div>
-<script>
-(function() {
-  var teamPrefSelect = document.getElementById('team-pref-select');
-  if (teamPrefSelect) {
-    window.saveTeamPref = function() {
-      var msg = document.getElementById('team-pref-msg');
-      msg.style.color = 'var(--text-muted)'; msg.textContent = 'Saving…';
-      fetch('/admin/season/signups/' + ${JSON.stringify(s.id)} + '/team-pref', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_pref: teamPrefSelect.value })
-      }).then(function(r) {
-        if (!r.ok) throw new Error();
-        msg.style.color = '#22c55e'; msg.textContent = 'Saved.';
-        setTimeout(function() { location.reload(); }, 500);
-      }).catch(function() {
-        msg.style.color = '#f87171'; msg.textContent = 'Error.';
-      });
-    };
-  }
-
-  document.querySelectorAll('.signup-confirm-btn').forEach(function(b) {
-    b.addEventListener('click', function() {
-      this.textContent = '…'; this.disabled = true;
-      fetch('/admin/season/signups/' + this.dataset.id + '/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-        .then(function() { location.reload(); });
-    });
-  });
-  document.querySelectorAll('.signup-reject-btn').forEach(function(b) {
-    b.addEventListener('click', function() {
-      this.textContent = '…'; this.disabled = true;
-      fetch('/admin/season/signups/' + this.dataset.id + '/reject', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-        .then(function() { location.reload(); });
-    });
-  });
-  document.querySelectorAll('.signup-withdraw-btn').forEach(function(b) {
-    b.addEventListener('click', function() {
-      if (!confirm('Withdraw this player and free their confirmed spot? The earliest waitlisted signup will be promoted automatically. If this player has already been charged (season started), you\\'ll need to handle any refund/credit manually in the Ledger — this does not touch it.')) return;
-      this.textContent = '…'; this.disabled = true;
-      fetch('/admin/season/signups/' + this.dataset.id + '/withdraw', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
-        .then(function(res) {
-          if (!res.ok) { alert(res.d.error || 'Could not withdraw.'); location.reload(); return; }
-          location.reload();
-        });
-    });
-  });
-})();
-</script>`;
 }

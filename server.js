@@ -23086,6 +23086,12 @@ app.get('/season-signup', (req, res) => {
   }));
 });
 
+// "Wouldn't play with again" answers as an admin may see them. An elevated admin is also a player;
+// the shared super-admin login isn't.
+function seasonNominationsFor(season, req) {
+  return summarizeNominations(getSeasonNominations(season).map(n => ({ nominee_player_id: n.nominee_player_id, nominator_name: displayPlayerName(n.nominator_full_name) || 'A member' })), { viewerPlayerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' });
+}
+
 // Who a member can name on the sign-up: active players, not themselves.
 function seasonAvoidOptions(reg) {
   return getAllPlayers().filter(p => p.status !== 'inactive' && p.id !== reg.player_id)
@@ -23559,9 +23565,9 @@ app.get('/admin/seasons', requireAuth, (req, res) => {
   });
 
   res.send(renderAdminPage(req, {
-    title: 'Seasons',
+    title: 'All seasons',
     currentPath: '/admin/seasons',
-    body: adminSeasonsBody({ rows, currentSeason, signupSeason, signupOpen }),
+    body: adminSeasonsBody({ rows, currentSeason, signupSeason, signupOpen, query: req.query }),
   }));
 });
 
@@ -23676,8 +23682,7 @@ app.get('/admin/season/candidates', requireAuth, (req, res) => {
     currentPath: '/admin/season/candidates',
     body: adminSeasonCandidatesBody({
       data, capacity, query: req.query,
-      // An elevated admin is also a player; the shared super-admin login isn't.
-      nominations: summarizeNominations(getSeasonNominations(data.target).map(n => ({ nominee_player_id: n.nominee_player_id, nominator_name: displayPlayerName(n.nominator_full_name) || 'A member' })), { viewerPlayerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' }),
+      nominations: seasonNominationsFor(data.target, req),
     }),
   }));
 });
@@ -23743,7 +23748,11 @@ app.get('/admin/season/signups/:id', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: displayPlayerName(signup.full_name || 'Signup'),
     currentPath: '/admin/season/waitlist',
-    body: adminSignupDetailBody({ signup, isSuperAdmin, seasonEmail: getLatestEmailForRef(['season_confirmed', 'season_not_selected'], signup.id) }),
+    body: adminSignupDetailBody({
+      signup, isSuperAdmin, seasonEmail: getLatestEmailForRef(['season_confirmed', 'season_not_selected'], signup.id),
+      started: String(signup.season) !== getSetting('signup_target_season', '') || getSetting('season_draft_status', '') === 'started',
+      named: seasonNominationsFor(signup.season, req)[signup.player_id],
+    }),
   }));
 });
 
@@ -23757,7 +23766,7 @@ app.get('/admin/season/assessments/:id', requireAuth, (req, res) => {
   const myReview = reviews.find(r => r.reviewer_reg_id === me.reviewer_reg_id) || null;
   const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   res.send(renderAdminPage(req, {
-    title: 'Mindset & Self-Assessment',
+    title: 'Assessment',
     currentPath: '/admin/season/waitlist',
     body: adminAssessmentReviewBody({ assessment: a, signup, rating, reviews, myReview, isSuperAdmin }),
   }));
@@ -23811,7 +23820,7 @@ app.get('/admin/season/liveness', requireSuperAdmin, (req, res) => {
     }
   }
   res.send(renderAdminPage(req, {
-    title: 'Liveness Check Photos',
+    title: 'Liveness photos',
     currentPath: '/admin/season/waitlist',
     body: adminLivenessListBody({ captures }),
   }));
@@ -23845,7 +23854,7 @@ app.get('/admin/season/liveness/:id', requireSuperAdmin, (req, res) => {
   // season_signups row, but the registration itself always exists.
   const registration = getRegistration(capture.reg_id);
   res.send(renderAdminPage(req, {
-    title: 'Liveness Check',
+    title: 'Liveness check',
     currentPath: '/admin/season/waitlist',
     body: adminLivenessReviewBody({ capture, signup, registration, back: req.query.from === 'user' ? 'user' : '' }),
   }));

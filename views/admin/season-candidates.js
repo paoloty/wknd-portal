@@ -3,7 +3,7 @@
 // opening to its full record. The row menu ticks contributions (setup, refereeing, other);
 // nothing else here changes data. Temporarily under Season in the admin nav.
 import { escHtml } from '../layout.js';
-import { NOMINATION_FLAG_AT } from '../../lib/season-nominations.js';
+import { NOMINATION_FLAG_AT, namedByText } from '../../lib/season-nominations.js';
 import { pageHeader, pageTabs, dataGrid, badge, avatar, banner, statStrip, facts } from './ui.js';
 import { RULES, MARK_LABELS, PLUS_LABELS, CONTRIBUTION_KINDS } from '../../lib/season-candidates.js';
 
@@ -47,12 +47,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nomi
   // No season fee in either graded season (new, Papawis-only, or away): nothing for or against them.
   const noFeeHistory = r => !r.pay.some(Boolean);
   const named = r => nominations[r.id]?.count || 0;
-  const namedBy = r => {
-    const n = nominations[r.id];
-    if (!n) return 'No one';
-    if (n.hidden) return `${n.count} ${n.count === 1 ? 'person' : 'people'} (you can\'t see who, since it\'s you)`;
-    return escHtml(n.names.join(', '));
-  };
+  const namedBy = r => escHtml(namedByText(nominations[r.id]));
 
   // Not active online already shows in the Online column, so it has no tag of its own.
   const flags = r => [

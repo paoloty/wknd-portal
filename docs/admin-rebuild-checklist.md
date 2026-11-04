@@ -42,15 +42,15 @@ Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages a
 | 17 | Awards | MVP podium ballot | /admin/awards/podium | n/a | [ ] |
 | 18 | Awards | Award graphic editor | /admin/awards/:season/:type/graphic | done | [x] |
 | 19 | Awards | Award photo picker | /admin/award-photo/… | n/a | [ ] |
-| 20 | Season | All seasons | /admin/seasons | n/a | [ ] |
+| 20 | Season | All seasons | /admin/seasons | n/a | [x] |
 | 21 | Season | Set up (with the step bar) | /admin/season | done (regroup mockup) | [x] |
-| 22 | Season | Signup detail | /admin/season/signups/:id | n/a | [ ] |
+| 22 | Season | Signup detail | /admin/season/signups/:id | n/a | [x] |
 | 23 | Season | Sign-ups (was Waitlist) | /admin/season/waitlist | done (regroup mockup) | [x] |
 | 24 | Season | Returning | /admin/season/returning | n/a | [x] |
 | 25 | Season | Comments | /admin/season/comments | n/a | [x] |
 | 26 | Season | Assessment reviews | /admin/season/assessment-reviews | n/a | [x] |
-| 27 | Season | Assessment detail | /admin/season/assessments/:id | n/a | [ ] |
-| 28 | Season | Liveness checks and detail | /admin/season/liveness | n/a | [ ] |
+| 27 | Season | Assessment detail | /admin/season/assessments/:id | n/a | [x] |
+| 28 | Season | Liveness checks and detail | /admin/season/liveness | n/a | [x] |
 | 29 | Season | Team builder | /admin/season/teams | done | [x] |
 | 30 | Season | Team builder review | /admin/season/teams/review | n/a | [x] |
 | 31 | Season | Team builder sandbox | /admin/season/teams/sandbox | done | [x] |
