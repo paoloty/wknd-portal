@@ -13162,7 +13162,7 @@ app.post('/admin/ledger/bulk-charge', requireAuth, express.json(), (req, res) =>
 
 app.get('/admin/finance', requireAuth, (req, res) => {
   const seasons = getLedgerSeasons();
-  const season  = req.query.season || seasons[0] || '';
+  const season  = ledgerSeasonFromQuery(req.query.season, seasons);
   const summary = season ? getSeasonSummary(season) : {};
   const quota   = season ? getSeasonQuota(season) : 0;
   // Balances are never season-scoped, same rule as /admin/ledger: a payment logged without
@@ -13191,7 +13191,7 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Money',
     currentPath: '/admin/finance',
-    body: adminFinanceDashBody({ seasons, season, summary, quota, quotaPlayerCount, quotaPaid, balMap, players, allPlayers, pending, categoryTotals, teamTotals, recentTx }),
+    body: adminFinanceDashBody({ seasons, season, summary, quota, quotaPlayerCount, quotaPaid, balMap, players, allPlayers, pending, categoryTotals, teamTotals, recentTx, colorById: adminTeamColorByPlayer() }),
   }));
 });
 

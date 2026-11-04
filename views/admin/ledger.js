@@ -10,19 +10,19 @@ import { outlineDarkRings } from './season-teams.js';
 import { pageHeader, dataGrid, section, badge, button, drawer, field, fieldGrid, segmented, menu, avatar, playerPicker, breadcrumb, personStrip, progress } from './ui.js';
 
 const attr = s => escHtml(String(s ?? ''));
-const EPS = 0.005;
+export const EPS = 0.005;
 const money = n => Math.abs(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
-const peso = n => `₱${money(n)}`;
+export const peso = n => `₱${money(n)}`;
 const METHODS = [['cash', 'Cash'], ['gcash', 'GCash'], ['bank', 'Bank transfer'], ['other', 'Other']];
 const methodLabel = m => (METHODS.find(([k]) => k === m) || [null, m || ''])[1];
 const thisYear = new Date().getFullYear();
-const fmtDate = d => {
+export const fmtDate = d => {
   if (!d) return '';
   const dt = new Date(`${d}T00:00:00`);
   if (Number.isNaN(dt.getTime())) return String(d);
   return dt.toLocaleDateString('en-US', dt.getFullYear() === thisYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
 };
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const fmtStamp = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
 
 // Balance convention (player_financials / getAllBalances): positive = owes, negative = credit.
@@ -49,9 +49,9 @@ const shotLink = tx => (isSafeScreenshot(tx.screenshot_url)
   : '');
 
 // Canonical category for a stored value ("papawis" → "Papawis"); '' when it isn't one of ours.
-const canonCategory = c => PAYMENT_CATEGORIES.find(x => x.toLowerCase() === String(c || '').trim().replace(/[_-]+/g, ' ').toLowerCase()) || '';
+export const canonCategory = c => PAYMENT_CATEGORIES.find(x => x.toLowerCase() === String(c || '').trim().replace(/[_-]+/g, ' ').toLowerCase()) || '';
 
-function seasonSwitch(hrefFor, seasons, season) {
+export function seasonSwitch(hrefFor, seasons, season) {
   const opts = [['', 'All time'], ...seasons.map(s => [s, `S${s}`])];
   return `<nav class="alg-seasons" aria-label="Season">${opts.map(([v, l]) => {
     const on = String(v) === String(season);
@@ -75,7 +75,7 @@ function feeCell(paid, quota) {
 }
 
 // ── To confirm: pending entries, oldest first, confirmed or voided in place ───────────────
-function confirmQueue(pending, colorById, { showName = true, season = '' } = {}) {
+export function confirmQueue(pending, colorById, { showName = true, season = '' } = {}) {
   if (!pending.length) return '<div class="aui-panel alg-clear">✓ Nothing waiting. Every payment is confirmed.</div>';
   return `<div class="alg-queue">${pending.map(tx => {
     const name = displayPlayerName(tx.player_name || '');
@@ -236,7 +236,7 @@ export function adminLedgerBody({
 
   return outlineDarkRings(`<div class="aui-page alg" data-alg-page>
     ${pageHeader({
-      eyebrow: 'Finance', title: 'Ledger',
+      title: 'Ledger',
       sub: 'Every player’s balance. Balances are all-time; the season pick changes the fee progress and what’s collected.',
       actionsHtml: `${seasonSwitch(s => `/admin/ledger?season=${encodeURIComponent(s)}`, seasons, season)}${button('Copy summary', { kind: 'secondary', attrs: `data-alg-copy="${attr(summaryText)}"` })}`,
     })}

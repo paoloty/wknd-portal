@@ -60,9 +60,9 @@ Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages a
 | 35 | Marketplace | Listings | /admin/marketplace | n/a | [ ] |
 | 36 | Marketplace | New and edit group buy | /admin/marketplace/new | n/a | [ ] |
 | 37 | Marketplace | Listing page | /admin/marketplace/:id | n/a | [ ] |
-| 38 | Finance | Summary | /admin/finance | n/a | [ ] |
+| 38 | Finance | Summary | /admin/finance | done (regroup mockup) | [x] |
 | 39 | Finance | Ledger | /admin/ledger | done | [x] |
-| 40 | Finance | GCash | /admin/finance/gcash | n/a | [ ] |
+| 40 | Finance | GCash | /admin/finance/gcash | n/a | [x] |
 | 41 | Content | Posts | /admin/posts | n/a | [ ] |
 | 42 | Content | Coach notes | /admin/coach-notes | n/a | [ ] |
 | 43 | Content | Compares | /admin/compare | n/a | [ ] |
@@ -126,5 +126,5 @@ Every admin page follows these:
 
 | | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Original list | 52 | 0 | 10 | 19 |
+| Original list | 52 | 0 | 10 | 21 |
 | Added since | 12 | 0 | - | 12 |

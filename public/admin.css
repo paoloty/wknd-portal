@@ -3256,3 +3256,20 @@ select.aui-input { padding-left: 9px; }
 .aset + .aset { margin-top: var(--aui-gap); }
 .aui-page > .aset + .aset { margin-top: 0; }
 .aui-switch[aria-checked="true"] span { background: #fff; }
+
+/* Money: Summary and GCash (views/admin/finance-dash.js, finance-gcash.js) */
+.amny-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--aui-gap); align-items: start; }
+.amny-fee .aui-progress__track { max-width: none; }
+.amny .aui-table th.amny-num, .amny .aui-table td.amny-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.amny-nowrap { white-space: nowrap; }
+.amny-link { color: var(--text) !important; text-decoration: none; font-weight: 600; }
+.amny-link:hover { color: var(--amber) !important; }
+.amny-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255,255,255,.18); }
+.amny-qr { display: block; border-radius: 8px; background: #fff; }
+.amny-gcash { display: flex; flex-direction: column; gap: var(--aui-gap-sm); }
+.amny-gcash__save { display: flex; justify-content: flex-end; }
+@media (max-width: 720px) {
+  .amny-two { grid-template-columns: minmax(0, 1fr); }
+  .amny-desk { display: none; }
+}
+@media (max-width: 720px) { .amny .aui-kpis > :last-child:nth-child(odd) { grid-column: 1 / -1; } }
