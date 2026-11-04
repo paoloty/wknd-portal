@@ -21,7 +21,7 @@ export function adminLivenessReviewBody({ capture, signup, registration, back = 
   const profileHref = playerId ? `/admin/players/${escHtml(playerId)}` : `/admin/users/${escHtml(capture.reg_id)}`;
 
   return `
-<div style="max-width:640px">
+<div>
   ${back === 'user'
     ? `<a href="/admin/users/${escHtml(capture.reg_id)}" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Registration</a>`
     : `<a href="/admin/season/waitlist" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Waitlist</a>`}

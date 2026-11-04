@@ -264,7 +264,7 @@ function marketplaceListingForm({ mode, listing = null, jerseySizes = [], groups
   const isGrouped = !!currentGroupId;
 
   return `
-<form id="mkt-form" class="bg-admin-surface border border-admin-border rounded-lg p-5 max-w-lg">
+<form id="mkt-form" class="bg-admin-surface border border-admin-border rounded-lg p-5">
   <div class="mb-4">
     <label class="admin-field-label">Title</label>
     <input type="text" name="title" class="admin-input mt-1" placeholder="e.g. Season 4 Away Jersey" value="${isEdit ? escHtml(listing.title) : ''}" required>

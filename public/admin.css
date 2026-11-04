@@ -3205,3 +3205,38 @@ select.aui-input { padding-left: 9px; }
 @media (min-width: 901px) { .admin-nav__row { height: 34px; } }
 .aui-hubtabs { margin-bottom: 22px; }
 .aui-check__opens { display: block; font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 2px; }
+
+/* ── Compact look (2026-11): small type, tight cards, content filling the width ───────────
+   The look of the regroup mockup, which Paolo picked (https://claude.ai/artifact/Xv7BddznLYqJzLYUzPy9VS).
+   Last in the file on purpose: it sets the final sizes for every page on the kit. Controls keep
+   their 36px height, so nothing gets harder to tap. */
+.ashell { --side-w: 236px; }
+.ashell__content { padding: 26px 28px 56px; }
+.ahome, .aui-page, .atb.aui-page { max-width: none; }
+.aui-head__title { font-size: 25px; font-weight: 700; letter-spacing: -.015em; }
+.aui-head__sub { margin-top: 4px; color: var(--text-muted); }
+/* The menu and top bar already say where you are; Home keeps its date. */
+.aui-head__eyebrow { display: none; }
+.ahome .aui-head__eyebrow { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-muted); margin-bottom: 3px; }
+.aui-section__title { font-size: 15px; font-weight: 600; }
+.aui-section__note { font-size: 12.5px; font-weight: 400; }
+.aui-kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.aui-kpi, .ahome-item { padding: 14px 16px; }
+.aui-kpi { gap: 4px; }
+.aui-kpi__label { font-size: 12.5px; }
+.aui-kpi__value b { font-size: 25px; }
+.aui-kpi__value span { font-size: 14px; }
+.aui-stats__label { font-size: 12px; }
+.aui-stats__value { font-size: 20px; }
+.aui-stats__value span { font-size: 13px; }
+.ahome__count { font-size: 15px; }
+.aui-grid__table td { padding-top: 10px; padding-bottom: 10px; }
+.aui-grid__table td.is-num { font-size: 13.5px; }
+/* Labels in plain sentence case. */
+.aui-grid__table thead th, .aui-table th, .agd-table th, .aui-grid__group td, .aui-facts__row dt, .aui-drawer__eyebrow,
+.reach-step__title, .reach-side__title, .agd-lines__cell span, .agx-list__title, .atb-movemenu__title, .atb-compare__row.is-head,
+.apk-res__date, .apk-kicker, .ahome-clicks__head { font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+@media (max-width: 900px) {
+  .ashell__content { padding: 18px 16px 48px; }
+  .aui-head__title { font-size: 22px; }
+}

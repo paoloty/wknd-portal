@@ -9,7 +9,7 @@ export function adminFinanceGcashBody({ gcash = {} } = {}) {
   <p class="text-xs text-slate-500 mt-0.5">Shown to players on the Settle Balance page so they can pay you directly via GCash.</p>
 </div>
 
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-lg">
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
   <div class="p-5">
     <div class="mb-3">
       <label class="admin-field-label">Account name</label>

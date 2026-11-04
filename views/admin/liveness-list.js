@@ -42,7 +42,7 @@ export function adminLivenessListBody({ captures = [] } = {}) {
 </div>`;
 
   return `
-<div style="max-width:1080px">
+<div>
   <a href="/admin/season/waitlist" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Waitlist</a>
   <div class="flex items-center justify-between mb-1 mt-2 gap-4 flex-wrap">
     <h1 class="text-xl font-bold text-slate-100">Liveness Check Photos</h1>

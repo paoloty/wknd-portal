@@ -100,7 +100,7 @@ export function adminAssessmentReviewBody({ assessment: a, signup, rating, revie
   ].map(([val, label]) => `<label class="check check--radio" style="display:inline-flex;margin-right:16px"><input type="radio" name="my-vote" value="${val}" ${(myReview?.vote ?? '') === val ? 'checked' : ''}> ${label}</label>`).join('');
 
   return `
-<div style="max-width:760px">
+<div>
   <a href="/admin/season/waitlist" class="text-xs text-slate-500 hover:text-slate-300 no-underline inline-flex items-center gap-1 mb-1">← Waitlist</a>
   <h1 class="text-xl font-bold text-slate-100 mb-1">Mindset &amp; Self-Assessment</h1>
   <div class="text-sm text-slate-400 mb-6">${escHtml(name)} · Season ${escHtml(String(a.season))}</div>

@@ -36,7 +36,7 @@ export function adminSeasonBody({
   ].join('');
 
   const portalRow = `
-<div class="bg-admin-surface border border-admin-border rounded-lg px-5 py-4 max-w-2xl mb-4">
+<div class="bg-admin-surface border border-admin-border rounded-lg px-5 py-4 mb-4">
   <div class="flex items-center justify-between gap-4 flex-wrap">
     <div>
       <div class="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Public Portal</div>
@@ -107,7 +107,7 @@ export function adminSeasonBody({
 
   // ── Combined setup card ───────────────────────────────────────────────────
   const setupCard = `
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-2xl mb-4">
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-4">
   <div class="px-5 py-3 border-b border-admin-border flex items-center justify-between gap-3 flex-wrap">
     <div class="flex items-center gap-3">
       <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Season Setup</span>
@@ -185,7 +185,7 @@ export function adminSeasonBody({
 
   // ── Waitlist summary card ─────────────────────────────────────────────────
   const waitlistCard = isSigActive ? `
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden max-w-2xl mb-4">
+<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-4">
   <div class="px-5 py-3 border-b border-admin-border flex items-center gap-3">
     <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Waitlist</span>
     <span style="background:#f5933222;color:#f59332;border:1px solid #f5933244;border-radius:10px;padding:2px 10px;font-size:10px;font-weight:700">Season ${escHtml(sigSeason)}</span>
@@ -215,7 +215,7 @@ export function adminSeasonBody({
 </div>` : '';
 
   return `
-<div class="flex flex-col gap-0" style="max-width:900px">
+<div class="flex flex-col gap-0">
   <h1 class="text-xl font-bold text-slate-100 mb-6">Season Management</h1>
   ${portalRow}
   ${setupCard}

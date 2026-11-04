@@ -59,7 +59,7 @@ export function adminSeasonsBody({ rows = [], currentSeason = null, signupSeason
   const emptyState = `<tr><td colspan="6" class="px-5 py-12 text-center text-sm text-slate-500">No seasons found. Seasons are created when games are recorded in the system.</td></tr>`;
 
   return `
-<div style="max-width:860px">
+<div>
   <div class="flex items-center justify-between mb-6 gap-4">
     <h1 class="text-xl font-bold text-slate-100">Seasons</h1>
     <span class="text-xs text-slate-500">${rows.length} season${rows.length !== 1 ? 's' : ''}</span>

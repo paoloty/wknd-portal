@@ -73,7 +73,7 @@ export function adminShareCardLogPage({ logs = [] }) {
   </div>
 </div>
 
-${logs.length ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto mb-5 max-w-md">
+${logs.length ? `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto mb-5">
   <table class="w-full border-collapse">
     <thead>
       <tr class="border-b border-admin-border">

@@ -37,7 +37,7 @@ export function adminCommentsBody({ sigSeason = '', signups = [] } = {}) {
     : `<div id="comments-list">${cards}</div>`;
 
   return `
-<div class="w-full" style="max-width:700px">
+<div class="w-full">
   <a href="/admin/season" class="text-xs text-slate-500 hover:text-slate-300 no-underline inline-flex items-center gap-1 mb-1">&larr; Season Management</a>
   <div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
     <div>
