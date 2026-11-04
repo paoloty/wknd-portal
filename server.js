@@ -23652,9 +23652,9 @@ app.get('/admin/season/returning', requireAuth, (req, res) => {
   }));
 
   res.send(renderAdminPage(req, {
-    title: 'Returning Players',
+    title: 'Returning',
     currentPath: '/admin/season/returning',
-    body: adminReturningBody({ prevSeason, sigSeason, players }),
+    body: adminReturningBody({ prevSeason, sigSeason, players, query: req.query }),
   }));
 });
 
@@ -23699,9 +23699,9 @@ app.get('/admin/season/assessment-reviews', requireAuth, (req, res) => {
   });
 
   res.send(renderAdminPage(req, {
-    title: 'Assessment Reviews',
+    title: 'Assessment reviews',
     currentPath: '/admin/season/assessment-reviews',
-    body: adminAssessmentReviewsListBody({ sigSeason, rows }),
+    body: adminAssessmentReviewsListBody({ sigSeason, rows, query: req.query }),
   }));
 });
 
@@ -23714,9 +23714,9 @@ app.get('/admin/season/comments', requireAuth, (req, res) => {
     .sort((a, b) => b.created_at - a.created_at);
 
   res.send(renderAdminPage(req, {
-    title: 'Signup Comments',
+    title: 'Comments',
     currentPath: '/admin/season/comments',
-    body: adminCommentsBody({ sigSeason, signups }),
+    body: adminCommentsBody({ sigSeason, signups, query: req.query }),
   }));
 });
 

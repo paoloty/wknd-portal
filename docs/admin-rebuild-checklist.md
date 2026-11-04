@@ -46,9 +46,9 @@ Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages a
 | 21 | Season | Set up (with the step bar) | /admin/season | done (regroup mockup) | [x] |
 | 22 | Season | Signup detail | /admin/season/signups/:id | n/a | [ ] |
 | 23 | Season | Sign-ups (was Waitlist) | /admin/season/waitlist | done (regroup mockup) | [x] |
-| 24 | Season | Returning | /admin/season/returning | n/a | [ ] |
-| 25 | Season | Comments | /admin/season/comments | n/a | [ ] |
-| 26 | Season | Assessment reviews | /admin/season/assessment-reviews | n/a | [ ] |
+| 24 | Season | Returning | /admin/season/returning | n/a | [x] |
+| 25 | Season | Comments | /admin/season/comments | n/a | [x] |
+| 26 | Season | Assessment reviews | /admin/season/assessment-reviews | n/a | [x] |
 | 27 | Season | Assessment detail | /admin/season/assessments/:id | n/a | [ ] |
 | 28 | Season | Liveness checks and detail | /admin/season/liveness | n/a | [ ] |
 | 29 | Season | Team builder | /admin/season/teams | done | [x] |
@@ -126,5 +126,5 @@ Every admin page follows these:
 
 | | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Original list | 52 | 0 | 10 | 23 |
+| Original list | 52 | 0 | 10 | 26 |
 | Added since | 12 | 0 | - | 12 |

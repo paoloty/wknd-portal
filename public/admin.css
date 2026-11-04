@@ -3387,3 +3387,4 @@ select.aui-input { padding-left: 9px; }
 .asu-poll__bar i.is-b { background: var(--aui-blue); }
 /* The closed phone menu's shadow shows on white. */
 .ashell__side:not(.is-open) { box-shadow: none; }
+.asu-comment { display: block; white-space: pre-line; overflow-wrap: anywhere; color: var(--text); font-size: 13px; line-height: 1.5; max-width: 72ch; }
