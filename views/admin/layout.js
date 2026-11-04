@@ -311,14 +311,22 @@ function stepBar(item, current, state) {
 // own tabs and a way back, and two rows of tabs would be confusing.
 function menuTabs(item, requestPath, settings, steps) {
   const here = item?.tabs.find(t => t.href === requestPath);
-  if (!here) return '';
+  if (!here) return { bar: '', tabs: '' };
   const tabs = here.step ? item.tabs.filter(t => t.step === here.step) : item.tabs;
   const bar = here.step ? stepBar(item, here.step, steps) : '';
-  if (tabs.length < 2 && !settings) return bar;
-  return `${bar}<nav class="aui-tabs aui-hubtabs" aria-label="${escHtml(item.label)}">${tabs.map(t => {
+  if (tabs.length < 2 && !settings) return { bar, tabs: '' };
+  return { bar, tabs: `<nav class="aui-tabs aui-hubtabs" aria-label="${escHtml(item.label)}">${tabs.map(t => {
     const on = t.href === requestPath && !settings?.active;
     return `<a class="aui-tabs__tab${on ? ' is-active' : ''}" href="${t.href}"${on ? ' aria-current="page"' : ''}>${escHtml(t.label)}</a>`;
-  }).join('')}${settings ? `<a class="aui-tabs__tab aui-hubtabs__settings${settings.active ? ' is-active' : ''}" href="${requestPath}?settings=1"${settings.active ? ' aria-current="page"' : ''}>Settings</a>` : ''}</nav>`;
+  }).join('')}${settings ? `<a class="aui-tabs__tab aui-hubtabs__settings${settings.active ? ' is-active' : ''}" href="${requestPath}?settings=1"${settings.active ? ' aria-current="page"' : ''}>Settings</a>` : ''}</nav>` };
+}
+
+// Kit pages: the tabs go right under the page's title block. Others (old pages, a Settings view):
+// above the content, until they're rebuilt.
+function placeTabs(body, tabs) {
+  if (!tabs) return body;
+  const end = String(body).indexOf('</header>');
+  return end === -1 ? tabs + body : `${body.slice(0, end + 9)}${tabs}${body.slice(end + 9)}`;
 }
 
 // The admin shell (admin redesign, 2026-10-15; mockup: canvas "A · Clubhouse v2"). Rebuilt
@@ -342,6 +350,7 @@ export function adminLayout({ title, currentPath = '/admin', requestPath = curre
   // The address first: some pages still pass the old group's page as currentPath.
   const activeItem = menuItemFor(requestPath, menu) || menuItemFor(currentPath, menu);
   const crumbGroup = menu.find(s => s.items.includes(activeItem))?.head || '';
+  const shellTabs = menuTabs(activeItem, requestPath, settings, seasonSteps);
   const navHtml = menu.map(s => `${s.head ? `<div class="admin-nav__head">${escHtml(s.head)}</div>` : ''}${s.items.map(it => {
     const on = it === activeItem;
     const n = Number(navBadges[it.badge]) || 0;
@@ -358,10 +367,11 @@ export function adminLayout({ title, currentPath = '/admin', requestPath = curre
     : `<span class="ashell__crumb-page">${escHtml(title)}</span>`;
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>try { if (localStorage.getItem('adminTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}</script>
   <title>${escHtml(title)} — WKND Admin</title>
   <link rel="icon" href="/favicon-32.png?v=2" type="image/png" sizes="32x32">
   <link rel="icon" href="/favicon-16.png?v=2" type="image/png" sizes="16x16">
@@ -410,7 +420,7 @@ export function adminLayout({ title, currentPath = '/admin', requestPath = curre
       </a>
       <button type="button" class="ashell__icon-btn ashell__close" data-shell-close aria-label="Close menu">×</button>
     </div>
-    <nav class="admin-nav" aria-label="Admin sections">${navHtml}</nav>
+    <nav class="admin-nav" aria-label="Admin sections">${navHtml}<div class="admin-nav__theme"><button type="button" class="admin-nav__row" data-theme-toggle><span class="admin-nav__label"><span class="admin-nav__icon" aria-hidden="true">${IC.sliders}</span><span data-theme-label>Dark theme</span></span></button></div></nav>
     <div class="ashell__me">
       <span class="ashell__me-avatar" aria-hidden="true">${escHtml(initials)}</span>
       <span class="ashell__me-text"><span class="ashell__me-name">${escHtml(who.name)}</span><span class="ashell__me-role">${escHtml(who.role)}</span></span>
@@ -427,7 +437,7 @@ export function adminLayout({ title, currentPath = '/admin', requestPath = curre
         <a class="aui-btn aui-btn--ghost aui-btn--sm" href="/" target="_blank" rel="noopener">View site <span aria-hidden="true">↗</span></a>
       </div>
     </header>
-    <main class="ashell__content" id="admin-main" data-menu-item="${activeItem?.id || ''}">${menuTabs(activeItem, requestPath, settings, seasonSteps)}${versionScripts(body, v)}</main>
+    <main class="ashell__content" id="admin-main" data-menu-item="${activeItem?.id || ''}">${shellTabs.bar}${placeTabs(versionScripts(body, v), shellTabs.tabs)}</main>
   </div>
 
   <script>
@@ -440,6 +450,17 @@ export function adminLayout({ title, currentPath = '/admin', requestPath = curre
     openBtn.addEventListener('click', open);
     document.querySelectorAll('[data-shell-close]').forEach(function(b) { b.addEventListener('click', close); });
     document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && side.classList.contains('is-open')) close(); });
+
+    // White or dark, remembered on this browser.
+    var root = document.documentElement, themeLabel = document.querySelector('[data-theme-label]');
+    function showTheme() { if (themeLabel) themeLabel.textContent = root.getAttribute('data-theme') === 'dark' ? 'White theme' : 'Dark theme'; }
+    showTheme();
+    document.querySelector('[data-theme-toggle]').addEventListener('click', function() {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('adminTheme', next); } catch (e) {}
+      showTheme();
+    });
   })();
   </script>
   <script src="/table-scroll.js${v}" defer></script>

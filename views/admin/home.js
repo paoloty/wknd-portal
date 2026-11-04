@@ -8,8 +8,6 @@ import { pageHeader, section, kpi, badge, progress, button, emptyState, avatar, 
 
 const attr = s => escHtml(String(s ?? ''));
 
-const FILTERS = [['all', 'All'], ['eng', 'Engagement'], ['appr', 'Approvals'], ['money', 'Money']];
-
 // data-confirm attributes for a send. Above 40 emails the count has to be typed.
 function confirmAttrs(c) {
   if (!c) return '';
@@ -31,69 +29,49 @@ function actionHtml(a, hot) {
 
 function todoItem(it) {
   const hot = it.hot && !it.done;
-  const chips = it.chips?.length
-    ? `<div class="ahome-item__chips">${it.chips.filter(c => !c.ok).map(c => badge(`✕ ${c.label}`, 'red')).join('')}</div>`
-    : '';
-  return `<article class="ahome-item${hot ? ' is-hot' : ''}${it.done ? ' is-done' : ''}"${it.done ? '' : ` data-item data-cat="${attr(it.cat)}"`}>
-    <span class="ahome-item__tag" aria-hidden="true">${escHtml(it.tag)}</span>
-    <div class="ahome-item__body">
-      <div class="ahome-item__top"><span class="ahome-item__title">${escHtml(it.title)}</span>${it.due ? badge(it.due, hot ? 'amber' : it.done ? 'green' : 'gray') : ''}</div>
-      ${it.text ? `<span class="ahome-item__text">${escHtml(it.text)}</span>` : ''}
+  const chips = it.chips?.length ? `<span class="ahome-item__chips">${it.chips.filter(c => !c.ok).map(c => badge(`✕ ${c.label}`, 'red')).join('')}</span>` : '';
+  return `<article class="aui-needs__row ahome-row${it.done ? ' is-done' : ''}"${it.done ? '' : ` data-item data-cat="${attr(it.cat)}"`}>
+    <div class="ahome-row__main">
+      <span class="ahome-row__title">${escHtml(it.title)}${it.due ? badge(it.due, hot ? 'amber' : it.done ? 'green' : 'gray') : ''}</span>
+      ${it.text ? `<span class="aui-cell__sub">${escHtml(it.text)}</span>` : ''}
       ${it.pct != null ? progress(it.pct, { label: it.meta || '' }) : ''}
       ${chips}
     </div>
-    <div class="ahome-item__actions">
+    <div class="ahome-row__actions">
       ${it.done ? '' : button('Later', { kind: 'ghost', size: 'sm', attrs: `data-snooze="${attr(it.key)}" aria-label="Snooze till tomorrow: ${attr(it.title)}"` })}
       ${actionHtml(it.action, hot)}
     </div>
   </article>`;
 }
 
-// Finished to-dos (already reminded or nudged) fold into one closed "Done" line at the end,
-// outside the filters.
+// Finished to-dos (already reminded or nudged) fold into one closed "Done" line at the end.
 function todoSection(items, snoozedCount) {
   const open = items.filter(i => !i.done);
   const done = items.filter(i => i.done);
-  const count = cat => open.filter(i => cat === 'all' || i.cat === cat).length;
-  const filters = `<div class="aui-seg" role="tablist" aria-label="Filter the to-do list" data-filter-group="ahome-todo">
-    ${FILTERS.map(([k, l], i) => `<button type="button" role="tab" data-filter="${k}" aria-selected="${i === 0}">${l} <span data-count>${count(k)}</span></button>`).join('')}
-  </div>`;
-  return `<section class="aui-section">
-    <div class="aui-section__head">
-      <h2 class="aui-section__title">To do <span class="ahome__count" data-count-total>${open.length}</span>${snoozedCount ? `<span class="aui-section__note">· ${snoozedCount} snoozed till tomorrow</span>` : ''}</h2>
-      ${filters}
-    </div>
-    <div class="ahome-todo" id="ahome-todo">
+  return section({
+    title: 'Needs you',
+    note: snoozedCount ? `· ${snoozedCount} snoozed till tomorrow` : '',
+    bodyHtml: `<div class="aui-needs" id="ahome-todo">
       ${open.map(todoItem).join('')}
       <div data-empty${open.length ? ' hidden' : ''}>${emptyState({ title: 'You’re all caught up', sub: 'Nothing here needs you right now.', done: true })}</div>
-      ${done.length ? `<details class="ahome-done"><summary class="ahome-done__sum"><span>Done</span><span class="aui-views__n">${done.length}</span><span class="ahome-done__hint">already reminded or nudged</span></summary><div class="ahome-todo">${done.map(todoItem).join('')}</div></details>` : ''}
-    </div>
-  </section>`;
+      ${done.length ? `<details class="ahome-done"><summary class="ahome-done__sum"><span>Done</span><span class="aui-views__n">${done.length}</span><span class="ahome-done__hint">already reminded or nudged</span></summary>${done.map(todoItem).join('')}</details>` : ''}
+    </div>`,
+  });
 }
 
 function quietSection(quiet) {
   if (!quiet?.list?.length) return '';
-  const rows = quiet.list.map(p => `<tr>
-    <td><span class="aui-who">${avatar(p.name, p.color, { playerId: p.id })}${escHtml(p.name)}</span></td>
-    <td class="ahome-desk">${escHtml(p.usually)}</td>
-    <td class="aui-num">${escHtml(p.lastSeen)}</td>
-    <td>${p.nudgedAgo
+  const rows = quiet.list.map(p => `<div class="aui-needs__row ahome-row">
+    <div class="ahome-row__who">${avatar(p.name, p.color, { playerId: p.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(p.name)}</span><span class="aui-cell__sub">${escHtml(p.usually)} · ${escHtml(p.lastSeen)}</span></span></div>
+    <div class="ahome-row__actions">${p.nudgedAgo
       ? button(p.nudgedAgo === 'just now' ? 'Nudged just now' : `Nudged ${p.nudgedAgo} ago`, { kind: 'done', size: 'sm', attrs: 'disabled' })
-      : `<form method="post" action="/admin/home/nudge" ${confirmAttrs({ title: `Nudge ${p.name}?`, body: `A bell notification: “${quiet.message.title}. ${quiet.message.body}”`, send: 'Nudge' })}><input type="hidden" name="ids" value="${attr(p.id)}">${button('Nudge', { kind: 'secondary', size: 'sm', type: 'submit' })}</form>`}</td>
-  </tr>`).join('');
+      : `<form method="post" action="/admin/home/nudge" ${confirmAttrs({ title: `Nudge ${p.name}?`, body: `A bell notification: “${quiet.message.title}. ${quiet.message.body}”`, send: 'Nudge' })}><input type="hidden" name="ids" value="${attr(p.id)}">${button('Nudge', { kind: 'secondary', size: 'sm', type: 'submit' })}</form>`}</div>
+  </div>`).join('');
   const todo = quiet.list.filter(p => !p.nudgedAgo);
   const all = todo.length > 1
     ? `<form method="post" action="/admin/home/nudge" ${confirmAttrs({ title: `Nudge ${todo.length} quiet regulars?`, body: `Each gets a bell notification: “${quiet.message.title}. ${quiet.message.body}”`, send: 'Nudge all' })}>${todo.map(p => `<input type="hidden" name="ids" value="${attr(p.id)}">`).join('')}<button type="submit" class="aui-link ahome-tap">Nudge all ${todo.length}</button></form>`
     : '';
-  return section({
-    title: 'Slipping away',
-    note: `· regulars not seen for ${quiet.days}+ days`,
-    asideHtml: all,
-    bodyHtml: `<div class="aui-table-wrap"><table class="aui-table">
-      <thead><tr><th>Player</th><th class="ahome-desk">Usually</th><th>Last seen</th><th><span class="sr-only">Nudge</span></th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>`,
-  });
+  return section({ title: 'Slipping away', note: `· regulars not seen for ${quiet.days}+ days`, asideHtml: all, bodyHtml: `<div class="aui-needs">${rows}</div>` });
 }
 
 // Super admin only, because it comes from the logs. Each line opens the matching log view.
@@ -118,7 +96,7 @@ function feedSection(feed, now) {
         <span class="ahome-feed__ago">${ago(f.at, now)}</span>
       </div>`).join('')}</div>`
     : emptyState({ title: 'Quiet so far', sub: 'Picks, Papawis sign-ups, comments and shares show up here.' });
-  return section({ title: 'Live', asideHtml: '<span class="ahome-live">Players, not admins</span>', bodyHtml: body });
+  return section({ title: 'Live', note: '· players, not admins', bodyHtml: body });
 }
 
 export function adminHomeBody({ eyebrow, sub, kpis = [], items = [], snoozedCount = 0, quiet = null, feed = [], clicks = null, problems = null, now = Date.now() }) {

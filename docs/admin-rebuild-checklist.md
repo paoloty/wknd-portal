@@ -23,7 +23,7 @@ Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages a
 
 | # | Area | Page | Route | Mockup | Built |
 |---|------|------|-------|--------|-------|
-| 1 | Overview | Home | /admin | done | [x] |
+| 1 | Overview | Home (rows from the regroup mockup, 2026-11) | /admin | done | [x] |
 | 2 | Members | Users | /admin/users | n/a | [x] |
 | 3 | Members | Team heads | /admin/team-heads | n/a | [x] |
 | 4 | Members | User detail | /admin/users/:id | done | [x] |
