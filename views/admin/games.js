@@ -5,7 +5,7 @@
 // Browser side (Final score drawer, series field): public/admin-games.js.
 import { escHtml } from '../layout.js';
 import { manilaTodayStr } from '../utils.js';
-import { pageHeader, dataGrid, statStrip, badge, button, drawer, field, fieldGrid } from './ui.js';
+import { pageHeader, dataGrid, needsYou, badge, button, drawer, field, fieldGrid } from './ui.js';
 
 const attr = s => escHtml(String(s ?? ''));
 const fmtDate = d => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—');
@@ -65,15 +65,21 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
   const seasons = [...new Set(games.map(g => String(g.season || '')).filter(Boolean))].sort((x, y) => Number(y) - Number(x));
 
   const upcoming = games.filter(g => gameState(g) === 'upcoming' && g.date >= today).sort((x, y) => (x.date < y.date ? -1 : 1));
-  const strip = statStrip([
-    { label: upcoming[0] ? `Next game day · ${fmtDate(upcoming[0].date)}` : 'Next game day', value: upcoming[0] ? String(upcoming.filter(g => g.date === upcoming[0].date).length) : '—', of: upcoming[0] ? (upcoming.filter(g => g.date === upcoming[0].date).length === 1 ? ' game' : ' games') : '' },
-    { label: 'Box scores to import', value: String(games.filter(g => gameState(g) === 'score' || (gameState(g) === 'upcoming' && g.date < today)).length) },
-    { label: 'Drafts', value: String(games.filter(g => gameState(g) === 'draft').length) },
-    { label: 'Live games missing content', value: String(games.filter(g => gameState(g) === 'live' && missingCount(g)).length) },
-  ]);
+  const nextDay = upcoming[0]?.date;
+  const status = nextDay ? `Next game day: ${fmtDate(nextDay)}, ${plural(upcoming.filter(g => g.date === nextDay).length, 'game')}.` : 'No games scheduled.';
+  const toImport = games.filter(g => gameState(g) === 'score' || (gameState(g) === 'upcoming' && g.date < today)).length;
+  const drafts = games.filter(g => gameState(g) === 'draft').length;
+  // The latest season with games only: older games missing a YouTube link aren't a to-do.
+  const latestSeason = seasons[0] || '';
+  const noContent = games.filter(g => gameState(g) === 'live' && String(g.season) === latestSeason && missingCount(g)).length;
+  const needs = [
+    toImport ? { title: `${plural(toImport, 'box score')} to add`, sub: 'Played, with no stats yet.', href: '/admin/games?view=import', label: 'Open', hot: true } : null,
+    drafts ? { title: `${plural(drafts, 'game')} in draft`, sub: 'Stats are in, but players can’t see them yet.', href: '/admin/games?view=draft', label: 'Review' } : null,
+    noContent ? { title: `${plural(noContent, 'game')} missing a recap, POTG, cover or video`, sub: `Season ${latestSeason}`, href: `/admin/games?view=content&season=${encodeURIComponent(latestSeason)}`, label: 'Open' } : null,
+  ];
 
   const grid = dataGrid({
-    id: 'games', baseUrl: '/admin/games', query,
+    id: 'games', baseUrl: '/admin/games', query, minimal: true,
     rows: games, rowKey: g => g.id, noun: ['game', 'games'],
     views: [
       { key: 'all', label: 'All', test: () => true },
@@ -114,7 +120,6 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
         ...ot,
       ];
     },
-    actionsHtml: button('+ New game', { kind: 'primary', attrs: 'data-drawer-open="new-game"' }),
     empty: { title: 'No games yet', sub: 'Create one with “+ New game”.' },
   });
 
@@ -157,8 +162,8 @@ export function adminGamesListBody({ games = [], teams = [], currentSeason = 1, 
   });
 
   return `<div class="aui-page">
-    ${pageHeader({ eyebrow: 'Game Day', title: 'Games', sub: `${plural(games.length, 'game')}. Open one for its box score, recap, player of the game and picks.`, actionsHtml: button('Who wins? picks', { kind: 'secondary', href: '/admin/picks' }) })}
-    ${strip}
+    ${pageHeader({ title: 'Games', sub: status, actionsHtml: button('+ New game', { kind: 'primary', attrs: 'data-drawer-open="new-game"' }) })}
+    ${needsYou(needs)}
     ${grid}
     ${newGame}
     ${finalScore}

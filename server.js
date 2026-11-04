@@ -10117,6 +10117,18 @@ function papawisAdminTodo(g, signups = getPapawisSignups(g.id)) {
   const closeOut = open && pwDaysUntil(g.date) < 0;
   return { pending, canAnnounce, catchUp, unpaid, closeOut };
 }
+// The same list for the site's Runs page, one row per thing to do, soonest to act on first.
+function papawisRunTodos(games) {
+  const out = [];
+  for (const g of games.filter(x => x.status === 'open').sort((a, b) => (a.date < b.date ? -1 : 1))) {
+    const t = papawisAdminTodo(g), name = g.title || 'Papawis', href = tab => `/admin/papawis/${g.id}${tab ? `?tab=${tab}` : ''}`;
+    if (t.closeOut) out.push({ title: `${name}: set the final price`, sub: 'It’s been played. Players are charged when you close it out.', href: href('money'), label: 'Close out', hot: true });
+    if (t.pending) out.push({ title: `${name}: ${t.pending} deposit${t.pending === 1 ? '' : 's'} to confirm`, sub: 'Their slots are held until you do.', href: href(''), label: 'Review' });
+    if (t.catchUp) out.push({ title: `${name}: ${t.catchUp} team email${t.catchUp === 1 ? '' : 's'} to send`, sub: 'They got their reminder before teams were set.', href: href('teams'), label: 'Open teams' });
+    if (t.canAnnounce && isPapawisSignupOpenNow(g)) out.push({ title: `${name}: not announced yet`, sub: 'Sign-ups are open, but nobody has been told.', href: href('messages'), label: 'Announce' });
+  }
+  return out;
+}
 function appPapawisAdminHint(g) {
   if (!g) return null;
   const t = papawisAdminTodo(g);
@@ -26167,8 +26179,7 @@ app.get('/admin/papawis', requireAuth, (req, res) => {
     settings: adminPapawisSwitches({ papawisEnabled: getSetting('papawis_enabled', '0') === '1', remindersEnabled: papawisRemindersEnabled, slotAlertsEnabled: papawisSlotAlertsEnabled, regularsCount: getFrequentPapawisPlayers(REGULAR_WINDOW, REGULAR_MIN_GAMES).length }),
     body: adminPapawisRunsBody({
       games, courts: getActivePapawisCourts(), pendingPayments, unpaidSignups, unpaidUnlinkedByPlayer, unpaidReusableByPlayer,
-      papawisEnabled: getSetting('papawis_enabled', '0') === '1', remindersEnabled: papawisRemindersEnabled, slotAlertsEnabled: papawisSlotAlertsEnabled,
-      regularsCount: getFrequentPapawisPlayers(REGULAR_WINDOW, REGULAR_MIN_GAMES).length, today: manilaTodayStr(), query: req.query,
+      todos: papawisRunTodos(games), today: manilaTodayStr(), query: req.query,
       colorById: adminTeamColorByPlayer(),
     }),
   }));

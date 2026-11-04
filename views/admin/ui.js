@@ -34,6 +34,20 @@ export function section({ title, note = '', asideHtml = '', bodyHtml, id = '' })
   </section>`;
 }
 
+// "Needs you" (regroup mockup): the first block on a page, one plain row per thing to do, nothing
+// when there's nothing. items: [{ title, sub, href, label, hot }]; hot = the one to do first.
+export function needsYou(items) {
+  const list = (items || []).filter(Boolean);
+  if (!list.length) return '';
+  return section({
+    title: 'Needs you',
+    bodyHtml: `<div class="aui-needs">${list.map(i => `<a class="aui-needs__row" href="${attr(i.href)}">
+      <span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(i.title)}</span>${i.sub ? `<span class="aui-cell__sub">${escHtml(i.sub)}</span>` : ''}</span>
+      <span class="aui-btn aui-btn--sm aui-btn--${i.hot ? 'primary' : 'secondary'}">${escHtml(i.label)}</span>
+    </a>`).join('')}</div>`,
+  });
+}
+
 // Tones for badges and deltas. Amber is the accent; green/red/blue are admin-only status
 // colours (paid / owes / waitlist, up / down), never used on the public site.
 const TONES = new Set(['amber', 'green', 'red', 'blue', 'gray']);

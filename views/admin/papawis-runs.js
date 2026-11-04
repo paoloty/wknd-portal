@@ -3,7 +3,7 @@
 // money owed from every run in one list, the Papawis switches, and New run in a drawer.
 import { escHtml } from '../layout.js';
 import { displayPlayerName, isPapawisSignupOpenNow } from '../utils.js';
-import { pageHeader, dataGrid, statStrip, section, badge, button, drawer, field, fieldGrid, toggleRow, emptyState, avatar } from './ui.js';
+import { pageHeader, dataGrid, needsYou, section, badge, button, drawer, field, fieldGrid, toggleRow, emptyState, avatar } from './ui.js';
 import { paidCell } from './papawis-run.js';
 
 const attr = s => escHtml(String(s ?? ''));
@@ -88,20 +88,20 @@ export function adminPapawisSwitches({ papawisEnabled = false, remindersEnabled 
 
 export function adminPapawisRunsBody({
   games = [], pendingPayments = [], unpaidSignups = [], unpaidUnlinkedByPlayer = {}, unpaidReusableByPlayer = {}, courts = [],
-  papawisEnabled = false, remindersEnabled = false, slotAlertsEnabled = false, regularsCount = 0, today = '', query = {}, colorById = {},
+  todos = [], today = '', query = {}, colorById = {},
 }) {
   const upcoming = games.filter(g => g.status === 'open' && g.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1));
   const next = upcoming[0];
   const unpaidTotal = unpaidSignups.reduce((t, s) => t + (Number(s.price_per_player) || 0), 0);
-  const stats = statStrip([
-    { label: next ? `Next run · ${fmtDow(next.date)} ${fmtDate(next.date)}` : 'Next run', value: next ? String(next.confirmed_count || 0) : '—', of: next ? `/${next.max_slots}` : '' },
-    { label: 'Unpaid from past runs', value: peso(unpaidTotal) },
-    { label: 'Payments to confirm', value: String(pendingPayments.length) },
-    { label: 'Regulars', value: String(regularsCount) },
-  ]);
+  const status = next ? `Next: ${next.title || 'Papawis'}, ${next.confirmed_count || 0} of ${next.max_slots} in.` : 'No run coming up.';
+  const owed = [
+    unpaidSignups.length ? `${plural(unpaidSignups.length, 'unpaid charge')} · ${peso(unpaidTotal)}` : '',
+    pendingPayments.length ? `${plural(pendingPayments.length, 'payment')} to confirm` : '',
+  ].filter(Boolean).join(' · ');
+  const needs = [...todos, owed ? { title: 'Money to chase', sub: owed, href: '#money-to-chase', label: 'See who' } : null];
 
   const grid = dataGrid({
-    id: 'runs', baseUrl: '/admin/papawis', query,
+    id: 'runs', baseUrl: '/admin/papawis', query, minimal: true,
     rows: games, rowKey: g => g.id, noun: ['run', 'runs'],
     views: [
       { key: 'upcoming', label: 'Upcoming', test: g => g.status === 'open' && g.date >= today },
@@ -128,7 +128,6 @@ export function adminPapawisRunsBody({
       { label: 'Money', href: `/admin/papawis/${g.id}?tab=money` },
       { label: 'View on site', href: `/papawis#pw-game-${g.id}`, external: true },
     ],
-    actionsHtml: button('+ New run', { kind: 'primary', attrs: 'data-drawer-open="new-run"' }),
     empty: { title: 'No runs here', sub: 'Create one with “+ New run”.' },
   });
 
@@ -150,10 +149,10 @@ export function adminPapawisRunsBody({
   });
 
   return `<div class="aui-page">
-    ${pageHeader({ title: 'Runs', sub: 'Pickup games. Open one to manage its roster, teams, money and messages.' })}
-    ${stats}
+    ${pageHeader({ title: 'Runs', sub: status, actionsHtml: button('+ New run', { kind: 'primary', attrs: 'data-drawer-open="new-run"' }) })}
+    ${needsYou(needs)}
     ${grid}
-    ${section({ title: 'Money to chase', note: '· every run, oldest first', asideHtml: '<a class="aui-link" href="/admin/ledger">Open the ledger</a>', bodyHtml: moneyToChase(unpaidSignups, pendingPayments, unpaidUnlinkedByPlayer, unpaidReusableByPlayer, colorById) })}
+    ${section({ id: 'money-to-chase', title: 'Money to chase', note: '· every run, oldest first', asideHtml: '<a class="aui-link" href="/admin/ledger">Open the ledger</a>', bodyHtml: moneyToChase(unpaidSignups, pendingPayments, unpaidUnlinkedByPlayer, unpaidReusableByPlayer, colorById) })}
     ${newRun}
   </div>
   <script src="/admin-papawis.js" defer></script>`;

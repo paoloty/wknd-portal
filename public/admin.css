@@ -3273,3 +3273,10 @@ select.aui-input { padding-left: 9px; }
   .amny-desk { display: none; }
 }
 @media (max-width: 720px) { .amny .aui-kpis > :last-child:nth-child(odd) { grid-column: 1 / -1; } }
+
+/* Needs you: the first block on a page (views/admin/ui.js needsYou) */
+.aui-needs { background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); overflow: hidden; }
+.aui-needs__row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 16px; color: var(--text) !important; text-decoration: none; }
+.aui-needs__row + .aui-needs__row { border-top: 1px solid var(--aui-line); }
+.aui-needs__row:hover { background: rgba(255,255,255,.02); }
+.aui-needs__row .aui-btn { flex: none; }
