@@ -2568,7 +2568,7 @@
         caches.match(next, { cacheName: 'wknd-data' }).then(function (r) { return r && r.json(); }).then(function (j) {
           if (!j || !j.html || !first || !box.isConnected) return;
           shownCopy = j.html;
-          items.hidden = false; items.innerHTML = j.html; skel.hidden = true; initVideos(); initPapawis(); wakeImgs(items);
+          items.hidden = false; items.innerHTML = j.html; skel.hidden = true; initVideos(); initPapawis(); initFbEmbeds(); wakeImgs(items);
         }).catch(function () {});
       }
       var nearBottom = function () { return end.getBoundingClientRect().top < window.innerHeight + 600; };
@@ -2581,9 +2581,10 @@
             busy = false; next = j.next || null; box.setAttribute('data-lazy-next', next || '');
             var wasFirst = first; first = false;
             if (wasFirst) document.dispatchEvent(new Event('wknd:list-first')); // the tab warm-up waits for this
-            // Feed pages can carry Papawis cards with their join button (initPapawis binds new ones).
-            if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); initPapawis(); wakeImgs(items); } }
-            else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); initPapawis(); wakeImgs(items); }
+            // Feed pages can carry Papawis cards with their join button (initPapawis binds new ones), and
+            // videos, photo galleries and Facebook posts (initFbEmbeds).
+            if (wasFirst && shownCopy !== null) { if (j.html !== shownCopy) { items.innerHTML = j.html || ''; initVideos(); initPapawis(); initFbEmbeds(); wakeImgs(items); } }
+            else if (j.html) { items.hidden = false; items.insertAdjacentHTML('beforeend', j.html); initVideos(); initPapawis(); initFbEmbeds(); wakeImgs(items); }
             skel.hidden = true;
             if (wasFirst) feedAhead(box, items);
             if (!items.children.length) { end.className = 'lazy__end empty'; end.textContent = box.getAttribute('data-lazy-empty') || 'Nothing yet.'; return; }
