@@ -23622,9 +23622,9 @@ app.get('/admin/season/waitlist', requireAuth, (req, res) => {
 
   const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   res.send(renderAdminPage(req, {
-    title: 'Waitlist',
+    title: 'Sign-ups',
     currentPath: '/admin/season/waitlist',
-    body: adminWaitlistBody({ sigSeason, signups, count, confirmedCount, isSuperAdmin }),
+    body: adminWaitlistBody({ sigSeason, signups, confirmedCount, isSuperAdmin, query: req.query }),
   }));
 });
 

@@ -3377,3 +3377,11 @@ select.aui-input { padding-left: 9px; }
 :root[data-theme="light"] .agm-badge--amber { color: var(--amber-ink) !important; }
 :root[data-theme="light"] .agm-badge--red { color: var(--aui-red) !important; }
 :root[data-theme="light"] .awd-status { color: var(--text-2) !important; }
+
+/* Season → Sign-ups: the polls (views/admin/season-waitlist.js) */
+.asu-poll { display: flex; flex-direction: column; gap: 8px; }
+.asu-poll__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.asu-poll__bar { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-2); margin-top: 2px; }
+.asu-poll__bar i { display: block; height: 100%; }
+.asu-poll__bar i.is-a { background: var(--amber); }
+.asu-poll__bar i.is-b { background: var(--aui-blue); }

@@ -45,7 +45,7 @@ Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages a
 | 20 | Season | All seasons | /admin/seasons | n/a | [ ] |
 | 21 | Season | Set up (with the step bar) | /admin/season | done (regroup mockup) | [x] |
 | 22 | Season | Signup detail | /admin/season/signups/:id | n/a | [ ] |
-| 23 | Season | Waitlist | /admin/season/waitlist | n/a | [ ] |
+| 23 | Season | Sign-ups (was Waitlist) | /admin/season/waitlist | done (regroup mockup) | [x] |
 | 24 | Season | Returning | /admin/season/returning | n/a | [ ] |
 | 25 | Season | Comments | /admin/season/comments | n/a | [ ] |
 | 26 | Season | Assessment reviews | /admin/season/assessment-reviews | n/a | [ ] |
@@ -126,5 +126,5 @@ Every admin page follows these:
 
 | | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Original list | 52 | 0 | 10 | 22 |
+| Original list | 52 | 0 | 10 | 23 |
 | Added since | 12 | 0 | - | 12 |
