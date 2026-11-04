@@ -21,6 +21,14 @@ const changes = [];
 let before = 0, after = 0;
 for (const r of db.prepare('SELECT id, details FROM admin_logs').iterate()) {
   before += r.details.length;
+  // A file's bytes logged as { "0": 137, … }: about 3.6 characters per byte. Parsing 55 MB of
+  // this takes 7 seconds a row and shows nothing more.
+  if (r.details.startsWith('{"0":') && r.details.length > 100000) {
+    const clean = JSON.stringify({ upload: `[file, ${(r.details.length / 3.6e6).toFixed(1)} MB]` });
+    after += clean.length;
+    changes.push([clean, r.id]);
+    continue;
+  }
   let parsed;
   try { parsed = JSON.parse(r.details); } catch { after += r.details.length; continue; }
   const clean = JSON.stringify(cleanLogDetails(parsed));

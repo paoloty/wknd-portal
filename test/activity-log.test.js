@@ -29,6 +29,21 @@ test('photo arrays, long text and huge forms stay small', () => {
   assert.match(cleaned, /not_kept/);
 });
 
+test('an uploaded file never reaches the log, and handling it is quick', () => {
+  const video = Buffer.alloc(30_000_000, 7);
+  const started = Date.now();
+  assert.deepEqual(cleanLogDetails(video), { upload: '[file, 30.0 MB]' });
+  const dump = {};
+  for (let i = 0; i < 2_000_000; i++) dump[i] = 7;
+  assert.deepEqual(cleanLogDetails(dump), { upload: '[file, 2.0 MB]' });
+  assert.equal(cleanLogDetails({ clip: Buffer.alloc(2000) }).clip, '[file, 2 KB]');
+  assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+});
+
+test('a real form with a field called "0" is still a form', () => {
+  assert.deepEqual(cleanLogDetails({ 0: 'a', 1: 'b', note: 'keep' }), { 0: 'a', 1: 'b', note: 'keep' });
+});
+
 test('a GCash change stays readable: it is what the log is for', () => {
   assert.equal(cleanLogDetails({ gcash_number: '09171234567' }).gcash_number, '09171234567');
 });
