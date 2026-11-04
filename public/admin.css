@@ -3385,3 +3385,5 @@ select.aui-input { padding-left: 9px; }
 .asu-poll__bar i { display: block; height: 100%; }
 .asu-poll__bar i.is-a { background: var(--amber); }
 .asu-poll__bar i.is-b { background: var(--aui-blue); }
+/* The closed phone menu's shadow shows on white. */
+.ashell__side:not(.is-open) { box-shadow: none; }

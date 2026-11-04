@@ -114,7 +114,7 @@ export function adminWaitlistBody({ sigSeason = '', signups = [], confirmedCount
   ].join('');
 
   return `<div class="aui-page">
-    ${pageHeader({ title: `Sign-ups, Season ${sigSeason}`, sub: `${signups.length} signed up: ${by.confirmed} confirmed, ${by.waitlisted} waiting.`, actionsHtml: actions })}
+    ${pageHeader({ title: `Sign-ups, Season ${sigSeason}`, sub: `${by.confirmed + by.waitlisted} in: ${by.confirmed} confirmed, ${by.waitlisted} waiting.`, actionsHtml: actions })}
     ${needsYou(needs)}
     <div class="aui-cols">
       <div class="aui-cols__main">${grid}</div>

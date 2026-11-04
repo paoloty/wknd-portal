@@ -2719,7 +2719,7 @@ function currentSeasonSteps() {
   const signups = target ? getSeasonSignups(target) : [];
   return seasonStepState({
     target, open: getSetting('season_signup_open', '0') === '1', draft: getSetting('season_draft_status', ''), fee: getSetting('season_quota_amount', ''),
-    entered: signups.filter(s => s.status !== 'rejected').length, confirmed: signups.filter(s => s.status === 'confirmed').length,
+    entered: signups.filter(s => s.status === 'confirmed' || s.status === 'waitlisted').length, confirmed: signups.filter(s => s.status === 'confirmed').length,
   });
 }
 // opts.settings: this page's switches (views/admin/settings.js). They get a Settings tab beside
@@ -23563,7 +23563,7 @@ app.get('/admin/season', requireAuth, (req, res) => {
   const portalSeason     = getSetting('portal_season', '');
   const autoSeason       = getCurrentSeason()?.season ?? 3;
   const signups          = sigSeason ? getSeasonSignups(sigSeason) : [];
-  const count            = signups.filter(s => s.status !== 'rejected').length;
+  const count            = signups.filter(s => s.status === 'confirmed' || s.status === 'waitlisted').length;
   const confirmedCount   = signups.filter(s => s.status === 'confirmed').length;
   const seasonFormat     = getSetting('season_format', '');
   const quotaAmount      = getSetting('season_quota_amount', '');
