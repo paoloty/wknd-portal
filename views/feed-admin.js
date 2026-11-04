@@ -4,7 +4,9 @@
 // Three tabs: New post (a type, its fields, date, pin, notify), Bulk add (past Facebook and
 // YouTube links, one per line with a date) and Posted (each post: date, edit, pin, hide,
 // delete). Its own small stylesheet (works on both); the browser side is public/feed-admin.js,
-// posting to the server.js /admin/app/announcements routes.
+// posting to the server.js /admin/app/announcements routes. Each video post shows where its video
+// is (lib/feed-video.js): on our server, on its way, or still on Facebook's player, with Copy.
+import { statSync } from 'fs';
 import { escHtml as esc } from './layout.js';
 import { manilaFormat } from './utils.js';
 
@@ -16,12 +18,17 @@ const TYPES = [
   ['facebook', 'f', 'Facebook', 'Any other post from our Facebook page, as Facebook shows it.'],
 ];
 const LABEL = Object.fromEntries(TYPES.map(([k, , l]) => [k, l]));
+const JS_VER = (() => { try { return Math.floor(statSync(new URL('../public/feed-admin.js', import.meta.url)).mtimeMs); } catch { return 1; } })();
 // ms → "2026-11-01T18:30" in Manila, for <input type="datetime-local">.
 const toInput = ms => new Date(ms + 8 * 3600e3).toISOString().slice(0, 16);
 const fmt = ms => manilaFormat(ms, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 // list: getAppAnnouncements() rows · refOptions: [[value, label]] (server.js feedRefOptions)
-export function feedAdminBody({ list = [], refOptions = [], now = Date.now(), thumb = id => '' }) {
+// videos: post id → status line (server.js feedVideoStates)
+export function feedAdminBody({ list = [], refOptions = [], now = Date.now(), thumb = id => '', videos = {} }) {
+  const lines = Object.values(videos);
+  const canCopy = list.filter(a => videos[a.id]?.canCopy && !a.hidden_at).length;
+  const ours = lines.filter(l => l.tone === 'ok').length;
   const refSelect = (name, value = '') => `<select class="fa-in" name="${name}"><option value="">Not linked</option>${refOptions.map(([v, l]) => `<option value="${esc(v)}"${v === value ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   const typeSelect = value => `<select class="fa-in" name="type">${TYPES.map(([k, , l]) => `<option value="${k}"${k === value ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
   const row = a => {
@@ -40,13 +47,15 @@ export function feedAdminBody({ list = [], refOptions = [], now = Date.now(), th
         <button type="button" class="fa-btn" data-fa-act="hide" data-hidden="${a.hidden_at ? '0' : '1'}">${a.hidden_at ? 'Show' : 'Hide'}</button>
         <button type="button" class="fa-btn fa-btn--danger" data-fa-act="delete">Delete</button>
       </div>
+      ${videos[a.id] ? `<div class="fa-vid fa-vid--${videos[a.id].tone || 'none'}" data-fa-vid><span data-fa-vidtext>${esc(videos[a.id].label)}</span><button type="button" class="fa-btn" data-fa-act="copy"${videos[a.id].canCopy ? '' : ' hidden'}>Copy video here</button></div>` : ''}
       <details class="fa-edit"><summary>Edit</summary>
         <div class="fa-grid">
           <label class="fa-f"><span>Type</span>${typeSelect(a.type || 'announcement')}</label>
           <label class="fa-f"><span>From a game or run</span>${refSelect('ref', a.ref || '')}</label>
           <label class="fa-f fa-f--wide"><span>Title or caption</span><input class="fa-in" name="title" value="${esc(a.title || '')}" maxlength="120"></label>
           <label class="fa-f fa-f--wide"><span>Message</span><textarea class="fa-in" name="body" rows="3" maxlength="2000">${esc(a.body || '')}</textarea></label>
-          <label class="fa-f fa-f--wide"><span>${a.video ? 'Replace the video' : 'Video file'}</span><input class="fa-in" type="file" accept="video/mp4,video/quicktime,video/*" data-fa-editvideo><small>Plays in the card, iPhone too, instead of the Facebook player. Up to 150 MB.</small></label>
+          <label class="fa-f fa-f--wide"><span>${a.video ? 'Replace the video' : 'Video file'}</span><input class="fa-in" type="file" accept="video/mp4,video/quicktime,video/*" data-fa-editvideo><small>Plays in the card, iPhone too, instead of the Facebook player. Up to 150 MB, compressed to 720p here.</small></label>
+          <label class="fa-f fa-f--wide"><span>Facebook link</span><input class="fa-in" name="facebook" value="${esc(a.fb_url || '')}" placeholder="https://www.facebook.com/…"></label>
           <label class="fa-f fa-f--wide"><span>Extra link (e.g. the Facebook album)</span><input class="fa-in" name="link" value="${esc(a.link_url || '')}" placeholder="https://www.facebook.com/media/set/…"></label>
         </div>
         <button type="button" class="fa-btn fa-btn--primary" data-fa-act="edit">Save changes</button>
@@ -61,7 +70,7 @@ export function feedAdminBody({ list = [], refOptions = [], now = Date.now(), th
     <div class="fa-types" role="radiogroup" aria-label="Type">${TYPES.map(([k, ico, l], i) => `<label class="fa-type"><input type="radio" name="type" value="${k}"${i ? '' : ' checked'}><span><i>${ico}</i>${l}</span></label>`).join('')}</div>
     <p class="fa-help" data-fa-typehelp>${esc(TYPES[0][3])}</p>
     <div class="fa-grid">
-      <label class="fa-f fa-f--wide" data-fa-for="highlight throwback"><span>Video file</span><input class="fa-in" type="file" accept="video/mp4,video/quicktime,video/*" data-fa-video><small>Plays right in the card, iPhone too (a Facebook link opens full screen there). Up to 150 MB, about 2 minutes. To use one of our Facebook videos or reels, download it from Meta Business Suite (Content → the video → ⋯ → Download), then pick it here.</small></label>
+      <label class="fa-f fa-f--wide" data-fa-for="highlight throwback"><span>Video file</span><input class="fa-in" type="file" accept="video/mp4,video/quicktime,video/*" data-fa-video><small>Plays right in the card, iPhone too (a Facebook link opens full screen there). Up to 150 MB, compressed to 720p here. To use one of our Facebook videos or reels, download it from Meta Business Suite (Content → the video → ⋯ → Download), then pick it here.</small></label>
       <label class="fa-f fa-f--wide" data-fa-for="highlight throwback facebook"><span>Facebook link</span><input class="fa-in" name="facebook" placeholder="https://www.facebook.com/wkndbasketball/videos/…"><small>A public post, video or reel on our page.</small></label>
       <label class="fa-f fa-f--wide" data-fa-for="highlight throwback announcement"><span>YouTube link</span><input class="fa-in" name="youtube" placeholder="https://youtu.be/…"></label>
       <label class="fa-f fa-f--wide" data-fa-for="photos throwback"><span>Photos (up to 30)</span><input class="fa-in" type="file" accept="image/*" multiple data-fa-photos><small>From a Facebook album: download the photos you want, then pick them here.</small></label>
@@ -85,9 +94,10 @@ export function feedAdminBody({ list = [], refOptions = [], now = Date.now(), th
   </div>
 
   <div class="fa-pane" data-fa-pane="posted" hidden>
+    ${lines.length ? `<div class="fa-vidsum"><span>Videos on our server: <span data-fa-vidours>${ours}</span> of ${lines.length}</span><button type="button" class="fa-btn" data-fa-act="copy-all"${canCopy ? '' : ' hidden'}>Copy all from Facebook · ${canCopy}</button></div>` : ''}
     ${list.length ? list.map(row).join('') : '<p class="fa-help">Nothing posted yet.</p>'}
   </div>
-  <script src="/feed-admin.js" defer></script>
+  <script src="/feed-admin.js?v=${JS_VER}" defer></script>
 </div>`;
 }
 
@@ -141,6 +151,15 @@ textarea.fa-in { min-height: 72px; resize: vertical; }
 .fa-post__t small { display: block; font-size: 12px; opacity: .7; }
 .fa-post__acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .fa-in--date { width: auto; flex: 1 1 190px; }
+.fa-vid, .fa-vidsum { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.fa-vid { padding-top: 8px; border-top: 1px solid var(--fa-line); }
+.fa-vid > span { flex: 1 1 200px; min-width: 0; }
+.fa-vid--none > span { opacity: .75; }
+.fa-vid--ok > span { color: #16a34a; font-weight: 600; }
+.fa-vid--bad > span { color: #dc2626; }
+.fa-vid--work > span { color: var(--fa-amber); font-weight: 600; }
+.fa-btn[hidden] { display: none; }
+.fa-vidsum { font-weight: 600; }
 .fa-edit summary { cursor: pointer; font-size: 13px; font-weight: 600; opacity: .8; }
 .fa-edit[open] { display: grid; gap: 10px; }
 @media (max-width: 560px) { .fa-types { grid-template-columns: repeat(3, minmax(0, 1fr)); } .fa-grid { grid-template-columns: minmax(0, 1fr); } }

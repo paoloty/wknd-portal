@@ -279,7 +279,7 @@ import {
 import { selectBroadcastRecipients } from './lib/broadcast-recipients.js';
 import { SHARE_PREMIUM_KEYS, SHARE_ACCENTS, PAPAWIS_KEYS, PAPAWIS_PREMIUM_KEYS, renderPremiumShareCard, lockOverlay } from './lib/share-card-templates.js';
 import { PHONE_KEYS as SHARE_PHONE_KEYS, watermarkSvg as shareWatermarkSvg } from './public/share-cards.js';
-import { listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, rerenderMediaJob, requestFinal, outputPath, OUTPUT_FILES, startMediaWorker, expiresAt as mediaExpiresAt } from './lib/media-jobs.js';
+import { queueFeedVideo, feedVideoJobs, listMediaJobs, getMediaJob, deleteMediaJob, retryMediaJob, rerenderMediaJob, requestFinal, outputPath, OUTPUT_FILES, startMediaWorker, expiresAt as mediaExpiresAt } from './lib/media-jobs.js';
 import { potgVideoContext, savePotgPhoto, queuePotgVideos, potgPrefill, uploadPath, STAT_CATS as POTG_STAT_CATS, PHOTO_COUNT as POTG_PHOTO_COUNT } from './lib/potg-video.js';
 import { adminPotgVideoBody, adminMediaBody, mediaJobRow } from './views/admin/potg-video.js';
 import { adminMvpPodiumBody } from './views/admin/mvp-podium.js';
@@ -6210,10 +6210,11 @@ import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthen
 import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey, deletePasskeysForReg } from './lib/portal-db.js';
 import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
 import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
-import { getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, setAppAnnouncementDate, deleteAppAnnouncement,
+import { setAppAnnouncementFb, getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, setAppAnnouncementDate, deleteAppAnnouncement,
   editAppAnnouncement, setAppAnnouncementHidden, setAppAnnouncementVideo, addAppPostPhoto, getAppPostPhotoNumbers, getAppPostPhoto } from './lib/portal-db.js';
 import { adminAnnouncementsBody, feedThumb } from './views/admin/app-announcements.js';
 import { feedAdminBody } from './views/feed-admin.js';
+import { feedVideoPath, feedUploadPath, FEED_VIDEO_DIR, feedVideoLine } from './lib/feed-video.js';
 import { savePushSubscription, deletePushSubscription, deletePushSubscriptionsForReg, getPushSubscriptionsForReg, getAllPushSubscriptions, getPushPrefs, setPushPref, claimPushLog, onNotificationCreated } from './lib/portal-db.js';
 import { vapidKeys, pushToPlayer, pushKindOf, PUSH_KINDS } from './lib/push.js';
 import { adminAppBody } from './views/admin/app.js';
@@ -10450,7 +10451,7 @@ app.get('/admin/app', requireAuth, (req, res) => {
 
 // ── Admin: announcements for the app's feed (views/admin/app-announcements.js) ──
 app.get('/admin/app/announcements', requireAuth, (req, res) => {
-  res.send(renderAdminPage(req, { title: 'Feed posts', currentPath: '/admin/app', body: adminAnnouncementsBody({ list: getAppAnnouncements(), refOptions: feedRefOptions() }) }));
+  res.send(renderAdminPage(req, { title: 'Feed posts', currentPath: '/admin/app', body: adminAnnouncementsBody({ videos: feedVideoStates(), list: getAppAnnouncements(), refOptions: feedRefOptions() }) }));
 });
 app.get('/admin/app/announcements/:id/image', requireAuth, sendAnnImage);
 app.get('/admin/app/announcements/:id/photos/:n', requireAuth, (req, res) => {
@@ -10463,7 +10464,7 @@ const appFeedAdmin = req => !!req.session?.isAdmin && !req.session.impersonating
 app.get('/app/admin/feed', requireApp, (req, res) => {
   const me = appMe(req);
   if (!appFeedAdmin(req)) return res.redirect('/app/me');
-  sendTab(res, me, { title: 'Feed posts · WKND', tab: 'me', body: appFeedAdminPage({ body: feedAdminBody({ list: getAppAnnouncements(), refOptions: feedRefOptions(), thumb: feedThumb }) }) });
+  sendTab(res, me, { title: 'Feed posts · WKND', tab: 'me', body: appFeedAdminPage({ body: feedAdminBody({ list: getAppAnnouncements(), refOptions: feedRefOptions(), thumb: feedThumb, videos: feedVideoStates() }) }) });
 });
 const annPinUntil = days => { const d = Math.min(30, Math.max(0, Number(days) || 0)); return d ? Date.now() + d * 24 * 60 * 60 * 1000 : 0; };
 // Facebook posts in the feed (Paolo, 2026-11-01): a public post, video or reel on our page,
@@ -10590,13 +10591,16 @@ app.post('/admin/app/announcements/:id/publish', requireAuth, express.json(), (r
   res.json({ ok: true, notified });
 });
 // Edit its words, type, game or run, extra link: same fields as a new post.
-app.post('/admin/app/announcements/:id/edit', requireAuth, express.json(), (req, res) => {
+app.post('/admin/app/announcements/:id/edit', requireAuth, express.json(), async (req, res) => {
   const a = getAppAnnouncement(req.params.id);
   if (!a) return res.status(404).json({ error: 'Not found.' });
-  const b = { facebook: a.fb_url, youtube: a.youtube_url, ...req.body };
+  const fbNew = req.body?.facebook === undefined ? a.fb_url : await fbResolve(req.body.facebook);
+  if (fbNew && !fbEmbedOf(fbNew)) return res.status(400).json({ error: 'That doesn’t look like a Facebook link.' });
+  const b = { youtube: a.youtube_url, ...req.body, facebook: fbNew };
   const f = feedPostFields(b, { photosComing: a.photos > 0 || !!a.has_image, videoComing: !!a.video });
   if (typeof f === 'string') return res.status(400).json({ error: f });
   editAppAnnouncement(a.id, { type: f.type, title: f.title, body: f.body, ref: f.ref, linkUrl: f.link });
+  if (fbNew !== a.fb_url) setAppAnnouncementFb(a.id, fbNew);
   res.json({ ok: true });
 });
 app.post('/admin/app/announcements/:id/hide', requireAuth, express.json(), (req, res) => {
@@ -10653,15 +10657,34 @@ app.post('/admin/app/announcements/:id/pin', requireAuth, express.json(), (req, 
 app.post('/admin/app/announcements/:id/delete', requireAuth, (req, res) => {
   deleteAppAnnouncement(req.params.id);
   fs.promises.unlink(feedVideoPath(req.params.id)).catch(() => {});
+  fs.promises.unlink(feedUploadPath(req.params.id)).catch(() => {});
   res.json({ ok: true });
 });
 // Uploaded videos (Highlight, Throwback): the phone's own player plays them in the card (iPhone
 // included), muted as they scroll into view. Sent in pieces of up to 4 MB (Cloudflare refuses
 // one request over 100 MB): POST …/video?offset=N with the raw bytes, then …/video/done with
 // the type and a still frame for the cover. Up to FEED_VIDEO_MAX. Files: data/feed-videos/.
-const FEED_VIDEO_DIR = path.join(__dirname, 'data', 'feed-videos');
+// Done, it plays as it is and goes to the queue to be compressed (lib/feed-video.js).
 const FEED_VIDEO_MAX = 150 * 1024 * 1024;
-const feedVideoPath = id => path.join(FEED_VIDEO_DIR, `${String(id).replace(/[^\w-]/g, '')}.mp4`);
+// Each post's line in Feed posts, for those with one.
+function feedVideoStates(list = getAppAnnouncements()) {
+  const jobs = feedVideoJobs(), out = {};
+  for (const a of list) {
+    const line = feedVideoLine(a, a.video ? (fs.statSync(feedVideoPath(a.id), { throwIfNoEntry: false })?.size || 0) : 0, jobs[a.id]);
+    if (line) out[a.id] = line;
+  }
+  return out;
+}
+app.get('/admin/app/announcements/video-states', requireAuth, (req, res) => res.json({ states: feedVideoStates() }));
+// Copy Facebook videos to our server: one post, or every post that can be and isn't yet.
+app.post('/admin/app/announcements/copy-videos', requireAuth, express.json(), (req, res) => {
+  const list = getAppAnnouncements(), states = feedVideoStates(list);
+  const ids = req.body?.id ? [String(req.body.id)] : list.filter(a => !a.hidden_at).map(a => a.id);
+  const go = ids.filter(id => states[id]?.canCopy);
+  if (req.body?.id && !go.length) return res.status(400).json({ error: 'That post has no Facebook video to copy.' });
+  for (const id of go) queueFeedVideo(id, 'facebook', req.session?.playerName || 'Admin');
+  res.json({ ok: true, queued: go.length, states: feedVideoStates(list) });
+});
 app.post('/admin/app/announcements/:id/video', requireAuth, express.raw({ type: () => true, limit: '5mb' }), async (req, res) => {
   if (!getAppAnnouncement(req.params.id)) return res.status(404).json({ error: 'Not found.' });
   const offset = Number(req.query.offset) || 0, chunk = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
@@ -10669,7 +10692,7 @@ app.post('/admin/app/announcements/:id/video', requireAuth, express.raw({ type: 
   if (offset + chunk.length > FEED_VIDEO_MAX) return res.status(400).json({ error: 'Videos can be up to 150 MB.' });
   try {
     await fs.promises.mkdir(FEED_VIDEO_DIR, { recursive: true });
-    const file = feedVideoPath(req.params.id);
+    const file = feedUploadPath(req.params.id);
     const size = offset ? (await fs.promises.stat(file).catch(() => ({ size: -1 }))).size : 0;
     if (size !== offset) return res.status(409).json({ error: 'The upload got out of step. Try again.', size });
     await (offset ? fs.promises.appendFile(file, chunk) : fs.promises.writeFile(file, chunk));
@@ -10681,9 +10704,11 @@ app.post('/admin/app/announcements/:id/video/done', requireAuth, express.json({ 
   const type = req.body?.type === 'video/quicktime' ? 'video/quicktime' : 'video/mp4';
   const poster = String(req.body?.poster || '');
   if (req.body?.poster) req.body.poster = '(frame)';
-  const st = await fs.promises.stat(feedVideoPath(req.params.id)).catch(() => null);
+  const st = await fs.promises.stat(feedUploadPath(req.params.id)).catch(() => null);
   if (!st || !st.size) return res.status(400).json({ error: 'The video didn’t arrive. Try again.' });
+  await fs.promises.rename(feedUploadPath(req.params.id), feedVideoPath(req.params.id));
   setAppAnnouncementVideo(req.params.id, type, /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(poster) ? poster : '');
+  queueFeedVideo(req.params.id, 'upload', req.session?.playerName || 'Admin');
   res.json({ ok: true });
 });
 // The video itself (Range requests, for seeking). Ends in .mp4 so Cloudflare can keep a copy near players.

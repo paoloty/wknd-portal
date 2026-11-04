@@ -6,10 +6,10 @@ import { pageHeader, button } from './ui.js';
 import { feedAdminBody } from '../feed-admin.js';
 
 // list: getAppAnnouncements() rows · refOptions: server.js feedRefOptions()
-export function adminAnnouncementsBody({ list, refOptions = [], now = Date.now() }) {
+export function adminAnnouncementsBody({ list, refOptions = [], now = Date.now(), videos = {} }) {
   return `<div class="aui-page">
     ${pageHeader({ eyebrow: 'Players app', title: 'Feed posts', sub: 'Posts in the app’s feed, by date with the games, runs and results. An earlier date puts a post lower in the feed.', actionsHtml: button('Back to Players app', { href: '/admin/app' }) })}
-    ${feedAdminBody({ list, refOptions, now, thumb: a => feedThumb(a) })}
+    ${feedAdminBody({ list, refOptions, now, videos, thumb: a => feedThumb(a) })}
   </div>`;
 }
 // A post's small picture for the Posted list: its first photo, else its photo.

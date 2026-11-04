@@ -20,13 +20,43 @@
     facebook: 'Any other post from our Facebook page, as Facebook shows it.',
   };
 
-  // Tabs
+  // Tabs. A reload after an action comes back to the same tab.
+  var showTab = function (b) {
+    $$('[data-fa-tab]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
+    $$('[data-fa-pane]').forEach(function (p) { p.hidden = p.getAttribute('data-fa-pane') !== b.getAttribute('data-fa-tab'); });
+  };
   $$('[data-fa-tab]').forEach(function (b) {
     b.addEventListener('click', function () {
-      $$('[data-fa-tab]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
-      $$('[data-fa-pane]').forEach(function (p) { p.hidden = p.getAttribute('data-fa-pane') !== b.getAttribute('data-fa-tab'); });
+      showTab(b);
+      try { sessionStorage.setItem('wknd-fa-tab', b.getAttribute('data-fa-tab')); } catch (x) {}
     });
   });
+  try { var keptTab = root.querySelector('[data-fa-tab="' + sessionStorage.getItem('wknd-fa-tab') + '"]'); if (keptTab) showTab(keptTab); } catch (x) {}
+
+  // Videos: each post's line follows the job, in place, while any is running.
+  var vidTimer = null;
+  var paintVids = function (states) {
+    var running = false;
+    $$('[data-fa-post]').forEach(function (item) {
+      var line = states[item.getAttribute('data-fa-post')], box = $('[data-fa-vid]', item);
+      if (!box || !line) return;
+      if (line.running) running = true;
+      box.className = 'fa-vid fa-vid--' + (line.tone || 'none');
+      $('[data-fa-vidtext]', box).textContent = line.label;
+      $('[data-fa-act="copy"]', box).hidden = !line.canCopy;
+    });
+    var ours = $('[data-fa-vidours]');
+    if (ours) ours.textContent = Object.keys(states).filter(function (k) { return states[k].tone === 'ok'; }).length;
+    clearTimeout(vidTimer);
+    if (running && document.contains(root)) vidTimer = setTimeout(pollVids, 4000);
+  };
+  var pollVids = function () {
+    fetch('/admin/app/announcements/video-states', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { paintVids(j.states || {}); })
+      .catch(function () { vidTimer = setTimeout(pollVids, 15000); });
+  };
+  pollVids();
 
   // New post: the type's fields; Notify on for announcements, off for the rest and for an earlier date.
   var form = $('[data-fa-new]'), msg = $('[data-fa-msg]'), notify = $('[data-fa-notify]'), dateIn = $('[data-fa-newdate]');
@@ -144,7 +174,17 @@
       }, function (err) { b.disabled = false; bmsg.textContent = err.message; });
       return;
     }
+    if (act === 'copy-all') {
+      b.disabled = true;
+      post('/admin/app/announcements/copy-videos').then(function (r) { b.hidden = true; paintVids(r.states || {}); }, function (err) { b.disabled = false; alert(err.message); });
+      return;
+    }
     var item = b.closest('[data-fa-post]'); if (!item) return;
+    if (act === 'copy') {
+      b.disabled = true;
+      post('/admin/app/announcements/copy-videos', { id: item.getAttribute('data-fa-post') }).then(function (r) { b.disabled = false; paintVids(r.states || {}); }, function (err) { b.disabled = false; alert(err.message); });
+      return;
+    }
     var id = encodeURIComponent(item.getAttribute('data-fa-post')), base = '/admin/app/announcements/' + id;
     var go = function (p) { b.disabled = true; p.then(function () { location.reload(); }, function (err) { b.disabled = false; alert(err.message); }); };
     if (act === 'date') go(post(base + '/date', { date: item.querySelector('[data-fa-date-in]').value }));
@@ -158,7 +198,7 @@
       if (vid && vid.size > 150 * 1024 * 1024) return alert('Videos can be up to 150 MB.');
       // The video goes first, so a post switched to Highlight already has its video when it's checked.
       go((vid ? sendVideo(item.getAttribute('data-fa-post'), vid, function (t) { b.textContent = t; }) : Promise.resolve()).then(function () {
-        return post(base + '/edit', { type: g('type'), title: g('title'), body: g('body'), ref: g('ref'), link: g('link') });
+        return post(base + '/edit', { type: g('type'), title: g('title'), body: g('body'), ref: g('ref'), link: g('link'), facebook: g('facebook') });
       }));
     }
   });

@@ -11,6 +11,12 @@ Background video renders. The admin builds a video on a page, saving **queues** 
 - **Queue:** `POST /admin/games/:id/potg-video` → `queuePotgVideos` copies the photos into `data/media/jobs/<id>/` and creates a `media_jobs` row (status `queued`, quality `preview`). A player panel left empty is skipped.
 - **Preview → final:** every job renders first as a **preview** (544×680, fast encode, plays inline on /admin/media, no download). "Approve & render hi-res" (`POST /admin/media/:id/final`, `requestFinal`) re-queues the same job as `final` (1080×1350); only finals can be downloaded. "Edit" opens the editor with `?from=<jobId>`, prefilled by `potgPrefill` (photos copied back to uploads).
 
+## Feed post videos (kind `feed_video`, feed posts only)
+- `lib/feed-video.js` holds the rules, `scripts/feed-video.js <jobId>` does the work. Every feed video becomes one MP4: max 720 on the short side, H.264 CRF 26, AAC 128k, fast start. The original is deleted once the result checks out (H.264, same length); on any failure the post keeps what it had. A file that already plays everywhere and came out no bigger keeps its own encoding.
+- **Uploads** arrive as `data/feed-videos/<id>.upload`, move over `<id>.mp4` when complete (so a replacement never breaks the live video), play straight away, and are compressed in the queue.
+- **Facebook copies** (Feed posts → Copy video here / Copy all from Facebook) download with yt-dlp, up to 5 minutes. From the server (a data-centre address), reel links work and `story.php` post links get a login wall; the job fails with a message saying to upload the file instead. The same links download without a login from a home connection (tested 2026-11-04). We don't send a login.
+- Jobs don't show on the Processing list; each post's line on Feed posts shows the state (`feedVideoStates` in server.js). The app's feed plays our file first, then Facebook's player.
+
 ## Worker / renderer
 - `lib/media-jobs.js`: `media_jobs` table, `startMediaWorker()` (called just before `server.listen`), polls every 5 s, runs `nice -n 15 node scripts/render-potg.js <jobId>`, one at a time. A job left `processing` by a restart is re-queued on boot.
 - **Colour matching at render:** `lib/photo-match.js` matches the job's 6 photos to each other (levels, colour cast to the set's median, exposure to a common brightness) and then applies the WKND grade, into the job's tmp folder. Jobs created before this (`config.photosRaw` unset) were graded on upload, so they're matched but not graded again.
@@ -26,6 +32,8 @@ npx --yes @puppeteer/browsers install chrome-headless-shell@stable --path /opt/c
 pm2 restart wknd-portal
 ```
 The renderer finds `/opt/chrome/chrome-headless-shell/*/…/chrome-headless-shell` on its own; `CHROME_PATH` / `FFMPEG_PATH` in `.env` override.
+
+For feed videos: `curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp && chmod +x /usr/local/bin/yt-dlp`, kept current by `/etc/cron.weekly/yt-dlp` (`yt-dlp -U`). `YTDLP_PATH` / `FFPROBE_PATH` in `.env` override.
 
 ## Gotchas
 - Fonts for the video are bundled next to the template (Big Shoulders, Archivo); the server needs no system fonts.
