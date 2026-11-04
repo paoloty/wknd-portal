@@ -126,7 +126,7 @@ import {
   setRegistrationAdminSections, getRegistrationAdminSections,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
-  setRegistrationAdmin, insertAdminLog, getAdminLogs, getAdminLogsForUser, updateRegBirthday,
+  setRegistrationAdmin, insertAdminLog, getLogSources, updateRegBirthday,
   setRegistrationLastLogin, setRegistrationSensitiveAccess,
   createPlayer, mergeRegistrationIntoPlayer, playerHasActivity, deletePlayer,
   getSeasonStandings, getPlayoffGames,
@@ -203,6 +203,7 @@ import { adminUsersBody }       from './views/admin/users.js';
 import { adminUserDetailBody }  from './views/admin/user-detail.js';
 import { adminPrivilegesBody }  from './views/admin/privileges.js';
 import { adminLogsPage }        from './views/admin/logs.js';
+import { buildLogRows, playerAuditRoute, captureConsoleErrors } from './lib/activity-log.js';
 import { adminShareCardLogPage } from './views/admin/share-log.js';
 import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
@@ -3109,6 +3110,10 @@ function buildHighlights(completedGames, playerMap, teamMap, count = 4) {
   return results;
 }
 
+captureConsoleErrors(insertAdminLog);
+// What WKND did by itself, for the log (/admin/logs).
+const logSystem = (event, details = {}) => insertAdminLog({ actor: 'System', actorType: 'system', method: 'JOB', path: `/system/${event.replace(/_/g, '-')}`, details: { event, ...details } });
+
 const app = express();
 
 // HTML, JSON, CSS and JS leave compressed (brotli or gzip, whichever the caller takes).
@@ -3385,19 +3390,36 @@ function canViewSensitiveData(req) {
   return !!self?.can_view_sensitive;
 }
 
-// Log all mutating admin actions (skip GETs and file uploads)
+// Log all mutating admin actions and exports, failed ones too (insertAdminLog keeps photos
+// and credentials out). Who it was is read now: the request may end the session.
 app.use('/admin', (req, res, next) => {
-  if (req.method === 'GET' || !req.session?.isAdmin) return next();
+  const isExport = req.method === 'GET' && /\/export-/.test(req.path);
+  if ((req.method === 'GET' && !isExport) || !req.session?.isAdmin) return next();
+  const actor     = req.session.isElevatedPlayer ? (req.session.playerName || 'player-admin') : 'super';
+  const actorType = req.session.isElevatedPlayer ? 'admin' : 'super';
   res.on('finish', () => {
-    if (res.statusCode >= 500) return;
-    const actor     = req.session.isElevatedPlayer ? (req.session.playerName || 'player-admin') : 'super';
-    const actorType = req.session.isElevatedPlayer ? 'admin' : 'super';
-    const body      = req.body && typeof req.body === 'object' ? { ...req.body } : {};
-    delete body.password; delete body.confirm;
-    insertAdminLog({ actor, actorType, method: req.method, path: req.path, details: body });
+    insertAdminLog({ actor, actorType, method: req.method, path: req.path, details: req.body && typeof req.body === 'object' ? req.body : {}, status: res.statusCode });
     // A ledger or Papawis change can settle a balance (lift a ban) or create one.
     // (originalUrl: by 'finish' Express has put the /admin mount back on req.url.)
     if (res.statusCode < 400 && /^\/admin\/(ledger|papawis)\b/.test(req.originalUrl)) setImmediate(() => runBanJobs());
+  });
+  next();
+});
+
+// Player actions no other log records (list and privacy rule: PLAYER_AUDIT_ROUTES).
+app.use((req, res, next) => {
+  const route = playerAuditRoute(req.method, req.path);
+  if (!route || req.session?.impersonating) return next();
+  const reg = req.session?.playerRegId ? getRegistration(req.session.playerRegId) : null;
+  if (!reg && !req.session?.isAdmin && !route.anon) return next();
+  const actor = reg ? (reg.full_name || reg.email) : req.session?.isAdmin ? 'super' : 'Visitor';
+  const actorType = !reg && req.session?.isAdmin ? 'super' : 'player';
+  const path = req.path, method = req.method;
+  res.on('finish', () => {
+    if (route.failOnly && res.statusCode < 400) return;
+    const details = { event: route.event };
+    for (const k of route.keep || []) if (req.body?.[k]) details[k] = String(req.body[k]);
+    insertAdminLog({ actor, actorType, method, path, details, status: res.statusCode });
   });
   next();
 });
@@ -6123,6 +6145,13 @@ app.get('/login', (req, res) => {
   res.send(renderAuth(req, { title: 'Sign In — WKND Basketball', currentPath: '/login', body: adminLoginBody({ ref: req.query.ref, next }) }));
 });
 
+// A wrong password or code. What was typed in the email box is kept (never the password), at
+// most 30 a quarter hour per visitor so a bot can't fill the log.
+function logFailedSignIn(req, path, email, reason) {
+  if (!rateHit(`faillog:${clientIp(req)}`, 30, 15 * MIN)) return;
+  insertAdminLog({ actor: String(email || 'Unknown').slice(0, 120), actorType: 'player', method: 'POST', path, details: { event: 'login_failed', message: reason }, status: 401 });
+}
+
 app.post('/login', (req, res) => {
   const { username = '', password = '', remember = '', next, ref } = req.body;
   const dest = safeNextPath(next);
@@ -6144,7 +6173,10 @@ app.post('/login', (req, res) => {
   // anything about the account, so the form never reveals who's registered.
   const reg = getRegistrationByEmail(username.trim());
   if (reg?.password_hash && checkPlayerPassword(password, reg.password_hash)) {
-    if (reg.status !== 'approved') return showError('Your registration is not yet approved.');
+    if (reg.status !== 'approved') {
+      logFailedSignIn(req, '/login', username, 'Account not approved yet');
+      return showError('Your registration is not yet approved.');
+    }
     return signInRegistration(req, reg, err => {
       if (err) return showError('Something went wrong. Try again.', 500);
       if (remember === '1') req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
@@ -6159,10 +6191,15 @@ app.post('/login', (req, res) => {
     });
   }
 
+  logFailedSignIn(req, '/login', username, 'Wrong email or password');
   showError('Invalid email or password. Never set one, or forgot it? Tap “Forgot?” next to the password.');
 });
 
 app.get('/logout', (req, res) => {
+  const reg = req.session?.playerRegId ? getRegistration(req.session.playerRegId) : null;
+  if ((reg || req.session?.isAdmin) && !req.session?.impersonating) {
+    insertAdminLog({ actor: reg ? (reg.full_name || reg.email) : 'super', actorType: !reg ? 'super' : reg.is_admin ? 'admin' : 'player', method: 'GET', path: '/logout', details: { event: 'logout', ...(reg ? { email: reg.email } : {}) } });
+  }
   req.session.destroy(() => res.redirect('/login'));
 });
 
@@ -6436,7 +6473,10 @@ app.post('/app/login', (req, res) => {
   if (!signInAllowed(req, email)) return fail('Too many tries. Wait 15 minutes, or use "Email me a sign-in code" below.', 429);
   const reg = email ? getRegistrationByEmail(email) : null;
   // One answer for every failure, so the form never reveals who has an account.
-  if (!reg?.password_hash || !checkPlayerPassword(password, reg.password_hash)) return fail('Wrong email or password. No password yet, or forgot it? Use "Email me a sign-in code" below.');
+  if (!reg?.password_hash || !checkPlayerPassword(password, reg.password_hash)) {
+    logFailedSignIn(req, '/app/login', email, 'Wrong email or password');
+    return fail('Wrong email or password. No password yet, or forgot it? Use "Email me a sign-in code" below.');
+  }
   const block = appSignInBlock(reg);
   if (block) return sendApp(res, { title: 'WKND', bare: true, body: appNotPlayerPage({ reason: block, phase: appPhase() }) });
   appAfterSignIn(req, res, reg, 'password');
@@ -10985,6 +11025,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
         req.session.playerRegId    = existing.id;
         req.session.playerPlayerId = existing.player_id;
         setRegistrationLastLogin(existing.id);
+        insertAdminLog({ actor: existing.full_name || existing.email, actorType: existing.is_admin ? 'admin' : 'player', method: 'GET', path: '/auth/facebook/callback', details: { event: 'login', via: 'Facebook', email: existing.email } });
         if (existing.is_admin) {
           req.session.isAdmin          = true;
           req.session.isElevatedPlayer = true;
@@ -11513,7 +11554,7 @@ app.get('/admin/users/:id', requireAuth, (req, res) => {
       tab: String(req.query.tab || 'profile'), query: req.query,
       teamColor: Object.fromEntries(teams.map(t => [t.id, t.color || teamColor(t.name)])),
       signup: getLatestSeasonSignupForReg(reg.id),
-      logs: isSuperAdmin ? getAdminLogsForUser(reg.id, reg.email, 40) : [],
+      logs: isSuperAdmin && req.query.tab === 'activity' ? logRowsFor({ reg, limit: 60 }).slice(0, 60) : [],
       sectionsList: ADMIN_SECTIONS,
     }),
   }));
@@ -11697,14 +11738,41 @@ app.get('/admin/privileges', requireSuperAdmin, (req, res) => {
   }));
 });
 
+// The one log: every source table as one list (lib/activity-log.js). From/To go to the query;
+// the other filters run in the grid, over at most LOG_ROW_LIMIT rows.
+const LOG_ROW_LIMIT = 20000;
+function logRowsFor({ reg = null, from = 0, to = undefined, limit = LOG_ROW_LIMIT } = {}) {
+  const regs = getAllRegistrations();
+  const sources = getLogSources({
+    from, to, limit,
+    person: reg ? { playerId: reg.player_id || '', regId: reg.id, email: reg.email, names: [reg.full_name, displayPlayerName(reg.full_name)] } : null,
+  });
+  return buildLogRows(sources, {
+    players: Object.fromEntries(getAllPlayers().map(p => [p.id, p])),
+    regs: Object.fromEntries(regs.map(r => [r.id, r])),
+    regsByEmail: Object.fromEntries(regs.filter(r => r.email).map(r => [r.email.toLowerCase(), r])),
+    runs: Object.fromEntries(getPapawisGames().map(g => [g.id, g])),
+    games: Object.fromEntries(getAllGames().map(g => [g.id, `${g.team_a_name} vs ${g.team_b_name}`])),
+  });
+}
+const manilaDayStart = (day, plusDays = 0) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) return null;
+  const ms = Date.parse(`${day}T00:00:00+08:00`);
+  return Number.isNaN(ms) ? null : ms + plusDays * 86400000;
+};
+
 app.get('/admin/logs', requireSuperAdmin, (req, res) => {
-  const userId = req.query.user;
-  const filterReg = userId ? getRegistration(userId) : null;
-  const logs = filterReg ? getAdminLogsForUser(filterReg.id, filterReg.email, 500) : getAdminLogs(500);
+  const reg = req.query.user ? getRegistration(String(req.query.user)) : null;
+  const rows = logRowsFor({ reg, from: manilaDayStart(req.query.from) ?? 0, to: manilaDayStart(req.query.to, 1) ?? undefined });
+  const capped = rows.length > LOG_ROW_LIMIT;
   res.send(renderAdminPage(req, {
-    title: 'Admin Logs',
+    title: 'Logs',
     currentPath: '/admin/logs',
-    body: adminLogsPage({ logs, filterLabel: filterReg ? filterReg.full_name : null }),
+    body: adminLogsPage({
+      rows: capped ? rows.slice(0, LOG_ROW_LIMIT) : rows, query: req.query, capped,
+      areas: [...new Set(rows.map(r => r.area))].sort(),
+      person: reg ? { param: 'user', id: reg.id, name: displayPlayerName(reg.full_name) || reg.email } : null,
+    }),
   }));
 });
 
@@ -28315,7 +28383,7 @@ setInterval(runPapawisLastCall, 10 * 60 * 1000);
 function runDailyBackup() {
   if (process.env.NODE_ENV !== 'production') return;
   dailyBackup(path.join(__dirname, 'data', 'backups'), manilaTodayStr(), 14)
-    .then(file => { if (file) console.log(`[backup] ${file}`); })
+    .then(file => { if (file) { console.log(`[backup] ${file}`); logSystem('backup_done', { file: path.basename(file) }); } })
     .catch(e => console.error('[backup] failed:', e.message));
 }
 setTimeout(runDailyBackup, 2 * 60 * 1000);
@@ -28338,6 +28406,8 @@ function runBanJobs() {
   try {
     const { banned, lifted } = runBanSweep();
     if (banned.length || lifted.length) console.log(`[bans] banned ${banned.length}, lifted ${lifted.length}`);
+    for (const id of banned) logSystem('auto_ban', { player_id: id });
+    for (const id of lifted) logSystem('auto_ban_lifted', { player_id: id });
   } catch (e) { console.error('[bans] sweep failed:', e.message); }
 }
 runBanJobs();
@@ -28459,6 +28529,12 @@ function broadcastLivenessCaptured(token) {
     if (ws.readyState === ws.OPEN) ws.send(msg);
   }
 }
+
+// A route that threw. console.error puts it in the log; Express still answers as before.
+app.use((err, req, res, next) => {
+  if ((err.status || err.statusCode || 500) >= 500) console.error(`[route] ${req.method} ${req.path}: ${err.message}`);
+  next(err);
+});
 
 const server = http.createServer(app);
 server.on('upgrade', (req, socket, head) => {

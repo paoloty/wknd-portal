@@ -220,8 +220,7 @@ const SUPER_ADMIN_NAV = [
     label: 'Super Admin',
     items: [
       { href: '/admin/privileges', label: 'Privileges', icon: 'shield' },
-      { href: '/admin/logs', label: 'Action Logs', icon: 'ledger' },
-      { href: '/admin/share-log', label: 'Share Card Log', icon: 'share' },
+      { href: '/admin/logs', label: 'Logs', icon: 'ledger' },
       { href: '/admin/birthdays', label: 'Birthdays', icon: 'users' },
       { href: '/admin/barkadahan', label: 'Barkadahan', icon: 'bell' },
       ...(process.env.NODE_ENV !== 'production' ? [{ href: '/admin/db', label: 'Sync DB', icon: 'finance' }] : []),

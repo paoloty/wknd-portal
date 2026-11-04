@@ -9,7 +9,7 @@ Legend for the Mockup column:
 - **needed**: a mockup comes first; the page isn't built until it's approved.
 - **n/a**: no mockup; the page is built straight from the components.
 
-Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. Game Day and Message players are built, not yet committed.
+Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages added since then were built on the kit from the start (see "Added since the plan").
 
 ## Foundation
 
@@ -70,11 +70,28 @@ Last updated: 2026-10-15. Members and Papawis are fully rebuilt and committed. G
 | 45 | Content | AI writing | /admin/ai-writing | n/a | [ ] |
 | 46 | Site | Site and homepage | /admin/site | n/a | [ ] |
 | 47 | Super admin | Privileges | /admin/privileges | n/a | [ ] |
-| 48 | Super admin | Action logs | /admin/logs | n/a | [ ] |
+| 48 | Super admin | Logs (the one log, every source, filters) | /admin/logs | n/a | [x] |
 | 49 | Super admin | Share card log | /admin/share-log | n/a | [ ] |
 | 50 | Super admin | Birthdays | /admin/birthdays | n/a | [ ] |
 | 51 | Super admin | Community ratings | /admin/ratings | n/a | [ ] |
 | 52 | Sign-in | Admin login | /login | n/a | [ ] |
+
+## Added since the plan (all on the kit)
+
+| Area | Page | Route |
+|------|------|-------|
+| Overview | Analytics | /admin/analytics |
+| Game Day | Scorers | /admin/scorers |
+| Game Day | Processing (POTG videos) | /admin/media |
+| Game Day | POTG video | /admin/games/:id/potg-video |
+| Game Day | Recent uploads | /admin/players/uploads |
+| Papawis | Scorers | /admin/papawis/scorers |
+| Papawis | Court page | /admin/papawis/courts/:id |
+| Season | Candidates | /admin/season/candidates |
+| Community | Rate & Win | /admin/raffle |
+| Members | Players app | /admin/app |
+| Members | Feed posts | /admin/app/announcements |
+| Super admin | Barkadahan archive | /admin/barkadahan |
 
 ## New features from the plan
 
@@ -109,4 +126,5 @@ Every admin page follows these:
 
 | | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Total | 52 | 0 | 10 | 17 |
+| Original list | 52 | 0 | 10 | 19 |
+| Added since | 12 | 0 | - | 12 |

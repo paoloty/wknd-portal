@@ -142,23 +142,22 @@ function emailsTab(emails, query, regId) {
   });
 }
 
-// Admin log paths → tone: only the decisions that change an account get a colour.
-const LOG_TONE = { approve: 'green', create: 'green', reject: 'red', reset: 'red' };
+// Log rows (lib/activity-log.js) → tone: problems, and the decisions that change an account.
+const logTone = l => (l.failed || /\/(reject|reset)$/.test(l.path) ? 'red' : /\/(approve|create)$/.test(l.path) ? 'green' : 'gray');
+const lowerFirst = s => (s ? s[0].toLowerCase() + s.slice(1) : s);
 
-function activityTab(reg, logs, emails, actorLabel) {
+function activityTab(reg, logs, emails) {
   const items = [];
   if (reg.created_at) items.push({ at: reg.created_at, who: displayName(reg.full_name), what: 'registered', tone: 'gray' });
   // The approval, unless the action log already has it (with who did it).
   const loggedApproval = logs.some(l => /\/(approve|create)$/.test(String(l.path || '')));
   if (reg.approved_at && !loggedApproval) items.push({ at: reg.approved_at, who: 'Admin', what: 'approved the account', tone: 'green' });
-  for (const e of emails.slice(0, 15)) {
+  // The super admin's log already has the emails; a restricted admin sees only the emails.
+  if (!logs.length) for (const e of emails.slice(0, 15)) {
     const st = emailStatus(e);
     items.push({ at: e.sent_at, who: 'WKND', what: `emailed “${e.subject || kindLabel(e.kind)}”${st && EMAIL_TONE[st.key] === 'red' ? ` (${st.label.toLowerCase()})` : ''}`, tone: st && EMAIL_TONE[st.key] === 'red' ? 'red' : 'gray' });
   }
-  for (const l of logs) {
-    const verb = String(l.path || '').split('/').pop() || '';
-    items.push({ at: l.created_at, who: actorLabel(l), what: verb.replace(/-/g, ' '), tone: LOG_TONE[verb] || 'gray' });
-  }
+  for (const l of logs) items.push({ at: l.at, who: l.who, what: lowerFirst(l.what), tone: logTone(l) });
   items.sort((a, b) => b.at - a.at);
   if (!items.length) return emptyState({ title: 'Nothing yet' });
   return `<div class="aui-panel">${timeline(items.slice(0, 40).map(i => ({ ...i, when: fmtDateTime(i.at) })))}</div>`;
@@ -307,7 +306,7 @@ export function adminUserDetailBody({
       reg.player_id ? { label: 'Player profile', href: `/admin/players/${reg.player_id}` } : null,
       publicHref ? { label: 'Public profile ↗', href: publicHref } : null,
       signup ? { label: `Season ${signup.season} signup`, href: `/admin/season/signups/${signup.id}` } : null,
-      isSuperAdmin ? { label: 'Action log', href: `/admin/logs?user=${reg.id}` } : null,
+      isSuperAdmin ? { label: 'Logs', href: `/admin/logs?user=${reg.id}` } : null,
     ],
   });
   if (publicHref) strip = strip.replace(`href="${attr(publicHref)}"`, `href="${attr(publicHref)}" target="_blank" rel="noopener"`);
@@ -319,13 +318,12 @@ export function adminUserDetailBody({
   const current = tabs.some(t => t[0] === tab) ? tab : 'profile';
   const tabsHtml = pageTabs(tabs.map(([k, label, count]) => ({ label, count, href: `/admin/users/${reg.id}${k === 'profile' ? '' : `?tab=${k}`}`, active: k === current })));
 
-  const actorLabel = l => (l.actor_type === 'super' ? 'Super admin' : displayPlayerName(l.actor) || 'Admin');
   const main = {
     profile: () => profileTab(reg, positions, canViewSensitive, show),
     account: () => accountTab(reg, linkedName, linkedTeam, inSync, isSuperAdmin),
     access: () => accessTab(reg, sectionsList, name),
     emails: () => emailsTab(emails, query, reg.id),
-    activity: () => activityTab(reg, logs, emails, actorLabel),
+    activity: () => activityTab(reg, logs, emails),
   }[current]();
 
   const pending = reg.status === 'pending';

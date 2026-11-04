@@ -1,69 +1,74 @@
+// /admin/logs: the one log (rebuilt on views/admin/ui.js, 2026-11). Admin actions, sign-ins,
+// player actions, Papawis, emails, app events, share cards, birthdays, sends and server errors
+// in one list, with filters that live in the URL. Rows: lib/activity-log.js.
 import { escHtml } from '../layout.js';
+import { pageHeader, dataGrid, avatar, badge, facts, button, banner } from './ui.js';
 
-function fmtTime(ts) {
-  if (!ts) return '—';
-  return new Date(ts > 1e10 ? ts : ts * 1000).toLocaleString('en-US', {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+const attr = s => escHtml(String(s ?? ''));
+const fmtTime = ts => new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+const fmtFull = ts => new Date(ts).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila' });
+
+const WHO_OPTIONS = [['admin', 'Admins'], ['player', 'Players'], ['system', 'WKND (automatic)']];
+
+function resultText(r) {
+  if (r.status >= 400) return `Failed (${r.status})`;
+  if (r.status) return `OK (${r.status})`;
+  return r.path && r.path.startsWith('/admin') ? 'Not recorded (older entry)' : '';
+}
+
+function expandRow(r) {
+  const pairs = [
+    ['When', escHtml(fmtFull(r.at))],
+    r.path ? ['Request', `<code>${escHtml(`${r.method} ${r.path}`)}</code>`] : null,
+    resultText(r) ? ['Result', escHtml(resultText(r))] : null,
+    ...r.facts.map(([k, v]) => [k, escHtml(v)]),
+    r.href ? ['Open', `<a class="aui-link" href="${attr(r.href)}">${escHtml(r.target || 'Details')}</a>`] : null,
+  ];
+  return facts(pairs);
+}
+
+export function adminLogsPage({ rows = [], query = {}, areas = [], person = null, capped = false, from = '', to = '' }) {
+  const grid = dataGrid({
+    id: 'logs', baseUrl: '/admin/logs', query, rows, perPage: 50, rowKey: r => r.key,
+    noun: ['entry', 'entries'],
+    keep: person ? { [person.param]: person.id } : {},
+    views: [
+      { key: 'all', label: 'All', test: () => true },
+      { key: 'failed', label: 'Problems', test: r => r.failed },
+      { key: 'admin', label: 'Admins', test: r => r.whoType === 'admin' },
+      { key: 'account', label: 'Sign-ins', test: r => r.area === 'Account' },
+      { key: 'player', label: 'Players', test: r => r.whoType === 'player' && r.area !== 'Account' },
+      { key: 'email', label: 'Emails', test: r => r.source === 'email' || r.source === 'broadcast' },
+      { key: 'system', label: 'System', test: r => r.area === 'System' },
+    ],
+    search: { placeholder: 'Search name, email, action or page', text: r => `${r.who} ${r.what} ${r.sub} ${r.target} ${r.path} ${r.facts.map(f => f[1]).join(' ')}` },
+    filters: [
+      { key: 'area', label: 'Area', options: areas.map(a => [a, a]), test: (r, v) => r.area === v },
+      { key: 'who', label: 'Who', options: WHO_OPTIONS, test: (r, v) => r.whoType === v },
+      { key: 'from', label: 'From', type: 'date', test: () => true }, // applied by the query, see the route
+      { key: 'to', label: 'To', type: 'date', test: () => true },
+    ],
+    defaultSort: '-when',
+    columns: [
+      { key: 'what', label: 'What', primary: true, cell: r => `<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.what)}${r.failed ? ` ${badge('Problem', 'red')}` : ''}</span>${r.sub ? `<span class="aui-cell__sub alog-sub">${escHtml(r.sub)}</span>` : ''}</span>` },
+      { key: 'who', label: 'Who', bare: true, cell: r => `<span class="aui-who">${avatar(r.who, '', { size: 24, playerId: r.whoPlayerId })}${escHtml(r.who)}</span>` },
+      { key: 'on', label: 'On', cell: r => (r.target ? (r.href ? `<a class="aui-link" href="${attr(r.href)}">${escHtml(r.target)}</a>` : escHtml(r.target)) : '') },
+      { key: 'area', label: 'Area', phone: false, cell: r => escHtml(r.area) },
+      { key: 'when', label: 'When', num: true, nowrap: true, bare: true, sort: r => r.at, cell: r => escHtml(fmtTime(r.at)) },
+    ],
+    expand: expandRow,
+    empty: { title: 'Nothing logged yet' },
   });
-}
-
-function methodBadge(method) {
-  const colors = { POST: '#f59332', DELETE: '#f87171', PATCH: '#a78bfa', PUT: '#60a5fa' };
-  const c = colors[method] || '#64748b';
-  return `<span style="font-size:10px;font-weight:700;color:${c};font-variant-numeric:tabular-nums;letter-spacing:.04em">${escHtml(method)}</span>`;
-}
-
-function actorBadge(type) {
-  if (type === 'super') return `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#f59332;background:rgba(245,147,50,.12);padding:1px 6px;border-radius:4px">Super</span>`;
-  if (type === 'player') return `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#60a5fa;background:rgba(96,165,250,.12);padding:1px 6px;border-radius:4px">Player</span>`;
-  return `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#a78bfa;background:rgba(167,139,250,.12);padding:1px 6px;border-radius:4px">Admin</span>`;
-}
-
-export function adminLogsPage({ logs = [], filterLabel = null }) {
-  const rows = logs.map(l => {
-    let details = '';
-    try {
-      const d = JSON.parse(l.details || '{}');
-      const entries = Object.entries(d).filter(([k]) => k !== 'password' && k !== 'confirm');
-      if (entries.length) details = entries.map(([k, v]) => `<span style="color:var(--text-muted)">${escHtml(k)}:</span> ${escHtml(String(v)).slice(0, 80)}`).join(' &nbsp;·&nbsp; ');
-    } catch {}
-
-    return `<tr class="border-b border-admin-border/40 last:border-0 hover:bg-white/[.015] transition-colors">
-      <td class="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">${escHtml(fmtTime(l.created_at))}</td>
-      <td class="px-4 py-2.5 whitespace-nowrap">${actorBadge(l.actor_type)} <span class="text-sm text-slate-300 ml-1.5">${escHtml(l.actor)}</span></td>
-      <td class="px-4 py-2.5 whitespace-nowrap">${methodBadge(l.method)}</td>
-      <td class="px-4 py-2.5 text-sm font-mono text-slate-400">${escHtml(l.path)}</td>
-      <td class="px-4 py-2.5 text-xs text-slate-500 max-w-[320px] truncate">${details}</td>
-    </tr>`;
-  }).join('');
-
-  return `
-<div class="mb-6 flex items-center justify-between">
-  <div>
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">${filterLabel ? `Activity for ${escHtml(filterLabel)}` : 'Admin Logs'}</h2>
-    <p class="text-xs text-slate-500 mt-0.5">
-      ${filterLabel
-        ? `<a href="/admin/logs" class="text-brand hover:underline">Clear filter</a> — showing only actions on and by this user`
-        : 'Admin actions and player account activity (email opens, password setup, logins) — visible to super admin only'}
-    </p>
-  </div>
-  <span class="text-xs text-slate-600">${logs.length} entries</span>
-</div>
-
-${logs.length === 0
-  ? `<div class="bg-admin-surface border border-admin-border rounded-lg p-12 text-center text-sm text-slate-500">No actions logged yet.</div>`
-  : `<div class="bg-admin-surface border border-admin-border rounded-lg overflow-auto">
-  <table class="w-full border-collapse">
-    <thead>
-      <tr class="border-b border-admin-border">
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">Time</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Actor</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Method</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Path</th>
-        <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Details</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>
-</div>`}`;
+  const notes = [
+    person ? banner('info', `Only showing entries for ${person.name}.`, `<a class="aui-link" href="/admin/logs">Show everyone</a>`) : '',
+    capped ? banner('warn', `Showing the latest ${rows.length.toLocaleString()} entries. Pick a From and To date to see older ones.`) : '',
+  ].join('');
+  return `<div class="aui-page">
+    ${pageHeader({
+      title: person ? `Logs: ${person.name}` : 'Logs',
+      sub: 'Everything in one place: what admins, players and WKND itself did, and what went wrong. Manila time.',
+      actionsHtml: button('Share card stats', { kind: 'ghost', size: 'sm', href: '/admin/share-log' }),
+    })}
+    ${notes}${grid}
+  </div>`;
 }

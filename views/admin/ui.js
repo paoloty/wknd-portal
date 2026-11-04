@@ -129,6 +129,7 @@ export function ago(ms, now = Date.now()) {
 //   views:   [{ key, label, test: r => bool }],           first one is the default
 //   search:  { placeholder, text: r => 'haystack' },
 //   filters: [{ key, label, options: [[value, label]], test: (r, value) => bool }],
+//            (type: 'date' instead of options: a date box)
 //   columns: [{ key, label, sort: r => value, cell: r => html, num, nowrap, phone: false, primary, bare }],
 //            (bare: no label in front of the value on a phone, for self-explaining cells like badges)
 //   defaultSort: '-joined',   perPage: 25,
@@ -224,10 +225,12 @@ export function dataGrid(o) {
   // Toolbar: one GET form (search + selects); hidden inputs keep the rest of the state.
   const keep = Object.entries({ ...(o.keep || {}), view: state.view, sort: state.sort, d: state.d }).filter(([, v]) => v).map(([k, v]) => `<input type="hidden" name="${k}" value="${attr(v)}">`).join('');
   const searchHtml = o.search ? `<label class="aui-search"><span class="aui-search__icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6" cy="6" r="4.5"/><path d="M9.5 9.5 13 13"/></svg></span><input type="search" name="q" value="${attr(text)}" placeholder="${attr(o.search.placeholder || 'Search')}" aria-label="${attr(o.search.placeholder || 'Search')}" data-autosubmit-search></label>` : '';
-  const selectsHtml = filters.map(f => `<label class="aui-filter"><span>${escHtml(f.label)}</span><select class="aui-input" name="${attr(f.key)}" data-autosubmit><option value="">All</option>${f.options.map(([v, l]) => `<option value="${attr(v)}"${String(v) === f.value ? ' selected' : ''}>${escHtml(l)}</option>`).join('')}</select></label>`).join('');
+  const selectsHtml = filters.map(f => (f.type === 'date'
+    ? `<label class="aui-filter"><span>${escHtml(f.label)}</span><input class="aui-input" type="date" name="${attr(f.key)}" value="${attr(f.value)}" data-autosubmit></label>`
+    : `<label class="aui-filter"><span>${escHtml(f.label)}</span><select class="aui-input" name="${attr(f.key)}" data-autosubmit><option value="">All</option>${f.options.map(([v, l]) => `<option value="${attr(v)}"${String(v) === f.value ? ' selected' : ''}>${escHtml(l)}</option>`).join('')}</select></label>`)).join('');
   const chips = [
     ...(text ? [{ label: `“${text}”`, href: url({ q: '', page: '' }) }] : []),
-    ...filters.filter(f => f.value).map(f => ({ label: `${f.label}: ${(f.options.find(([v]) => String(v) === f.value) || [null, f.value])[1]}`, href: url({ [f.key]: '', page: '' }) })),
+    ...filters.filter(f => f.value).map(f => ({ label: `${f.label}: ${((f.options || []).find(([v]) => String(v) === f.value) || [null, f.value])[1]}`, href: url({ [f.key]: '', page: '' }) })),
   ];
   const chipsHtml = chips.length ? `<div class="aui-chips">${chips.map(c => `<a class="aui-chip" href="${attr(c.href)}" aria-label="Remove filter ${attr(c.label)}">${escHtml(c.label)}<span aria-hidden="true">×</span></a>`).join('')}<a class="aui-chips__clear" href="${attr(gridUrl(o.baseUrl, { ...(o.keep || {}), view: state.view, d: state.d }, {}))}">Clear all</a></div>` : '';
   // o.minimal (short lists): no density switch, and no toolbar at all when it would be empty.

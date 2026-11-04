@@ -3194,3 +3194,7 @@ select.aui-input { padding-left: 9px; }
 .bkadm-row.is-del .bkadm-body { text-decoration: line-through; opacity: .55; }
 .bkadm-online { flex-wrap: wrap; gap: 10px 16px; }
 @media (max-width: 640px) { .bkadm-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who act" "body body" "meta meta"; } }
+
+/* The one log (/admin/logs) */
+.alog-sub { display: block; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) { .alog-sub { max-width: 100%; white-space: normal; overflow-wrap: anywhere; } #logs .aui-grid__table td:empty { display: none; } }
