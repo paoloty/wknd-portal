@@ -3240,3 +3240,19 @@ select.aui-input { padding-left: 9px; }
   .ashell__content { padding: 18px 16px 48px; }
   .aui-head__title { font-size: 22px; }
 }
+
+/* The settings panel (views/admin/settings.js) and the Settings tab */
+.aui-hubtabs__settings { margin-left: auto; }
+.aset__rows { padding: 2px 0; }
+.aset-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 12px 16px; }
+.aset-row + .aset-row, .aset__rows > [data-award-show] { border-top: 1px solid var(--aui-line); }
+.aset__rows > [data-award-show] { padding-left: 16px; padding-right: 16px; }
+.aset-row__text { min-width: 0; flex: 1; }
+.aset-row__control { flex: none; text-align: right; }
+.aset-row__msg { display: block; min-height: 14px; margin-top: 3px; font-size: 12px; }
+.aset-row .aui-cell__sub { margin-top: 2px; }
+.ahome-problem__sub { display: block; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) { .ahome-problem__sub { white-space: normal; overflow-wrap: anywhere; } }
+.aset + .aset { margin-top: var(--aui-gap); }
+.aui-page > .aset + .aset { margin-top: 0; }
+.aui-switch[aria-checked="true"] span { background: #fff; }

@@ -160,7 +160,7 @@ export function adminUsersBody({ registrations = [], canViewSensitive = true, ac
   });
 
   return `<div class="aui-page ausers">
-    ${pageHeader({ title: 'Users', sub: `${rows.length} accounts${pending ? ` · ${pending} waiting for approval` : ''}` })}
+    ${pageHeader({ title: 'Accounts', sub: `${rows.length} accounts${pending ? ` · ${pending} waiting for approval` : ''}` })}
     ${grid}
     ${usersScript}
   </div>`;

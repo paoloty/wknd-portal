@@ -216,7 +216,7 @@ export function adminSeasonBody({
 
   return `
 <div class="flex flex-col gap-0">
-  <h1 class="text-xl font-bold text-slate-100 mb-6">Season Management</h1>
+  <h1 class="text-xl font-bold text-slate-100 mb-6">Season</h1>
   ${portalRow}
   ${setupCard}
   ${waitlistCard}

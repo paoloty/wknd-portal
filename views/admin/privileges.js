@@ -41,7 +41,7 @@ export function adminPrivilegesBody({ admins = [], candidates = [], sections = [
 
   return `
 <div class="mb-6">
-  <h2 class="text-xl font-bold tracking-tight text-slate-100">Admin Privileges</h2>
+  <h2 class="text-xl font-bold tracking-tight text-slate-100">Admin access</h2>
   <p class="text-sm text-slate-500 mt-0.5">${admins.length} user${admins.length === 1 ? '' : 's'} with admin access</p>
 </div>
 

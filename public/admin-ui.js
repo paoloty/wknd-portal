@@ -510,11 +510,10 @@
   // A tab of the same menu link also swaps in place when its page allows it (canSwapAcross).
   // Anything else that goes to a different page still navigates normally.
   var samePage = function (url) { return new URL(url, location.origin).pathname === location.pathname; };
-  var shownPath = location.pathname; // the page in #admin-main (Back changes the address first)
 
   // Page scripts that can arrive after the page has loaded and run again on 'admin:updated'.
   // A page with any other script, or an inline one, needs a real load: those run once.
-  var SWAPPABLE_SCRIPT = /\/admin-(papawis|reach|ledger|picks|polls|players|team-builder)\.js/;
+  var SWAPPABLE_SCRIPT = /\/admin-(papawis|reach|ledger|picks|polls|players|team-builder|settings)\.js/;
   var pageScripts = {};
   [].forEach.call(document.scripts, function (s) { if (s.src) pageScripts[new URL(s.src).pathname] = true; });
   function canSwapAcross(html) {
@@ -570,7 +569,6 @@
     });
     var clean = takeToast(url);
     if (opts.push) history.pushState(null, '', clean); else history.replaceState(null, '', clean);
-    shownPath = location.pathname;
     window.scrollTo(0, opts.top ? 0 : y);
     if (focusName) {
       var again = main.querySelector('[name="' + focusName + '"]');
@@ -639,14 +637,15 @@
     var a = e.target.closest && e.target.closest('a[href]');
     if (!a || a.target || a.hasAttribute('download')) return;
     if (!a.closest('.aui-views, .aui-tabs, .aui-grid__sort, .aui-pager, .aui-density, .aui-chips, .aui-menu')) return;
-    var cross = !samePage(a.href);
-    if (cross && !a.closest('.aui-hubtabs')) return;
+    // A menu tab may be the same address (?settings=1) and still need the page's own scripts.
+    var cross = !!a.closest('.aui-hubtabs');
+    if (!cross && !samePage(a.href)) return;
     e.preventDefault();
     var go = function () { softLoad(a.href, { push: true, top: !!a.closest('.aui-tabs, .aui-menu'), cross: cross }); };
     if (!hasUnsaved()) { go(); return; }
     confirmDialog({ title: 'Discard your unsaved changes?', body: 'You haven’t saved them yet.', sendLabel: 'Discard' }).then(function (ok) { if (ok) go(); });
   });
-  window.addEventListener('popstate', function () { softLoad(location.href, { cross: location.pathname !== shownPath }); });
+  window.addEventListener('popstate', function () { softLoad(location.href, { cross: true }); });
 
   // One-time message carried in the URL of a full page load.
   try {

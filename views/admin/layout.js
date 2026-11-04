@@ -295,12 +295,12 @@ export function menuItemFor(path, menu) {
 
 // The tabs above a page. Only on the pages the tabs lead to: a single run or player has its
 // own tabs and a way back, and two rows of tabs would be confusing.
-function menuTabs(item, requestPath) {
-  if (!item || item.tabs.length < 2 || !item.tabs.some(t => t.href === requestPath)) return '';
+function menuTabs(item, requestPath, settings) {
+  if (!item || !item.tabs.some(t => t.href === requestPath) || (item.tabs.length < 2 && !settings)) return '';
   return `<nav class="aui-tabs aui-hubtabs" aria-label="${escHtml(item.label)}">${item.tabs.map(t => {
-    const on = t.href === requestPath;
+    const on = t.href === requestPath && !settings?.active;
     return `<a class="aui-tabs__tab${on ? ' is-active' : ''}" href="${t.href}"${on ? ' aria-current="page"' : ''}>${escHtml(t.label)}</a>`;
-  }).join('')}</nav>`;
+  }).join('')}${settings ? `<a class="aui-tabs__tab aui-hubtabs__settings${settings.active ? ' is-active' : ''}" href="${requestPath}?settings=1"${settings.active ? ' aria-current="page"' : ''}>Settings</a>` : ''}</nav>`;
 }
 
 // The admin shell (admin redesign, 2026-10-15; mockup: canvas "A · Clubhouse v2"). Rebuilt
@@ -316,7 +316,7 @@ function versionScripts(body, v) {
   return v ? String(body).replace(/(<script src="\/admin-[\w-]+\.js)(")/g, `$1${v}$2`) : body;
 }
 
-export function adminLayout({ title, currentPath = '/admin', requestPath = currentPath, body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null, navBadges = {}, me = null }) {
+export function adminLayout({ title, currentPath = '/admin', requestPath = currentPath, body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null, navBadges = {}, me = null, settings = null }) {
   const v = cssVer ? `?v=${cssVer}` : '';
 
   // Only what this admin can open shows; requireAuth in server.js is what actually blocks the rest.
@@ -409,7 +409,7 @@ export function adminLayout({ title, currentPath = '/admin', requestPath = curre
         <a class="aui-btn aui-btn--ghost aui-btn--sm" href="/" target="_blank" rel="noopener">View site <span aria-hidden="true">↗</span></a>
       </div>
     </header>
-    <main class="ashell__content" id="admin-main" data-menu-item="${activeItem?.id || ''}">${menuTabs(activeItem, requestPath)}${versionScripts(body, v)}</main>
+    <main class="ashell__content" id="admin-main" data-menu-item="${activeItem?.id || ''}">${menuTabs(activeItem, requestPath, settings)}${versionScripts(body, v)}</main>
   </div>
 
   <script>

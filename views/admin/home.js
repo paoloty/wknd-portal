@@ -96,6 +96,20 @@ function quietSection(quiet) {
   });
 }
 
+// Super admin only, because it comes from the logs. Each line opens the matching log view.
+function problemsSection(p) {
+  if (!p || !(p.emails + p.errors + p.requests)) return '';
+  const line = (n, one, many, sub, href) => (n ? `<a class="aui-action" href="${href}"><span class="aui-cell__stack"><span class="aui-action__label">${n} ${n === 1 ? one : many}</span>${sub ? `<span class="aui-cell__sub ahome-problem__sub">${escHtml(sub)}</span>` : ''}</span>${badge('Open', 'red')}</a>` : '');
+  return section({
+    title: 'Went wrong', note: '· last 7 days',
+    bodyHtml: `<div class="aui-panel aui-panel--flush">
+      ${line(p.emails, 'email failed or bounced', 'emails failed or bounced', '', '/admin/logs?view=failed&area=Email')}
+      ${line(p.requests, 'admin action crashed', 'admin actions crashed', '', '/admin/logs?view=failed')}
+      ${line(p.errors, 'server error', 'server errors', p.latestError, '/admin/logs?view=failed&area=System')}
+    </div>`,
+  });
+}
+
 function feedSection(feed, now) {
   const body = feed.length
     ? `<div class="ahome-feed">${feed.map(f => `<div class="ahome-feed__row">
@@ -107,13 +121,14 @@ function feedSection(feed, now) {
   return section({ title: 'Live', asideHtml: '<span class="ahome-live">Players, not admins</span>', bodyHtml: body });
 }
 
-export function adminHomeBody({ eyebrow, sub, kpis = [], items = [], snoozedCount = 0, quiet = null, feed = [], clicks = null, now = Date.now() }) {
+export function adminHomeBody({ eyebrow, sub, kpis = [], items = [], snoozedCount = 0, quiet = null, feed = [], clicks = null, problems = null, now = Date.now() }) {
   return `<div class="ahome">
     ${pageHeader({ eyebrow, title: 'This week', sub })}
     ${kpis.length ? `<div class="aui-kpis">${kpis.map(kpi).join('')}</div>` : ''}
     <div class="ahome__cols">
       <div class="ahome__main">
         ${todoSection(items, snoozedCount)}
+        ${problemsSection(problems)}
         ${quietSection(quiet)}
       </div>
       <div class="ahome__side">${feedSection(feed, now)}${analyticsHomeSection(clicks)}</div>

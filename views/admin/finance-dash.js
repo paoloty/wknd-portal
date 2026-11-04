@@ -1,7 +1,7 @@
 import { escHtml } from '../layout.js';
 import { displayPlayerName, teamColor } from '../utils.js';
 
-const fmt     = n => `PHP ${Number(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+const fmt     = n => `₱${Number(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
 const ICON_CHECK = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7l3.5 3.5L11 3"/></svg>`;
@@ -150,7 +150,7 @@ ${quota ? `
 
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-  <h2 class="text-xl font-bold tracking-tight text-slate-100">Finance Overview</h2>
+  <h2 class="text-xl font-bold tracking-tight text-slate-100">Money</h2>
   <a href="/admin/ledger${season ? '?season='+encodeURIComponent(season) : ''}" class="agm-pill"><span class="pill-label">Open Ledger →</span></a>
 </div>
 

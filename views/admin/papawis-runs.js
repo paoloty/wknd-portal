@@ -76,6 +76,16 @@ function moneyToChase(unpaidSignups, pendingPayments, unlinkedByPlayer, reusable
     </table></div></div>`;
 }
 
+// The Settings tab (renderAdminPage opts.settings).
+export function adminPapawisSwitches({ papawisEnabled = false, remindersEnabled = false, slotAlertsEnabled = false, regularsCount = 0 } = {}) {
+  const switches = `<div class="aui-panel">
+    ${toggleRow({ label: 'Papawis on the site', help: 'Sign-ups on /papawis. Managing runs here works either way.', name: 'papawis_enabled', on: papawisEnabled, post: '/admin/site/settings', setting: true })}
+    ${toggleRow({ label: 'Reminder and cancellation emails', help: 'The hourly reminder scan and cancellation notices only send when this is on.', name: 'papawis_reminders_enabled', on: remindersEnabled, post: '/admin/site/settings', setting: true })}
+    ${toggleRow({ label: 'Slot-opened alerts', help: 'When a full run loses a player and nobody is waiting: email regulars, then 30 min later anyone who viewed the roster. Live site only.', name: 'papawis_slot_alerts_enabled', on: slotAlertsEnabled, post: '/admin/site/settings', setting: true })}
+  </div>`;
+  return section({ title: 'Switches', bodyHtml: switches });
+}
+
 export function adminPapawisRunsBody({
   games = [], pendingPayments = [], unpaidSignups = [], unpaidUnlinkedByPlayer = {}, unpaidReusableByPlayer = {}, courts = [],
   papawisEnabled = false, remindersEnabled = false, slotAlertsEnabled = false, regularsCount = 0, today = '', query = {}, colorById = {},
@@ -122,11 +132,7 @@ export function adminPapawisRunsBody({
     empty: { title: 'No runs here', sub: 'Create one with “+ New run”.' },
   });
 
-  const switches = `<div class="aui-panel">
-    ${toggleRow({ label: 'Papawis on the site', help: 'Sign-ups on /papawis. Managing runs here works either way.', name: 'papawis_enabled', on: papawisEnabled, post: '/admin/site/settings', setting: true })}
-    ${toggleRow({ label: 'Reminder and cancellation emails', help: 'The hourly reminder scan and cancellation notices only send when this is on.', name: 'papawis_reminders_enabled', on: remindersEnabled, post: '/admin/site/settings', setting: true })}
-    ${toggleRow({ label: 'Slot-opened alerts', help: 'When a full run loses a player and nobody is waiting: email regulars, then 30 min later anyone who viewed the roster. Live site only.', name: 'papawis_slot_alerts_enabled', on: slotAlertsEnabled, post: '/admin/site/settings', setting: true })}
-  </div>`;
+
 
   const newRun = drawer({
     id: 'new-run', eyebrow: 'Papawis', title: 'New run',
@@ -148,7 +154,6 @@ export function adminPapawisRunsBody({
     ${stats}
     ${grid}
     ${section({ title: 'Money to chase', note: '· every run, oldest first', asideHtml: '<a class="aui-link" href="/admin/ledger">Open the ledger</a>', bodyHtml: moneyToChase(unpaidSignups, pendingPayments, unpaidUnlinkedByPlayer, unpaidReusableByPlayer, colorById) })}
-    ${section({ title: 'Switches', bodyHtml: switches })}
     ${newRun}
   </div>
   <script src="/admin-papawis.js" defer></script>`;

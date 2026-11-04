@@ -38,7 +38,7 @@ export function adminRatingsBody({ season, seasons = [], ratings = [] } = {}) {
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <div>
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">Community Ratings</h2>
+    <h2 class="text-xl font-bold tracking-tight text-slate-100">Ratings</h2>
     <p class="text-sm text-slate-500 mt-0.5">Every peer rating submitted this season — rater and ratee are always shown by real name here, regardless of the "Anonymous" display setting players see.</p>
   </div>
   <span class="text-xs text-slate-500">${ratings.length} rating${ratings.length === 1 ? '' : 's'}</span>

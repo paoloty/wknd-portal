@@ -134,7 +134,7 @@ export function mediaJobRow(j, outputs, fmtWhen, expiresAt = null) {
 export function adminMediaBody({ jobs, outputs, fmtWhen, expiresAt, ver }) {
   const rows = jobs.length ? jobs.map(j => mediaJobRow(j, outputs, fmtWhen, expiresAt?.(j))).join('') : emptyState({ title: 'Nothing processing', sub: 'Videos you make (e.g. a game’s POTG video) show up here while they render.' });
   return `<div class="aui-page" data-mj-page>
-    <header class="aui-head"><div class="aui-head__text"><div class="aui-head__eyebrow">Content</div><h1 class="aui-head__title">Processing</h1>
+    <header class="aui-head"><div class="aui-head__text"><h1 class="aui-head__title">Videos</h1>
       <p class="aui-head__sub">Videos render in the background, one at a time. This page updates itself; you can leave and come back. Each video renders as a quick preview first; approve it to render the hi-res download. Previews are kept 7 days, hi-res videos 30.</p></div></header>
     <div class="mj-list" data-mj-list>${rows}</div>
   </div>

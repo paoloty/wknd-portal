@@ -126,7 +126,7 @@ import {
   setRegistrationAdminSections, getRegistrationAdminSections,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
-  setRegistrationAdmin, insertAdminLog, getLogSources, updateRegBirthday,
+  setRegistrationAdmin, insertAdminLog, getLogSources, getRecentProblems, updateRegBirthday,
   setRegistrationLastLogin, setRegistrationSensitiveAccess,
   createPlayer, mergeRegistrationIntoPlayer, playerHasActivity, deletePlayer,
   getSeasonStandings, getPlayoffGames,
@@ -246,13 +246,13 @@ import {
 } from './lib/portal-db.js';
 import { COURT_SEEDS } from './lib/court-seeds.js';
 import { joinPage, joinFaq } from './views/join.js';
-import { adminPicksBody } from './views/admin/picks.js';
+import { adminPicksBody, adminPicksSettings } from './views/admin/picks.js';
 import { adminPlayersBody, adminPlayerUploadsBody } from './views/admin/players.js';
 import { adminPlayerDetailBody } from './views/admin/player-detail.js';
 import { adminComparePage } from './views/admin/compare.js';
 import { adminCoachNotesBody } from './views/admin/coach-notes.js';
 import { adminLayout, ADMIN_SECTIONS, sectionForPath, firstAllowedAdminUrl, expandAdminSections } from './views/admin/layout.js';
-import { settingsPanel, withSettings, settingsScript } from './views/admin/settings.js';
+import { settingsPanel, settingsView } from './views/admin/settings.js';
 import { computeRatings, computeRawValues } from './lib/ratings.js';
 import { alignmentFlag, summarizeReviews } from './lib/assessment-scoring.js';
 import { mvpPage, mvpLockPage, podiumBarHtml, podiumStrip, mvpSnapshot, mvpSharePage } from './views/mvp.js';
@@ -264,7 +264,7 @@ import { badgesPage } from './views/badges.js';
 import { papawisPage, papawisLockedBar, CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from './views/papawis.js';
 import { estimatedPapawisPrice, hasSavedPapawisAmount, hoursBetween, estimateTotal, roundTo10, defaultPapawisPrice, REFEREE_RATE_DEFAULT, ACTIVITY_LABELS as PAPAWIS_ACTIVITY_LABELS } from './views/admin/papawis.js';
 import { adminPapawisActivityBody } from './views/admin/papawis-activity.js';
-import { adminPapawisRunsBody } from './views/admin/papawis-runs.js';
+import { adminPapawisSwitches, adminPapawisRunsBody } from './views/admin/papawis-runs.js';
 import { adminPapawisRunBody } from './views/admin/papawis-run.js';
 import { marketplacePage, marketplaceListingPage } from './views/marketplace.js';
 import { adminMarketplaceListBody, adminMarketplaceNewBody, adminMarketplaceDetailBody, adminMarketplaceEditBody } from './views/admin/marketplace.js';
@@ -298,7 +298,7 @@ import { teamHeadPage } from './views/team-head.js';
 import { myTeamPage } from './views/my-team.js';
 import { jerseyRequestPage } from './views/jersey-request.js';
 import { pollsPage, pollPopup } from './views/polls.js';
-import { adminPollsBody, adminPollDetailBody } from './views/admin/polls.js';
+import { adminPollsBody, adminPollDetailBody, adminPollsSwitches } from './views/admin/polls.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -308,7 +308,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/table-scroll.js', 'public/player-cards.js', 'public/live-score.js', 'public/admin-ui.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js', 'public/potg-frame.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/table-scroll.js', 'public/player-cards.js', 'public/live-score.js', 'public/admin-ui.js', 'public/admin-settings.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js', 'public/potg-frame.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -2713,21 +2713,23 @@ function applySeoOverrideTags(metaTags, override, effectiveTitle, origin) {
   return mt;
 }
 
-// opts.settings: a settings panel (views/admin/settings.js) placed under the page's header.
+// opts.settings: this page's switches (views/admin/settings.js). They get a Settings tab beside
+// the page's tabs, at ?settings=1, so the page itself opens on its content.
 function renderAdminPage(req, opts) {
-  const body = opts.settings ? withSettings(opts.body, opts.settings) : opts.body;
+  const onSettings = !!opts.settings && req.query.settings === '1';
+  const body = onSettings ? settingsView(opts.settings) : opts.body;
   const allowed = getAdminAllowedSections(req);
   // Who's signed in, for the sidebar footer. The shared super-admin login has no name.
   const me = req.session?.isElevatedPlayer
     ? { name: req.session.playerName || 'Admin', role: allowed ? `Admin · ${ADMIN_SECTIONS.filter(x => allowed.includes(x.key)).map(x => x.label).join(', ')}` : 'Admin' }
     : { name: 'Super admin', role: 'Full access' };
-  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, requestPath: req.path, allowedSections: allowed, navBadges: adminNavBadges(), me, ...opts, body });
+  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, requestPath: req.path, allowedSections: allowed, navBadges: adminNavBadges(), me, ...opts, settings: opts.settings ? { active: onSettings } : null, body });
 }
 
 // ── Each feature's public switches, on its own admin page ──────────────────────────────
 // (moved off the old Visibility page in the 2026-10 reorganisation; /admin/site keeps the
 // site-wide ones). Keys and their owning sections: siteSettingSection.
-const codeTag = s => `<code class="text-[11px] bg-admin-border/50 px-1 rounded">${s}</code>`;
+const codeTag = s => s;
 const on = (key, def = '1') => getSetting(key, def) !== '0';
 
 // (Papawis switches now live on the runs page itself: views/admin/papawis-runs.js.)
@@ -2747,7 +2749,7 @@ function seasonNudgesPanel() {
 
 function postsSettingsPanel() {
   return settingsPanel([
-    { type: 'toggle', key: 'posts_enabled', value: getSetting('posts_enabled', '0') === '1', label: 'Posts on the site', sub: `League news and matchup previews on ${codeTag('/posts')}. Writing posts here works either way.` },
+    { type: 'toggle', key: 'posts_enabled', value: getSetting('posts_enabled', '0') === '1', label: 'News posts on the site', sub: `League news and matchup previews on ${codeTag('/posts')}. Writing posts here works either way.` },
     { type: 'toggle', key: 'posts_notify_on_publish', value: on('posts_notify_on_publish'), label: 'Tell players when a post goes up', sub: 'A bell notification to every active member when a post is published (or a scheduled one goes live). Live site only.' },
   ], { title: 'Public page' });
 }
@@ -2755,12 +2757,12 @@ function postsSettingsPanel() {
 function raffleSettingsPanel() {
   return settingsPanel([
     { type: 'toggle', key: 'raffle_enabled', value: raffleOn(), reload: true, label: 'Rate & Win raffle', sub: `The ${codeTag('/raffle')} page, tickets for rating games (needs "Rate your game" on), the ticket count by the bell and the automatic draw every other Sunday.` },
-  ], { title: 'Public features' }) + settingsScript();
+  ], { title: 'Public features' });
 }
 
 function finesSettingsPanel() {
   return settingsPanel([
-    { type: 'toggle', key: 'player_reports_enabled', value: getSetting('player_reports_enabled', '0') === '1', label: 'Player reports', sub: `Adds a "Report" button on ${codeTag('/players/:id')}. A report needs a majority admin vote to reach the team heads.` },
+    { type: 'toggle', key: 'player_reports_enabled', value: getSetting('player_reports_enabled', '0') === '1', label: 'Player reports', sub: `Adds a "Report" button on player pages. A report needs a majority admin vote to reach the team heads.` },
   ], { title: 'Public features' });
 }
 
@@ -7954,7 +7956,7 @@ app.get('/admin/barkadahan', requireSuperAdmin, (req, res) => {
   const reports = getBarkadahanReports({ open: true });
   const people = Object.fromEntries([...new Set([...rows.map(r => r.player_id), ...reports.map(r => r.author_id), ...reports.map(r => r.player_id), ...rows.map(r => r.deleted_by).filter(Boolean)])].map(id => [id, bkPerson(id)]));
   const panel = settingsPanel([{ type: 'toggle', key: 'barkadahan_enabled', value: barkadahanOn(), reload: true, label: 'Barkadahan in the app', sub: 'One chat room for every signed-in player, with who’s online. App only. Players see the last 30 days; this page keeps everything.' }], { title: 'Barkadahan' });
-  res.send(renderAdminPage(req, { title: 'Barkadahan', currentPath: '/admin/barkadahan', body: adminBarkadahanBody({ panel, rows, reports, people, q, who, total: countBarkadahanArchive(), online: bkOnlineIds().map(bkPerson) }) }));
+  res.send(renderAdminPage(req, { title: 'Chat archive', currentPath: '/admin/barkadahan', settings: panel, body: adminBarkadahanBody({ rows, reports, people, q, who, total: countBarkadahanArchive(), online: bkOnlineIds().map(bkPerson) }) }));
 });
 app.post('/admin/barkadahan/:id/delete', requireSuperAdmin, (req, res) => {
   const m = getBarkadahanMessage(req.params.id);
@@ -10481,11 +10483,12 @@ app.get('/admin/app', requireAuth, (req, res) => {
   const isOpen = getSetting('app_open', '0') === '1';
   res.send(renderAdminPage(req, {
     title: 'Players app', currentPath: '/admin/app',
-    body: adminAppBody({ rows, events, query: req.query, isOpen, pushOn: new Set(getAllPushSubscriptions().map(x => x.reg_id)).size, settingsHtml: settingsPanel([
+    body: adminAppBody({ rows, events, query: req.query, isOpen, pushOn: new Set(getAllPushSubscriptions().map(x => x.reg_id)).size }),
+    settings: settingsPanel([
       { type: 'toggle', key: 'app_open', value: isOpen, reload: true, label: 'Open to every player', sub: `Off: only player-admins and the testers below can use ${codeTag('/app')}. Everyone else sees "almost here".` },
       { type: 'toggle', key: 'app_require_install', value: appInstallRequired(), label: 'Phones must install the app', sub: 'On a phone, the app only works from the home screen: in a browser (or Messenger) players get install steps instead. Computers can always use it in the browser.' },
       { type: 'text', key: 'app_beta', value: getSetting('app_beta', ''), width: '320px', placeholder: 'emails, separated by commas', label: 'Testers', sub: 'Players who can use the app while it\'s hidden. Their sign-in emails, separated by commas.' },
-    ], { title: 'App access' }) }) + settingsScript(),
+    ], { title: 'App access' }),
   }));
 });
 
@@ -11081,6 +11084,7 @@ const homeConfirm = (title, bell, email, what) => ({
 
 function homeActor(req) { return currentAdminActor(req).id; }
 
+const now7Days = () => Date.now() - 7 * 86400000;
 function buildAdminHome(req) {
   const allowedSections = getAdminAllowedSections(req);
   const can = key => !allowedSections || allowedSections.includes(key);
@@ -11367,7 +11371,9 @@ function buildAdminHome(req) {
   const open = visible.filter(i => !i.done).length;
   const nextGame = getScheduledGames()[0];
   const lead = nextGame ? `Next game day is ${homeWhen(gameYmd(nextGame.date))}.` : '';
+  const problems = isSuper ? getRecentProblems(now7Days()) : null;
   return {
+    problems,
     eyebrow: new Date(`${today}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
     sub: `${lead} ${open ? `${homePlural(open, 'thing')} to do, sorted by what moves engagement most.` : 'Nothing waiting on you.'}`.trim(),
     kpis: kpis.slice(0, 4), items: visible, snoozedCount: items.length - visible.length, quiet, feed, now,
@@ -11500,7 +11506,7 @@ app.get('/admin/users', requireAuth, (req, res) => {
   const registrations = getAllRegistrations();
   const withFlags = registrations.map(r => ({ ...r, bogusFlags: detectBogusFlags(r, registrations) }));
   res.send(renderAdminPage(req, {
-    title: 'Users',
+    title: 'Accounts',
     currentPath: '/admin/users',
     body: adminUsersBody({
       registrations: withFlags, canViewSensitive: canViewSensitiveData(req), accountEmails: getLatestEmailsByRef(['approved', 'set_password']),
@@ -11732,7 +11738,7 @@ app.get('/admin/privileges', requireSuperAdmin, (req, res) => {
   const admins     = registrations.filter(r => r.is_admin).map(r => ({ ...r, adminSections: getRegistrationAdminSections(r) }));
   const candidates = registrations.filter(r => r.status === 'approved' && !r.is_admin);
   res.send(renderAdminPage(req, {
-    title: 'Admin Privileges',
+    title: 'Admin access',
     currentPath: '/admin/privileges',
     body: adminPrivilegesBody({ admins, candidates, sections: ADMIN_SECTIONS }),
   }));
@@ -12807,7 +12813,7 @@ app.get('/admin/ai-writing', requireAuth, (req, res) => {
   // forecast cards (mvpLockWriteups) still write in this voice.
   if (isMvpLocked(getPortalCurrentSeason())) currentVoices.mvp = `${currentVoices.mvp} (reveal lock: forecast cards only)`;
   res.send(renderAdminPage(req, {
-    title: 'AI Writing',
+    title: 'AI writing',
     currentPath: '/admin/ai-writing',
     body: adminAiWritingBody({
       config: getVoiceConfig(), features: AI_WRITING_FEATURES, creativityLevels: CREATIVITY_LEVELS,
@@ -12843,8 +12849,8 @@ app.get('/admin/site', requireAuth, (req, res) => {
       sub: `Shown next to the date in the homepage countdown (games don't store a time). 24-hour, Manila time. Empty = the picks cut-off (${escHtml(getSetting('picks_close_time', PICKS_CLOSE_DEFAULT))}).` },
   ], { title: 'Playoffs' }) + settingsPanel([
     { type: 'toggle', key: 'comments_enabled', value: flag('comments_enabled'), label: 'Comments & reactions', sub: 'Players comment and react across the site (game pages, posts, live updates). Admins can delete inline either way.' },
-    { type: 'toggle', key: 'peer_ratings_enabled', value: flag('peer_ratings_enabled'), label: 'Player ratings (old, roast-style)', sub: `Roast-style player-to-player ratings on ${codeTag('/players/:id')}. Replaced by "Rate your game" when that is on; old ratings stay in ${codeTag('/admin/ratings')}.` },
-    { type: 'toggle', key: 'game_ratings_enabled', value: flag('game_ratings_enabled'), label: 'Rate your game', sub: `After each Papawis run and league game, players rate the court and the players they played with (${codeTag('/rate/…')}): "Would you play with them again?" plus tags. Bell for everyone who played. See ${codeTag('/admin/ratings')}.` },
+    { type: 'toggle', key: 'peer_ratings_enabled', value: flag('peer_ratings_enabled'), label: 'Old player ratings', sub: `Player-to-player ratings on player pages. Replaced by "Rate your game" when that is on; old ratings stay in Ratings in this menu.` },
+    { type: 'toggle', key: 'game_ratings_enabled', value: flag('game_ratings_enabled'), label: 'Rate your game', sub: `After each Papawis run and league game, players rate the court and the players they played with: "Would you play with them again?" plus tags. Bell for everyone who played. See Ratings in this menu.` },
     { type: 'toggle', key: 'game_rate_email_enabled', value: flag('game_rate_email_enabled', '1'), label: 'Rate your game email', sub: 'One email per game with one-tap links (inside the Papawis tab email for players who owe). Players can unsubscribe from just this email.' },
     { type: 'text', key: 'game_rate_court_reask_days', value: getSetting('game_rate_court_reask_days', '30'), placeholder: '30', label: 'Ask about a court again after (days)', sub: 'A player who rated a court is not asked about it again until this many days later.' },
     { type: 'toggle', key: 'reg_open', value: flag('reg_open'), label: 'Join banner', sub: 'The "Join the community" registration band for logged-out visitors: on the homepage and as a small banner on other pages.' },
@@ -12855,22 +12861,22 @@ app.get('/admin/site', requireAuth, (req, res) => {
       label: `Homepage "Coming up": card ${n + 2}`, sub: n === 1 ? 'After the League and Papawis cards. A card with nothing to show this week is skipped automatically.' : '' })),
   ], { title: 'Header & homepage' });
   res.send(renderAdminPage(req, {
-    title: 'Site & homepage',
+    title: 'Site settings',
     currentPath: '/admin/site',
     body: adminSiteBody({
       panels,
       status: [
         { label: 'Papawis', on: flag('papawis_enabled'), where: 'Papawis', href: '/admin/papawis' },
         { label: 'Marketplace', on: flag('marketplace_enabled'), where: 'Marketplace', href: '/admin/marketplace' },
-        { label: 'Posts', on: flag('posts_enabled'), where: 'Posts', href: '/admin/posts' },
+        { label: 'News posts', on: flag('posts_enabled'), where: 'News posts', href: '/admin/posts' },
         { label: 'Who wins? picks', on: picksEnabled(), where: 'Who wins? picks', href: '/admin/picks' },
         { label: 'Season awards (/awards)', on: flag('awards_enabled', '1'), where: 'Season awards', href: '/admin/awards/season' },
         { label: `MVP & Best Defender races${lock.locked ? ' (locked)' : ''}`, on: flag('mvp_race_enabled', '1'), where: 'Races', href: '/admin/awards/races' },
         { label: 'MVP podium ballot', on: mvpPodiumEnabled(), where: 'MVP podium', href: '/admin/awards/podium' },
-        { label: 'Player reports', on: flag('player_reports_enabled'), where: 'Fines & conduct', href: '/admin/fines' },
+        { label: 'Player reports', on: flag('player_reports_enabled'), where: 'Conduct', href: '/admin/fines' },
         { label: 'Comments & reactions', on: flag('comments_enabled'), where: 'this page', href: '/admin/site' },
         { label: 'Barkadahan (app chat)', on: flag('barkadahan_enabled'), where: 'Barkadahan', href: '/admin/barkadahan' },
-        { label: 'Player ratings (old)', on: flag('peer_ratings_enabled'), where: 'this page', href: '/admin/site' },
+        { label: 'Old player ratings', on: flag('peer_ratings_enabled'), where: 'this page', href: '/admin/site' },
         { label: 'Rate your game', on: flag('game_ratings_enabled'), where: 'this page', href: '/admin/site' },
         { label: 'Join banner', on: flag('reg_open'), where: 'this page', href: '/admin/site' },
       ],
@@ -13183,7 +13189,7 @@ app.get('/admin/finance', requireAuth, (req, res) => {
   const teamTotals     = season ? getTeamTotals() : [];
   const recentTx       = getRecentTransactions();
   res.send(renderAdminPage(req, {
-    title: 'Finance',
+    title: 'Money',
     currentPath: '/admin/finance',
     body: adminFinanceDashBody({ seasons, season, summary, quota, quotaPlayerCount, quotaPaid, balMap, players, allPlayers, pending, categoryTotals, teamTotals, recentTx }),
   }));
@@ -13196,7 +13202,7 @@ app.get('/admin/finance/gcash', requireAuth, (req, res) => {
     qr_payload: getSetting('gcash_qr_payload', ''),
   };
   res.send(renderAdminPage(req, {
-    title: 'GCash Settlement',
+    title: 'GCash',
     currentPath: '/admin/finance/gcash',
     body: adminFinanceGcashBody({ gcash }),
   }));
@@ -14514,7 +14520,7 @@ function uniquePostSlug(base, excludeId = '') {
 app.get('/admin/posts', requireAuth, (req, res) => {
   const posts = getAllPostsAdmin();
   res.send(renderAdminPage(req, {
-    title: 'Posts',
+    title: 'News posts',
     currentPath: '/admin/posts',
     settings: postsSettingsPanel(),
     body: adminPostsListBody({ posts }),
@@ -14701,7 +14707,7 @@ async function compressSeoImage(dataUrl) {
 app.get('/admin/seo', requireAuth, (req, res) => {
   const overrides = getAllSeoOverrides();
   res.send(renderAdminPage(req, {
-    title: 'SEO Overrides',
+    title: 'Search results',
     currentPath: '/admin/seo',
     body: adminSeoListBody({ overrides }),
   }));
@@ -14817,7 +14823,7 @@ app.get('/admin/compare', requireAuth, (req, res) => {
   const rows    = getCompareAnalytics();
   const players = getAllPlayers();
   res.send(renderAdminPage(req, {
-    title: 'Compare Analytics',
+    title: 'Compares',
     currentPath: '/admin/compare',
     body: adminComparePage({ rows, players }),
   }));
@@ -15039,10 +15045,10 @@ app.get('/admin/picks', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Who wins? picks',
     currentPath: '/admin/picks',
+    settings: adminPicksSettings({ homeWidget: on('home_picks_widget_enabled'), autoRemind: on('picks_auto_remind'), closeTime: picksCloseTime(), oddsOn: pickOddsEnabled(), picksOn: picksEnabled() }),
     body: adminPicksBody({
       season, seasons, isCurrent, upNext, upDay, missing, results, pickers, hasFinalsG1: !!sp.finalsG1,
       query: req.query, teams: getAllTeams(), colorById: adminTeamColorByPlayer(),
-      settings: { homeWidget: on('home_picks_widget_enabled'), autoRemind: on('picks_auto_remind'), closeTime: picksCloseTime() },
       minPicks: sp.board.minPicks, oddsOn: pickOddsEnabled(), picksOn: picksEnabled(),
       msg: req.query.reminded
         ? `Reminder sent to ${req.query.reminded} player${req.query.reminded === '1' ? '' : 's'}.${req.query.emailing ? ` Emailing ${req.query.emailing} of them now; refresh in a minute for the tally.` : ''}`
@@ -16293,7 +16299,7 @@ app.post('/admin/games/:id/potg-video', requireAuth, express.json({ limit: '200k
 });
 
 app.get('/admin/media', requireAuth, (req, res) => {
-  res.send(renderAdminPage(req, { title: 'Processing', currentPath: '/admin/media', body: adminMediaBody({ jobs: listMediaJobs(), outputs: OUTPUT_FILES, fmtWhen: fmtJobWhen, expiresAt: mediaExpiresAt }) }));
+  res.send(renderAdminPage(req, { title: 'Videos', currentPath: '/admin/media', body: adminMediaBody({ jobs: listMediaJobs(), outputs: OUTPUT_FILES, fmtWhen: fmtJobWhen, expiresAt: mediaExpiresAt }) }));
 });
 
 app.get('/admin/media.json', requireAuth, (req, res) => {
@@ -23549,7 +23555,7 @@ app.get('/admin/season', requireAuth, (req, res) => {
   const allSeasons       = getGameCountsBySeason().map(g => String(g.season));
 
   res.send(renderAdminPage(req, {
-    title: 'Season Management',
+    title: 'Season',
     currentPath: '/admin/season',
     settings: seasonNudgesPanel(),
     body: adminSeasonBody({ sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons }),
@@ -26014,7 +26020,8 @@ app.get('/admin/polls', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Polls',
     currentPath: '/admin/polls',
-    body: adminPollsBody({ polls, query: req.query, notifyOnOpen: on('polls_notify_on_open') }),
+    settings: adminPollsSwitches({ notifyOnOpen: on('polls_notify_on_open') }),
+    body: adminPollsBody({ polls, query: req.query }),
   }));
 });
 app.get('/admin/polls/:id', requireAuth, (req, res) => {
@@ -26157,6 +26164,7 @@ app.get('/admin/papawis', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Runs',
     currentPath: '/admin/papawis',
+    settings: adminPapawisSwitches({ papawisEnabled: getSetting('papawis_enabled', '0') === '1', remindersEnabled: papawisRemindersEnabled, slotAlertsEnabled: papawisSlotAlertsEnabled, regularsCount: getFrequentPapawisPlayers(REGULAR_WINDOW, REGULAR_MIN_GAMES).length }),
     body: adminPapawisRunsBody({
       games, courts: getActivePapawisCourts(), pendingPayments, unpaidSignups, unpaidUnlinkedByPlayer, unpaidReusableByPlayer,
       papawisEnabled: getSetting('papawis_enabled', '0') === '1', remindersEnabled: papawisRemindersEnabled, slotAlertsEnabled: papawisSlotAlertsEnabled,
@@ -27978,7 +27986,7 @@ app.delete('/marketplace/:id/comments/:commentId', (req, res) => {
 // Express would match "categories"/"heads" as a case id.
 app.get('/admin/fines/categories', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
-    title: 'Fine Categories', currentPath: '/admin/fines/categories',
+    title: 'Categories', currentPath: '/admin/fines/categories',
     body: adminFineCategoriesBody({ categories: getAllFineCategories() }),
   }));
 });
@@ -28051,7 +28059,8 @@ app.get('/admin/raffle', requireAuth, (req, res) => {
   const rounds = getRounds(raffle.id, 30).map(o => ({ ...o, winner: o.winner_player_id ? getPlayerById(o.winner_player_id)?.name || '' : '' }));
   res.send(renderAdminPage(req, {
     title: 'Rate & Win raffle', currentPath: '/admin/raffle',
-    body: adminRaffleBody({ on: raffleOn(), settingsHtml: raffleSettingsPanel(), raffle, schedule: parseCourtJson(raffle.schedule_json, {}), round, entries, rounds, vouchers: getAllVouchers(),
+    settings: raffleSettingsPanel(),
+    body: adminRaffleBody({ on: raffleOn(), raffle, schedule: parseCourtJson(raffle.schedule_json, {}), round, entries, rounds, vouchers: getAllVouchers(),
       announce: { sent: getBroadcastByDedupe(raffleLaunchKey(raffle)), reach: raffleOn() ? selectBroadcastRecipients(undefined, { optOutColumn: 'league_email_optout' }).recipients : [] } }),
   }));
 });
@@ -28124,7 +28133,7 @@ app.get('/admin/ratings', requireAuth, (req, res) => {
   };
   if (!gameRatingsOn()) {
     if (!isSuper) return requireSuperAdmin(req, res, () => {});
-    return res.send(renderAdminPage(req, { title: 'Community Ratings', currentPath: '/admin/ratings', body: legacy() }));
+    return res.send(renderAdminPage(req, { title: 'Ratings', currentPath: '/admin/ratings', body: legacy() }));
   }
   const tab = ['players', 'all', 'games', 'raters', 'legacy'].includes(req.query.tab) && (req.query.tab !== 'legacy' || isSuper) ? req.query.tab : 'watch';
   const all = getAllGameRatings();
@@ -28149,7 +28158,7 @@ app.get('/admin/ratings', requireAuth, (req, res) => {
   const ratings = all.filter(r => (!playerFilter || r.ratee_player_id === playerFilter) && (!raterFilter || r.rater_player_id === raterFilter));
   if (tab === 'all') ratings.slice(0, 500).forEach(r => label(r.kind, r.ref));
   res.send(renderAdminPage(req, {
-    title: 'Player ratings', currentPath: '/admin/ratings',
+    title: 'Ratings', currentPath: '/admin/ratings',
     body: adminGameRatingsBody({
       tab, isSuper, watch, players, ratings, rounds, gameLabels, playerFilter,
       flags: isSuper ? raterFlags(live) : [], counts: { ratings: all.length },
@@ -28181,7 +28190,7 @@ app.get('/admin/fines', requireAuth, (req, res) => {
   const resolved = [...getFineCasesByStatus('approved'), ...getFineCasesByStatus('rejected'), ...getFineCasesByStatus('dismissed')]
     .sort((a, b) => (b.resolved_at || 0) - (a.resolved_at || 0));
   res.send(renderAdminPage(req, {
-    title: 'Fines', currentPath: '/admin/fines',
+    title: 'Conduct', currentPath: '/admin/fines',
     settings: finesSettingsPanel(),
     body: adminFinesListBody({ pendingAdmin, open, resolved, players: getAllPlayers(), categories: getActiveFineCategories(), summary: getFineCollectionSummary() }),
   }));

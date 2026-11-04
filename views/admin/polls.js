@@ -27,6 +27,14 @@ function whoText(p) {
   return p.visibility === p.voter_eligibility ? TIER_LABEL[p.visibility] : `${TIER_LABEL[p.visibility]} see · ${TIER_LABEL[p.voter_eligibility]} vote`;
 }
 
+// The Settings tab (renderAdminPage opts.settings).
+export function adminPollsSwitches({ notifyOnOpen = true } = {}) {
+  const switches = `<div class="aui-panel">
+    ${toggleRow({ label: 'Tell players about new polls', help: 'A bell notification to every active member when a poll for all players opens. Live site only.', name: 'polls_notify_on_open', on: notifyOnOpen, post: '/admin/site/settings', setting: true })}
+  </div>`;
+  return section({ title: 'Switches', bodyHtml: switches });
+}
+
 export function adminPollsBody({ polls = [], query = {}, notifyOnOpen = true }) {
   const grid = dataGrid({
     id: 'polls', baseUrl: '/admin/polls', query, minimal: true,
@@ -69,14 +77,11 @@ export function adminPollsBody({ polls = [], query = {}, notifyOnOpen = true }) 
     footerHtml: `${button('Cancel', { kind: 'ghost', attrs: 'data-drawer-close' })}${button('Create poll', { kind: 'primary', type: 'submit', attrs: 'form="new-poll-form"' })}`,
   });
 
-  const switches = `<div class="aui-panel">
-    ${toggleRow({ label: 'Tell players about new polls', help: 'A bell notification to every active member when a poll for all players opens. Live site only.', name: 'polls_notify_on_open', on: notifyOnOpen, post: '/admin/site/settings', setting: true })}
-  </div>`;
+
 
   return `<div class="aui-page">
     ${pageHeader({ title: 'Polls', sub: 'Quick votes for members on /polls. Switch one to a popup and members see it on every page until they vote.' })}
     ${grid}
-    ${section({ title: 'Switches', bodyHtml: switches })}
     ${newPoll}
   </div>`;
 }

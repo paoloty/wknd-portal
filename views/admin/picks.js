@@ -6,7 +6,7 @@
 //               (POST /admin/picks/remind), Preview email
 //   Results     the season's finished games: odds had, how the fans did, who called it
 //   Pickers     the Pickmaster race on the shared data grid
-//   Settings    the picks switches (POST /admin/site/settings)
+//   Settings    the picks switches, on the Settings tab (POST /admin/site/settings)
 // Browser side (checklist counts, copy names, pick window): public/admin-picks.js.
 import { escHtml } from '../layout.js';
 import { fmtPts } from '../../lib/picks.js';
@@ -152,8 +152,9 @@ function pickersGrid(rows, { season, hasFinalsG1, query, colorById }) {
   });
 }
 
-function settingsBlock(s) {
-  return `<div class="aui-panel">
+// The Settings tab (renderAdminPage opts.settings).
+export function adminPicksSettings(s) {
+  return section({ title: 'Switches', bodyHtml: `<div class="aui-panel">
     ${toggleRow({ label: 'Who wins? picks on the site', help: '/picks, matchup cards, the homepage widget and profiles.', name: 'picks_enabled', on: s.picksOn, post: '/admin/site/settings', setting: true, reload: true })}
     ${toggleRow({ label: 'Show odds', help: 'Win chances on matchup cards, once both teams have played.', name: 'picks_odds_enabled', on: s.oddsOn, post: '/admin/site/settings', setting: true, reload: true })}
     ${toggleRow({ label: 'Homepage widget', help: 'Under the homepage banner.', name: 'home_picks_widget_enabled', on: s.homeWidget, post: '/admin/site/settings', setting: true })}
@@ -162,7 +163,7 @@ function settingsBlock(s) {
       <span class="aui-cell__stack"><span class="aui-cell__title">Picks close at</span><span class="aui-cell__sub">Game-day cut-off, Manila time. Games have no tip-off time, so picks lock at this time on the game date.</span></span>
       <span class="aui-row">${field({ label: 'Time', name: 'picks_close_time', type: 'time', value: s.closeTime, required: true })}${button('Save', { kind: 'secondary', size: 'sm', type: 'submit' })}</span>
     </form>
-  </div>`;
+  </div>` });
 }
 
 export function adminPicksBody({ season, seasons, isCurrent, kpi, upNext, upDay, missing, results, pickers, hasFinalsG1 = false, oddsOn, picksOn, msg = '', query = {}, teams = [], colorById = {}, settings = {} }) {
@@ -195,7 +196,6 @@ export function adminPicksBody({ season, seasons, isCurrent, kpi, upNext, upDay,
     ${upNextHtml}
     ${section({ title: `Season ${season} results`, note: '· open a game for who called it', bodyHtml: resultsList(results, oddsOn, colorOf, colorById) })}
     ${section({ title: `Pickers · Season ${season}`, bodyHtml: pickersGrid(pickers, { season, hasFinalsG1, query, colorById }) })}
-    ${section({ title: 'Settings', bodyHtml: settingsBlock({ ...settings, picksOn, oddsOn }) })}
   </div>
   <script src="/admin-picks.js" defer></script>`;
 }

@@ -151,7 +151,7 @@ export function adminFinesListBody({ pendingAdmin = [], open = [], resolved = []
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <div>
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">Fines &amp; Conduct</h2>
+    <h2 class="text-xl font-bold tracking-tight text-slate-100">Conduct</h2>
     <p class="text-sm text-slate-500 mt-0.5">${open.length} open case${open.length === 1 ? '' : 's'}${pendingAdmin.length ? ` · ${pendingAdmin.length} awaiting escalation` : ''}</p>
   </div>
   <div class="flex items-center gap-2">
@@ -475,7 +475,7 @@ export function adminFineCategoriesBody({ categories = [] } = {}) {
   return `
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
   <div>
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">Fine Categories</h2>
+    <h2 class="text-xl font-bold tracking-tight text-slate-100">Categories</h2>
     <p class="text-sm text-slate-500 mt-0.5">Editable conduct policy — changes apply to new reports immediately.</p>
   </div>
   <div class="flex items-center gap-2">
