@@ -1,4 +1,5 @@
 import { escHtml, wkndLogo } from './layout.js';
+import { MAX_NOMINATIONS } from '../lib/season-nominations.js';
 import { SIZES, SIZE_CHART } from '../lib/season-pricing.js';
 import { TIERS, TIER_LABELS } from '../lib/assessment-scoring.js';
 
@@ -296,6 +297,7 @@ function statusPanel({ icon, title, body, extra = '', cta = true }) {
 
 export function seasonSignupPage({
   state,
+  avoidOptions = [],
   sigSeason = '',
   sigOpen = false,
   deadline = '',
@@ -405,6 +407,7 @@ ${stylesBlock}`;
   stepDefs.forEach((s, i) => { s.num = i + 1; });
   const STEP = Object.fromEntries(stepDefs.map(s => [s.key, s.num]));
   const totalSteps = stepDefs.length;
+  const avoidOptionsHtml = selected => avoidOptions.map(p => `<option value="${escHtml(p.id)}"${p.id === selected ? ' selected' : ''}>${escHtml(p.name)}</option>`).join('');
 
   const errorStep = (() => {
     if (!error) return STEP.liveness;
@@ -808,6 +811,12 @@ ${stylesBlock}`;
         </button>
         <div class="acc-body">
           <div class="acc-body-inner">
+            <div class="field">
+              <label for="avoid_1">Is there anyone you wouldn't want to play with again? <span style="opacity:.5;font-size:11px;text-transform:none;letter-spacing:normal">(optional, up to ${MAX_NOMINATIONS})</span></label>
+              <select id="avoid_1" class="field__input" name="avoid_1" aria-label="First player"><option value="">No one</option>${avoidOptionsHtml(prefill.avoid_1)}</select>
+              <select id="avoid_2" class="field__input" name="avoid_2" aria-label="Second player" style="margin-top:8px"><option value="">No one</option>${avoidOptionsHtml(prefill.avoid_2)}</select>
+              <p style="font-size:12px;color:var(--text-muted);margin:6px 0 0">League admins see this, including who you named. It's one of the things we consider when choosing who plays next season. The player isn't told. If something serious happened, please use Report a player instead.</p>
+            </div>
             <div class="field">
               <label for="comments">Anything else you'd like us to know? <span style="opacity:.5;font-size:11px;text-transform:none;letter-spacing:normal">(optional)</span></label>
               <textarea id="comments" class="field__input" name="comments" rows="3" placeholder="Format ideas, scheduling gripes, shout-outs — whatever.">${escHtml(prefill.comments || '')}</textarea>

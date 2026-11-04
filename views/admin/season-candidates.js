@@ -3,6 +3,7 @@
 // opening to its full record. The row menu ticks contributions (setup, refereeing, other);
 // nothing else here changes data. Temporarily under Season in the admin nav.
 import { escHtml } from '../layout.js';
+import { NOMINATION_FLAG_AT } from '../../lib/season-nominations.js';
 import { pageHeader, pageTabs, dataGrid, badge, avatar, banner, statStrip, facts } from './ui.js';
 import { RULES, MARK_LABELS, PLUS_LABELS, CONTRIBUTION_KINDS } from '../../lib/season-candidates.js';
 
@@ -29,7 +30,7 @@ function payFacts(g, season) {
 }
 
 // data: loadSeasonCandidates() → { target, seasons, candidates }. capacity: season_roster_capacity.
-export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {}) {
+export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nominations = {} } = {}) {
   const { target, seasons, candidates, ignorePayment } = data;
   const rows = candidates;
   const eligible = rows.filter(r => r.eligible);
@@ -45,10 +46,19 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
   };
   // No season fee in either graded season (new, Papawis-only, or away): nothing for or against them.
   const noFeeHistory = r => !r.pay.some(Boolean);
+  const named = r => nominations[r.id]?.count || 0;
+  const namedBy = r => {
+    const n = nominations[r.id];
+    if (!n) return 'No one';
+    if (n.hidden) return `${n.count} ${n.count === 1 ? 'person' : 'people'} (you can\'t see who, since it\'s you)`;
+    return escHtml(n.names.join(', '));
+  };
+
   // Not active online already shows in the Online column, so it has no tag of its own.
   const flags = r => [
     spot(r),
     r.discuss ? badge('Discuss', 'red') : '',
+    named(r) ? badge(`Named by ${named(r)}`, named(r) >= NOMINATION_FLAG_AT ? 'red' : 'amber') : '',
     r.exempt ? badge('Admin · no marks', 'gray') : '',
     ...r.pluses.map(p => badge(PLUS_LABELS[p], 'green')),
     ...r.marks.filter(m => m !== 'inactive').map(m => badge(MARK_LABELS[m], m === 'conduct' ? 'red' : 'amber')),
@@ -101,6 +111,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
       { key: 'g3', label: 'Group 3', test: r => r.eligible && r.group === 3 },
       { key: 'discuss', label: 'Discuss', test: r => r.discuss },
       { key: 'marks', label: 'Has marks', test: r => r.eligible && r.marks.length > 0 },
+      { key: 'named', label: 'Named by others', test: r => named(r) > 0 },
       { key: 'payfirst', label: 'Pay first', test: r => r.payFirst },
       { key: 'nofee', label: 'No fee history', test: r => r.eligible && noFeeHistory(r) },
       { key: 'blocked', label: 'Not eligible yet', test: r => !r.eligible },
@@ -124,6 +135,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {} } = {
       ['League games', seasons.map(s => `Season ${s.season}: ${r.games[s.season] || 0}`).join(' · ')],
       ['Papawis runs', `${r.papawisRuns} in the last 12 months`],
       ['Marks', r.marks.length ? escHtml(r.marks.map(m => MARK_LABELS[m]).join(', ')) : 'None'],
+      ["Wouldn't play with them again", namedBy(r)],
       ['Pluses', r.pluses.length ? escHtml(r.pluses.map(p => PLUS_LABELS[p]).join(', ')) : 'None'],
       ['Attendance', escHtml(attendanceFact(r))],
       ['Conduct', conductFact(r)],

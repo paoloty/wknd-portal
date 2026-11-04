@@ -126,7 +126,7 @@ import {
   setRegistrationAdminSections, getRegistrationAdminSections,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
-  setRegistrationAdmin, insertAdminLog, getLogSources, getRecentProblems, updateRegBirthday,
+  setRegistrationAdmin, insertAdminLog, getLogSources, getRecentProblems, saveSeasonNominations, getSeasonNominations, updateRegBirthday,
   setRegistrationLastLogin, setRegistrationSensitiveAccess,
   createPlayer, mergeRegistrationIntoPlayer, playerHasActivity, deletePlayer,
   getSeasonStandings, getPlayoffGames,
@@ -205,6 +205,7 @@ import { adminPrivilegesBody }  from './views/admin/privileges.js';
 import { adminLogsPage }        from './views/admin/logs.js';
 import { buildLogRows, playerAuditRoute, captureConsoleErrors } from './lib/activity-log.js';
 import { seasonStepState } from './lib/season-steps.js';
+import { cleanNominations, summarizeNominations } from './lib/season-nominations.js';
 import { adminShareCardLogPage } from './views/admin/share-log.js';
 import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
@@ -23079,10 +23080,16 @@ app.get('/season-signup', (req, res) => {
     body: seasonSignupPage({
       state: 'form', sigSeason, sigOpen, deadline, existing, reg, name: reg.full_name,
       seasonFormat, quotaAmount, capacityPct, returning, existingLivenessCapture,
-      livenessPrompt: req.session.livenessPrompt,
+      livenessPrompt: req.session.livenessPrompt, avoidOptions: seasonAvoidOptions(reg),
     }),
   }));
 });
+
+// Who a member can name on the sign-up: active players, not themselves.
+function seasonAvoidOptions(reg) {
+  return getAllPlayers().filter(p => p.status !== 'inactive' && p.id !== reg.player_id)
+    .map(p => ({ id: p.id, name: displayPlayerName(p.name) })).sort((a, b) => a.name.localeCompare(b.name));
+}
 
 app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) => {
   const regId = req.session?.playerRegId;
@@ -23113,7 +23120,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     body: seasonSignupPage({
       state: 'form', sigSeason, sigOpen: true, deadline, reg, name: reg.full_name,
       seasonFormat, quotaAmount, capacityPct, returning, error, prefill: req.body,
-      existingLivenessCapture: getLivenessCaptureByRegId(regId),
+      existingLivenessCapture: getLivenessCaptureByRegId(regId), avoidOptions: seasonAvoidOptions(reg),
     }),
   }));
 
@@ -23224,6 +23231,7 @@ app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) =
     waiverReconfirmedAt: Date.now(),
     livenessSkippedAt: livenessSkipped ? Date.now() : 0,
   });
+  saveSeasonNominations(sigSeason, regId, cleanNominations([req.body.avoid_1, req.body.avoid_2], { selfId: reg.player_id, validIds: new Set(seasonAvoidOptions(reg).map(p => p.id)) }));
   insertPlayerAssessment(reg.player_id || '', regId, sigSeason, {
     q1WhyPlaying, q2LosingBadly, q3BadRefCall, q4HeatedTeammate, q5FeedbackStyle,
     q6BenchedComfort, q7WorkOn, q8DisagreementStyle, q9ReactionToCriticism,
@@ -23665,7 +23673,11 @@ app.get('/admin/season/candidates', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: `Season ${data.target} Candidates`,
     currentPath: '/admin/season/candidates',
-    body: adminSeasonCandidatesBody({ data, capacity, query: req.query }),
+    body: adminSeasonCandidatesBody({
+      data, capacity, query: req.query,
+      // An elevated admin is also a player; the shared super-admin login isn't.
+      nominations: summarizeNominations(getSeasonNominations(data.target).map(n => ({ nominee_player_id: n.nominee_player_id, nominator_name: displayPlayerName(n.nominator_full_name) || 'A member' })), { viewerPlayerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' }),
+    }),
   }));
 });
 // Contribution ticks from the candidates row menu: add one (setup / referee / other) or take
