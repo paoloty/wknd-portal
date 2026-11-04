@@ -42,6 +42,13 @@ test('the menu: 21 links on the live site, in order', () => {
   ]);
 });
 
+test('Season pages run in step order, and every one is in a step', () => {
+  const season = full.flatMap(s => s.items).find(i => i.id === 'season');
+  assert.deepEqual([...new Set(season.tabs.map(t => t.step))], ['setup', 'signups', 'teams', 'start']);
+  assert.ok(season.tabs.every(t => t.step));
+  assert.ok(season.tabs.every(t => sectionForPath(t.href)?.key === 'season'));
+});
+
 test('no page is listed twice', () => {
   const list = hrefs(full);
   assert.equal(new Set(list).size, list.length);

@@ -204,6 +204,7 @@ import { adminUserDetailBody }  from './views/admin/user-detail.js';
 import { adminPrivilegesBody }  from './views/admin/privileges.js';
 import { adminLogsPage }        from './views/admin/logs.js';
 import { buildLogRows, playerAuditRoute, captureConsoleErrors } from './lib/activity-log.js';
+import { seasonStepState } from './lib/season-steps.js';
 import { adminShareCardLogPage } from './views/admin/share-log.js';
 import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
@@ -2713,6 +2714,14 @@ function applySeoOverrideTags(metaTags, override, effectiveTitle, origin) {
   return mt;
 }
 
+function currentSeasonSteps() {
+  const target = getSetting('signup_target_season', '');
+  const signups = target ? getSeasonSignups(target) : [];
+  return seasonStepState({
+    target, open: getSetting('season_signup_open', '0') === '1', draft: getSetting('season_draft_status', ''), fee: getSetting('season_quota_amount', ''),
+    entered: signups.filter(s => s.status !== 'rejected').length, confirmed: signups.filter(s => s.status === 'confirmed').length,
+  });
+}
 // opts.settings: this page's switches (views/admin/settings.js). They get a Settings tab beside
 // the page's tabs, at ?settings=1, so the page itself opens on its content.
 function renderAdminPage(req, opts) {
@@ -2723,7 +2732,7 @@ function renderAdminPage(req, opts) {
   const me = req.session?.isElevatedPlayer
     ? { name: req.session.playerName || 'Admin', role: allowed ? `Admin · ${ADMIN_SECTIONS.filter(x => allowed.includes(x.key)).map(x => x.label).join(', ')}` : 'Admin' }
     : { name: 'Super admin', role: 'Full access' };
-  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, requestPath: req.path, allowedSections: allowed, navBadges: adminNavBadges(), me, ...opts, settings: opts.settings ? { active: onSettings } : null, body });
+  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, requestPath: req.path, allowedSections: allowed, navBadges: adminNavBadges(), me, ...opts, settings: opts.settings ? { active: onSettings } : null, seasonSteps: /^\/admin\/seasons?(\/|$)/.test(req.path) ? currentSeasonSteps() : null, body });
 }
 
 // ── Each feature's public switches, on its own admin page ──────────────────────────────
@@ -23570,7 +23579,7 @@ app.get('/admin/season', requireAuth, (req, res) => {
     title: 'Season',
     currentPath: '/admin/season',
     settings: seasonNudgesPanel(),
-    body: adminSeasonBody({ sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons }),
+    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons }),
   }));
 });
 

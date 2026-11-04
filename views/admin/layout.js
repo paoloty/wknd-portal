@@ -213,7 +213,7 @@ const MENU = [
     { id: 'posts', label: 'News posts', icon: 'pen', tabs: [{ href: '/admin/posts', label: 'Posts' }] },
   ] },
   { head: 'Season', items: [
-    { id: 'season', label: 'Season', icon: 'season', also: ['/admin/season-signups'], tabs: [{ href: '/admin/season', label: 'Sign-ups & settings' }, { href: '/admin/season/returning', label: 'Returning' }, { href: '/admin/season/waitlist', label: 'Waitlist' }, { href: '/admin/season/candidates', label: 'Candidates' }, { href: '/admin/season/comments', label: 'Comments' }, { href: '/admin/season/assessment-reviews', label: 'Assessment reviews' }, { href: '/admin/season/teams', label: 'Team builder' }, { href: '/admin/season/teams/sandbox', label: 'Sandbox' }, { href: '/admin/seasons', label: 'All seasons' }] },
+    { id: 'season', label: 'Season', icon: 'season', also: ['/admin/season-signups'], tabs: [{ href: '/admin/season', label: 'Set up', step: 'setup' }, { href: '/admin/seasons', label: 'All seasons', step: 'setup' }, { href: '/admin/season/waitlist', label: 'Sign-ups', step: 'signups' }, { href: '/admin/season/returning', label: 'Returning', step: 'signups' }, { href: '/admin/season/candidates', label: 'Candidates', step: 'signups' }, { href: '/admin/season/comments', label: 'Comments', step: 'signups' }, { href: '/admin/season/assessment-reviews', label: 'Assessment reviews', step: 'signups' }, { href: '/admin/season/teams', label: 'Team builder', step: 'teams' }, { href: '/admin/season/teams/sandbox', label: 'Sandbox', step: 'teams' }, { href: '/admin/season/teams/review', label: 'Review and start', step: 'start' }] },
     { id: 'awards', label: 'Awards', icon: 'trophy', also: ['/admin/mvp', '/admin/dpoy', '/admin/mvp-podium', '/admin/award-photo'], tabs: [{ href: '/admin/awards', label: 'Overview' }, { href: '/admin/awards/season', label: 'Season awards' }, { href: '/admin/awards/races', label: 'MVP & Best Defender' }, { href: '/admin/awards/podium', label: 'Podium ballot' }] },
   ] },
   { head: 'Setup', items: [
@@ -293,11 +293,29 @@ export function menuItemFor(path, menu) {
   return best;
 }
 
+// The Season link's tabs come in steps, in the order a season runs (Paolo, 2026-11).
+const STEPS = [['setup', 'Set up'], ['signups', 'Sign-ups'], ['teams', 'Teams'], ['start', 'Start']];
+function stepBar(item, current, state) {
+  return `<nav class="aui-steps" aria-label="Season steps">${STEPS.map(([key, label], i) => {
+    const first = item.tabs.find(t => t.step === key);
+    if (!first) return '';
+    const st = state?.[key] || {};
+    const on = key === current;
+    return `<a class="aui-steps__step${on ? ' is-on' : ''}${st.next ? ' is-next' : ''}" href="${first.href}"${on ? ' aria-current="step"' : ''}>
+      <span class="aui-steps__n">${st.done ? '✓' : ''} Step ${i + 1}</span><span class="aui-steps__label">${label}</span><span class="aui-steps__status">${escHtml(st.next ? `Next · ${st.text}` : st.text || '')}</span>
+    </a>`;
+  }).join('')}</nav>`;
+}
+
 // The tabs above a page. Only on the pages the tabs lead to: a single run or player has its
 // own tabs and a way back, and two rows of tabs would be confusing.
-function menuTabs(item, requestPath, settings) {
-  if (!item || !item.tabs.some(t => t.href === requestPath) || (item.tabs.length < 2 && !settings)) return '';
-  return `<nav class="aui-tabs aui-hubtabs" aria-label="${escHtml(item.label)}">${item.tabs.map(t => {
+function menuTabs(item, requestPath, settings, steps) {
+  const here = item?.tabs.find(t => t.href === requestPath);
+  if (!here) return '';
+  const tabs = here.step ? item.tabs.filter(t => t.step === here.step) : item.tabs;
+  const bar = here.step ? stepBar(item, here.step, steps) : '';
+  if (tabs.length < 2 && !settings) return bar;
+  return `${bar}<nav class="aui-tabs aui-hubtabs" aria-label="${escHtml(item.label)}">${tabs.map(t => {
     const on = t.href === requestPath && !settings?.active;
     return `<a class="aui-tabs__tab${on ? ' is-active' : ''}" href="${t.href}"${on ? ' aria-current="page"' : ''}>${escHtml(t.label)}</a>`;
   }).join('')}${settings ? `<a class="aui-tabs__tab aui-hubtabs__settings${settings.active ? ' is-active' : ''}" href="${requestPath}?settings=1"${settings.active ? ' aria-current="page"' : ''}>Settings</a>` : ''}</nav>`;
@@ -316,7 +334,7 @@ function versionScripts(body, v) {
   return v ? String(body).replace(/(<script src="\/admin-[\w-]+\.js)(")/g, `$1${v}$2`) : body;
 }
 
-export function adminLayout({ title, currentPath = '/admin', requestPath = currentPath, body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null, navBadges = {}, me = null, settings = null }) {
+export function adminLayout({ title, currentPath = '/admin', requestPath = currentPath, body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null, navBadges = {}, me = null, settings = null, seasonSteps = null }) {
   const v = cssVer ? `?v=${cssVer}` : '';
 
   // Only what this admin can open shows; requireAuth in server.js is what actually blocks the rest.
@@ -409,7 +427,7 @@ export function adminLayout({ title, currentPath = '/admin', requestPath = curre
         <a class="aui-btn aui-btn--ghost aui-btn--sm" href="/" target="_blank" rel="noopener">View site <span aria-hidden="true">↗</span></a>
       </div>
     </header>
-    <main class="ashell__content" id="admin-main" data-menu-item="${activeItem?.id || ''}">${menuTabs(activeItem, requestPath, settings)}${versionScripts(body, v)}</main>
+    <main class="ashell__content" id="admin-main" data-menu-item="${activeItem?.id || ''}">${menuTabs(activeItem, requestPath, settings, seasonSteps)}${versionScripts(body, v)}</main>
   </div>
 
   <script>

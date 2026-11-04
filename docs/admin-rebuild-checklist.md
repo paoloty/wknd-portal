@@ -43,7 +43,7 @@ Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages a
 | 18 | Awards | Award graphic editor | /admin/awards/:season/:type/graphic | done | [x] |
 | 19 | Awards | Award photo picker | /admin/award-photo/… | n/a | [ ] |
 | 20 | Season | All seasons | /admin/seasons | n/a | [ ] |
-| 21 | Season | Signups and settings | /admin/season | n/a | [ ] |
+| 21 | Season | Set up (with the step bar) | /admin/season | done (regroup mockup) | [x] |
 | 22 | Season | Signup detail | /admin/season/signups/:id | n/a | [ ] |
 | 23 | Season | Waitlist | /admin/season/waitlist | n/a | [ ] |
 | 24 | Season | Returning | /admin/season/returning | n/a | [ ] |
@@ -126,5 +126,5 @@ Every admin page follows these:
 
 | | Pages | Mockups still needed | Mockups done | Built |
 |---|---|---|---|---|
-| Original list | 52 | 0 | 10 | 21 |
+| Original list | 52 | 0 | 10 | 22 |
 | Added since | 12 | 0 | - | 12 |

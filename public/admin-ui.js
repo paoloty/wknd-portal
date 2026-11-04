@@ -636,12 +636,12 @@
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     var a = e.target.closest && e.target.closest('a[href]');
     if (!a || a.target || a.hasAttribute('download')) return;
-    if (!a.closest('.aui-views, .aui-tabs, .aui-grid__sort, .aui-pager, .aui-density, .aui-chips, .aui-menu')) return;
+    if (!a.closest('.aui-views, .aui-tabs, .aui-steps, .aui-grid__sort, .aui-pager, .aui-density, .aui-chips, .aui-menu')) return;
     // A menu tab may be the same address (?settings=1) and still need the page's own scripts.
-    var cross = !!a.closest('.aui-hubtabs');
+    var cross = !!a.closest('.aui-hubtabs, .aui-steps');
     if (!cross && !samePage(a.href)) return;
     e.preventDefault();
-    var go = function () { softLoad(a.href, { push: true, top: !!a.closest('.aui-tabs, .aui-menu'), cross: cross }); };
+    var go = function () { softLoad(a.href, { push: true, top: !!a.closest('.aui-tabs, .aui-steps, .aui-menu'), cross: cross }); };
     if (!hasUnsaved()) { go(); return; }
     confirmDialog({ title: 'Discard your unsaved changes?', body: 'You haven’t saved them yet.', sendLabel: 'Discard' }).then(function (ok) { if (ok) go(); });
   });
