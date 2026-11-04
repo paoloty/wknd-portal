@@ -28,11 +28,22 @@ const IC = {
   signout:   `<svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3"/><path d="M10 10.5l3-3-3-3"/><line x1="13" y1="7.5" x2="6" y2="7.5"/></svg>`,
   chevron:   `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5L5 6l2.5-2.5"/></svg>`,
   share:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11.5" cy="3" r="1.8"/><circle cx="3.5" cy="7.5" r="1.8"/><circle cx="11.5" cy="12" r="1.8"/><path d="M5.1 6.5l4.7-2.6M5.1 8.5l4.7 2.6"/></svg>`,
+  market:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h9l.8 8.5H2.2L3 5z"/><path d="M5.2 6.8V3.9a2.3 2.3 0 0 1 4.6 0v2.9"/></svg>`,
+  chat:      `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h8A1.5 1.5 0 0 1 13 3.5v5.5a1.5 1.5 0 0 1-1.5 1.5H6l-3 2.5v-2.5A1.5 1.5 0 0 1 2 9V3.5z"/></svg>`,
+  feed:      `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="11" height="11" rx="1.5"/><path d="M4.5 5h6M4.5 7.5h6M4.5 10h3.5"/></svg>`,
+  polls:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h7M2.5 7.5h10M2.5 11.5h5"/></svg>`,
+  season:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 13.5V2"/><path d="M2.5 2.5h9l-2 2.75 2 2.75h-9"/></svg>`,
+  trophy:    `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2h6v4a3 3 0 0 1-6 0V2z"/><path d="M4.5 3.5h-2a2 2 0 0 0 2 2.5M10.5 3.5h2a2 2 0 0 1-2 2.5M7.5 9v2.5M5 13h5M6 11.5h3"/></svg>`,
+  sliders:   `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6M11.5 4H13M2 11h1.5M7 11h6"/><circle cx="9.75" cy="4" r="1.75"/><circle cx="5.25" cy="11" r="1.75"/></svg>`,
+  phone:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="1.5" width="7" height="12" rx="1.5"/><path d="M6.5 11.5h2"/></svg>`,
+  spark:     `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1.5l1.3 3.7 3.7 1.3-3.7 1.3-1.3 3.7-1.3-3.7-3.7-1.3 3.7-1.3z"/><path d="M12 10.5v3M10.5 12h3"/></svg>`,
+  key:       `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="10" r="3"/><path d="M7.2 7.8L13 2M10.5 4.5l2 2M8.8 6.2l1.5 1.5"/></svg>`,
+  list:      `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3.5h8M5 7.5h8M5 11.5h8M2 3.5h.01M2 7.5h.01M2 11.5h.01"/></svg>`,
 };
 
-// The admin menu, grouped by task. `key` is the permission key stored in
-// registrations.admin_sections: it is fixed on purpose, so renaming a group's label can never
-// silently change who can open it. `hidden` items aren't shown in the menu but still belong
+// WHO CAN OPEN WHAT, not what the menu looks like (that's MENU below). `key` is the permission
+// key stored in registrations.admin_sections: it is fixed on purpose, so renaming a label can
+// never silently change who can open it. `hidden` items aren't links anywhere but still belong
 // to their group, so the admin tools that live on public pages (↺ regenerate, photo pickers,
 // signup detail actions) are gated with the section they belong to.
 const NAV_GROUPS = [
@@ -172,16 +183,61 @@ export function expandAdminSections(keys) {
   return [...new Set(keys.flatMap(k => LEGACY_SECTION_KEYS[k] || [k]))];
 }
 
-// Derived from NAV_GROUPS itself (not a separately-maintained list) so the sections an admin
-// can be restricted to and the nav they actually see can never drift apart. SUPER_ADMIN_NAV
-// is deliberately excluded — those routes stay gated by requireSuperAdmin regardless of any
-// section list, since an elevated player-admin (the only kind this restricts) can never be
-// the true super admin anyway and would never reach them.
-export const ADMIN_SECTIONS = NAV_GROUPS.map(g => ({
-  key: g.key,
-  label: g.label,
-  prefixes: g.items.map(i => i.href),
-}));
+// The menu (regroup, 2026-11; mockup https://claude.ai/artifact/Xv7BddznLYqJzLYUzPy9VS): what
+// admins see, ordered by how much each part is used. A link's other pages are tabs, drawn by
+// adminLayout. Who sees a link or tab comes from NAV_GROUPS through sectionForPath (never set
+// here), so moving something in this list can't change anyone's access; `super` = requireSuperAdmin
+// routes. `also`: pages with no tab that still light up this link.
+// test/admin-menu.test.js fails if a page in NAV_GROUPS has no home here.
+const MENU = [
+  { head: '', items: [
+    { id: 'home', label: 'Home', icon: 'dashboard', tabs: [{ href: '/admin', label: 'This week', exact: true }, { href: '/admin/analytics', label: 'Analytics' }] },
+  ] },
+  { head: 'Run the week', items: [
+    { id: 'papawis', label: 'Papawis', icon: 'papawis', tabs: [{ href: '/admin/papawis', label: 'Runs' }, { href: '/admin/papawis/courts', label: 'Courts' }, { href: '/admin/papawis/scorers', label: 'Scorers' }, { href: '/admin/papawis/activity', label: 'Activity' }] },
+    { id: 'games', label: 'Games', icon: 'games', badge: 'games-stats', tabs: [{ href: '/admin/games', label: 'Games' }, { href: '/admin/picks', label: 'Who wins? picks' }, { href: '/admin/scorers', label: 'Scorers' }, { href: '/admin/media', label: 'Videos' }] },
+    { id: 'money', label: 'Money', icon: 'wallet', badge: 'finance', tabs: [{ href: '/admin/finance', label: 'Summary' }, { href: '/admin/ledger', label: 'Ledger' }, { href: '/admin/finance/gcash', label: 'GCash' }] },
+    { id: 'marketplace', label: 'Marketplace', icon: 'market', tabs: [{ href: '/admin/marketplace', label: 'Listings' }] },
+  ] },
+  { head: 'People', items: [
+    { id: 'accounts', label: 'Accounts', icon: 'users', badge: 'members', tabs: [{ href: '/admin/users', label: 'Accounts' }, { href: '/admin/team-heads', label: 'Team heads' }] },
+    { id: 'players', label: 'Player profiles', icon: 'players', also: ['/admin/player', '/admin/player-photo-original'], tabs: [{ href: '/admin/players', label: 'Players' }, { href: '/admin/players/uploads', label: 'Recent uploads' }] },
+    { id: 'conduct', label: 'Conduct', icon: 'shield', badge: 'community', tabs: [{ href: '/admin/fines', label: 'Cases' }, { href: '/admin/fines/categories', label: 'Categories' }] },
+    { id: 'ratings', label: 'Ratings', icon: 'awards', tabs: [{ href: '/admin/ratings', label: 'Ratings' }, { href: '/admin/raffle', label: 'Rate & Win' }] },
+    { id: 'chat', label: 'Chat archive', icon: 'chat', tabs: [{ href: '/admin/barkadahan', label: 'Messages', super: true }] },
+  ] },
+  { head: 'Reach', items: [
+    { id: 'message', label: 'Message players', icon: 'bell', tabs: [{ href: '/admin/reach', label: 'Compose' }, { href: '/admin/reach/sent', label: 'Sent' }, { href: '/admin/birthdays', label: 'Birthdays', super: true }] },
+    { id: 'feed', label: 'Feed posts', icon: 'feed', tabs: [{ href: '/admin/app/announcements', label: 'Posts' }] },
+    { id: 'polls', label: 'Polls', icon: 'polls', tabs: [{ href: '/admin/polls', label: 'Polls' }] },
+    { id: 'posts', label: 'News posts', icon: 'pen', tabs: [{ href: '/admin/posts', label: 'Posts' }] },
+  ] },
+  { head: 'Season', items: [
+    { id: 'season', label: 'Season', icon: 'season', also: ['/admin/season-signups'], tabs: [{ href: '/admin/season', label: 'Sign-ups & settings' }, { href: '/admin/season/returning', label: 'Returning' }, { href: '/admin/season/waitlist', label: 'Waitlist' }, { href: '/admin/season/candidates', label: 'Candidates' }, { href: '/admin/season/comments', label: 'Comments' }, { href: '/admin/season/assessment-reviews', label: 'Assessment reviews' }, { href: '/admin/season/teams', label: 'Team builder' }, { href: '/admin/season/teams/sandbox', label: 'Sandbox' }, { href: '/admin/seasons', label: 'All seasons' }] },
+    { id: 'awards', label: 'Awards', icon: 'trophy', also: ['/admin/mvp', '/admin/dpoy', '/admin/mvp-podium', '/admin/award-photo'], tabs: [{ href: '/admin/awards', label: 'Overview' }, { href: '/admin/awards/season', label: 'Season awards' }, { href: '/admin/awards/races', label: 'MVP & Best Defender' }, { href: '/admin/awards/podium', label: 'Podium ballot' }] },
+  ] },
+  { head: 'Setup', items: [
+    { id: 'site', label: 'Site settings', icon: 'sliders', also: ['/admin/visibility'], tabs: [{ href: '/admin/site', label: 'Site & homepage' }, { href: '/admin/seo', label: 'Search results' }] },
+    { id: 'app', label: 'Players app', icon: 'phone', tabs: [{ href: '/admin/app', label: 'Players app' }] },
+    { id: 'ai', label: 'AI writing', icon: 'spark', tabs: [{ href: '/admin/ai-writing', label: 'Voice' }, { href: '/admin/coach-notes', label: 'Coach notes' }, { href: '/admin/compare', label: 'Compares' }] },
+    { id: 'privileges', label: 'Admin access', icon: 'key', tabs: [{ href: '/admin/privileges', label: 'Admins', super: true }] },
+    { id: 'logs', label: 'Logs', icon: 'list', tabs: [{ href: '/admin/logs', label: 'Everything', super: true }, { href: '/admin/share-log', label: 'Share card stats', super: true }] },
+    ...(process.env.NODE_ENV !== 'production' ? [{ id: 'db', label: 'Sync DB', icon: 'finance', tabs: [{ href: '/admin/db', label: 'Sync DB', super: true }] }] : []),
+  ] },
+];
+
+// The sections an admin can be restricted to, derived from NAV_GROUPS so they can't drift from
+// what's enforced. Super-admin routes aren't among them: requireSuperAdmin gates those whatever
+// the list says. `opens`: the menu links each one unlocks, in the words the menu uses, because
+// the section names (Game Day, Members…) are permission names, kept as they were.
+const SECTION_PREFIXES = NAV_GROUPS.map(g => ({ key: g.key, label: g.label, prefixes: g.items.map(i => i.href) }));
+const opensFor = key => MENU.flatMap(s => s.items).flatMap(item => {
+  const tabs = item.tabs.filter(t => !t.super);
+  const mine = tabs.filter(t => sectionForPath(t.href)?.key === key);
+  if (!mine.length) return [];
+  return mine.length === tabs.length ? [item.label] : mine.map(t => `${item.label}: ${t.label}`);
+}).join(', ');
+export const ADMIN_SECTIONS = SECTION_PREFIXES.map(s => ({ ...s, opens: opensFor(s.key) }));
 
 // The section a given request path falls under, or null if it doesn't belong to any of
 // them (shared/cross-cutting routes like /admin/site/settings, /admin/impersonate/:id —
@@ -195,7 +251,7 @@ export const ADMIN_SECTIONS = NAV_GROUPS.map(g => ({
 export function sectionForPath(path) {
   let best = null;
   let bestLen = -1;
-  for (const s of ADMIN_SECTIONS) {
+  for (const s of SECTION_PREFIXES) {
     for (const href of s.prefixes) {
       if (path === href || path.startsWith(href + '/')) {
         if (href.length > bestLen) { best = s; bestLen = href.length; }
@@ -215,32 +271,43 @@ export function firstAllowedAdminUrl(allowedSections) {
   return section?.prefixes[0] || '/admin';
 }
 
-const SUPER_ADMIN_NAV = [
-  {
-    label: 'Super Admin',
-    items: [
-      { href: '/admin/privileges', label: 'Privileges', icon: 'shield' },
-      { href: '/admin/logs', label: 'Logs', icon: 'ledger' },
-      { href: '/admin/birthdays', label: 'Birthdays', icon: 'users' },
-      { href: '/admin/barkadahan', label: 'Barkadahan', icon: 'bell' },
-      ...(process.env.NODE_ENV !== 'production' ? [{ href: '/admin/db', label: 'Sync DB', icon: 'finance' }] : []),
-    ],
-  },
-];
+// The menu this admin sees: the links and tabs they can open, and headings with anything left.
+// allowedSections null = unrestricted (the true super admin always).
+export function menuFor({ allowedSections = null, isSuperAdmin = false } = {}) {
+  const canOpen = t => (t.super ? isSuperAdmin : !allowedSections || allowedSections.includes(sectionForPath(t.href)?.key));
+  return MENU
+    .map(s => ({ ...s, items: s.items.map(it => ({ ...it, tabs: it.tabs.filter(canOpen) })).filter(it => it.tabs.length) }))
+    .filter(s => s.items.length);
+}
 
-// The sidebar icon for each group (the group row is what you see; items sit under it).
-const GROUP_ICON = {
-  overview: 'dashboard', reach: 'bell', 'games-stats': 'games', papawis: 'papawis', awards: 'awards', season: 'standings',
-  content: 'posts', community: 'activity', marketplace: 'wallet', finance: 'finance', members: 'users', site: 'site',
-  super: 'shield',
-};
+// The link a page belongs to: the longest matching address wins, so /admin/app/announcements
+// is Feed posts, not Players app. Only Home's bare /admin must match exactly.
+export function menuItemFor(path, menu) {
+  let best = null, bestLen = -1;
+  for (const it of menu.flatMap(s => s.items)) {
+    for (const t of [...it.tabs, ...(it.also || []).map(href => ({ href }))]) {
+      const on = t.exact ? path === t.href : path === t.href || path.startsWith(`${t.href}/`);
+      if (on && t.href.length > bestLen) { best = it; bestLen = t.href.length; }
+    }
+  }
+  return best;
+}
+
+// The tabs above a page. Only on the pages the tabs lead to: a single run or player has its
+// own tabs and a way back, and two rows of tabs would be confusing.
+function menuTabs(item, requestPath) {
+  if (!item || item.tabs.length < 2 || !item.tabs.some(t => t.href === requestPath)) return '';
+  return `<nav class="aui-tabs aui-hubtabs" aria-label="${escHtml(item.label)}">${item.tabs.map(t => {
+    const on = t.href === requestPath;
+    return `<a class="aui-tabs__tab${on ? ' is-active' : ''}" href="${t.href}"${on ? ' aria-current="page"' : ''}>${escHtml(t.label)}</a>`;
+  }).join('')}</nav>`;
+}
 
 // The admin shell (admin redesign, 2026-10-15; mockup: canvas "A · Clubhouse v2"). Rebuilt
 // from scratch with its own .ashell-* styles (public/admin.css, "Admin shell"), not Tailwind:
-//   sidebar  = brand, season pill, one row per menu group (icon, label, count, chevron; its
-//              pages fold out underneath, one group open at a time), who's signed in
-//   top bar  = where you are (group / page), View site; on a phone also the menu button
-//   content  = the page body
+//   sidebar  = brand, the menu (headings and links, nothing folded), who's signed in
+//   top bar  = where you are (section / page), View site; on a phone also the menu button
+//   content  = the tabs of this menu link, then the page body
 // The Tailwind CDN still loads for pages not rebuilt yet; drop it once none use it.
 // The page scripts (public/admin-*.js) are cached for a week, so each one is requested with
 // ?v=<CSS_VER> (it changes whenever any of them changes, server.js): a page view tag without
@@ -249,43 +316,22 @@ function versionScripts(body, v) {
   return v ? String(body).replace(/(<script src="\/admin-[\w-]+\.js)(")/g, `$1${v}$2`) : body;
 }
 
-export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null, navBadges = {}, season = '', me = null }) {
+export function adminLayout({ title, currentPath = '/admin', requestPath = currentPath, body, cssVer = '', gaSnippet = '', isSuperAdmin = true, allowedSections = null, navBadges = {}, me = null }) {
   const v = cssVer ? `?v=${cssVer}` : '';
 
-  // allowedSections null = unrestricted (the true super admin always). Otherwise only the
-  // groups in the list show; requireAuth in server.js is what actually blocks the rest.
-  const baseNavGroups = allowedSections ? NAV_GROUPS.filter(g => allowedSections.includes(g.key)) : NAV_GROUPS;
-  const allNavGroups = isSuperAdmin ? [...baseNavGroups, ...SUPER_ADMIN_NAV] : baseNavGroups;
-
-  const isActive = ({ href, exact }) => (exact ? currentPath === href : currentPath === href || currentPath.startsWith(href + '/'));
-  let crumbGroup = '';
-  const navHtml = allNavGroups.map(({ key = 'super', label, items: allItems }) => {
-    const items = allItems.filter(i => !i.hidden);
-    if (!items.length) return '';
-    const groupActive = items.some(isActive) || allItems.some(i => i.hidden && isActive(i));
-    if (groupActive && key !== 'overview') crumbGroup = label;
-    const n = Number(navBadges[key]) || 0;
-    const badge = n ? `<span class="admin-nav__badge">${n}</span>` : '';
-    const icon = `<span class="admin-nav__icon" aria-hidden="true">${IC[GROUP_ICON[key]] || IC.dashboard}</span>`;
-    if (items.length === 1) {
-      const [it] = items;
-      const on = isActive(it);
-      return `<a href="${it.href}" class="admin-nav__row${on ? ' is-active' : ''}"${on ? ' aria-current="page"' : ''}>
-        <span class="admin-nav__label">${icon}<span>${escHtml(key === 'overview' ? it.label : label)}</span></span>${badge}
-      </a>`;
-    }
-    const itemsHtml = items.map(it => {
-      const on = isActive(it);
-      return `<a href="${it.href}" class="admin-nav__item${on ? ' is-active' : ''}"${on ? ' aria-current="page"' : ''}>${escHtml(it.label)}</a>`;
-    }).join('');
-    return `<div class="admin-nav__group">
-      <button type="button" class="admin-nav__row nav-group-toggle${groupActive ? ' is-current' : ''}" aria-expanded="${groupActive}">
-        <span class="admin-nav__label">${icon}<span>${escHtml(label)}</span></span>
-        <span class="admin-nav__end">${badge}<span class="admin-nav__chev" aria-hidden="true">${IC.chevron}</span></span>
-      </button>
-      <div class="admin-nav__items"${groupActive ? '' : ' hidden'}>${itemsHtml}</div>
-    </div>`;
-  }).join('');
+  // Only what this admin can open shows; requireAuth in server.js is what actually blocks the rest.
+  const menu = menuFor({ allowedSections, isSuperAdmin });
+  // The address first: some pages still pass the old group's page as currentPath.
+  const activeItem = menuItemFor(requestPath, menu) || menuItemFor(currentPath, menu);
+  const crumbGroup = menu.find(s => s.items.includes(activeItem))?.head || '';
+  const navHtml = menu.map(s => `${s.head ? `<div class="admin-nav__head">${escHtml(s.head)}</div>` : ''}${s.items.map(it => {
+    const on = it === activeItem;
+    const n = Number(navBadges[it.badge]) || 0;
+    return `<a href="${it.tabs[0].href}" class="admin-nav__row${on ? ' is-active' : ''}"${on ? ' aria-current="page"' : ''}>
+      <span class="admin-nav__label"><span class="admin-nav__icon" aria-hidden="true">${IC[it.icon] || IC.dashboard}</span><span>${escHtml(it.label)}</span></span>
+      <span class="admin-nav__end">${n ? `<span class="admin-nav__badge">${n}</span>` : ''}</span>
+    </a>`;
+  }).join('')}`).join('');
 
   const who = me || { name: isSuperAdmin ? 'Super admin' : 'Admin', role: isSuperAdmin ? 'Full access' : 'Admin' };
   const initials = String(who.name).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || 'A';
@@ -346,7 +392,6 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
       </a>
       <button type="button" class="ashell__icon-btn ashell__close" data-shell-close aria-label="Close menu">×</button>
     </div>
-    ${season ? `<a class="ashell__season" href="/admin/season" title="Season settings"><span class="ashell__season-dot" aria-hidden="true"></span><span>${escHtml(season)}</span><span class="ashell__season-chev" aria-hidden="true">${IC.chevron}</span></a>` : ''}
     <nav class="admin-nav" aria-label="Admin sections">${navHtml}</nav>
     <div class="ashell__me">
       <span class="ashell__me-avatar" aria-hidden="true">${escHtml(initials)}</span>
@@ -364,7 +409,7 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
         <a class="aui-btn aui-btn--ghost aui-btn--sm" href="/" target="_blank" rel="noopener">View site <span aria-hidden="true">↗</span></a>
       </div>
     </header>
-    <main class="ashell__content" id="admin-main">${versionScripts(body, v)}</main>
+    <main class="ashell__content" id="admin-main" data-menu-item="${activeItem?.id || ''}">${menuTabs(activeItem, requestPath)}${versionScripts(body, v)}</main>
   </div>
 
   <script>
@@ -377,19 +422,6 @@ export function adminLayout({ title, currentPath = '/admin', body, cssVer = '', 
     openBtn.addEventListener('click', open);
     document.querySelectorAll('[data-shell-close]').forEach(function(b) { b.addEventListener('click', close); });
     document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && side.classList.contains('is-open')) close(); });
-
-    // One group open at a time.
-    var toggles = document.querySelectorAll('.nav-group-toggle');
-    toggles.forEach(function(toggle) {
-      toggle.addEventListener('click', function() {
-        var willOpen = toggle.getAttribute('aria-expanded') !== 'true';
-        toggles.forEach(function(t) {
-          var isOpen = t === toggle && willOpen;
-          t.setAttribute('aria-expanded', String(isOpen));
-          t.nextElementSibling.hidden = !isOpen;
-        });
-      });
-    });
   })();
   </script>
   <script src="/table-scroll.js${v}" defer></script>

@@ -90,7 +90,7 @@ export function adminPrivilegesBody({ admins = [], candidates = [], sections = [
         <span>Restricted to selected sections only</span>
       </label>
       <div id="sections-checkbox-list" style="display:flex;flex-direction:column;gap:8px;padding-left:22px">
-        ${sections.map(s => `<label class="agm-modal-checkbox"><input type="checkbox" class="section-checkbox" value="${escHtml(s.key)}"><span>${escHtml(s.label)}</span></label>`).join('')}
+        ${sections.map(s => `<label class="agm-modal-checkbox"><input type="checkbox" class="section-checkbox" value="${escHtml(s.key)}"><span>${escHtml(s.label)}<span class="aui-check__opens">${escHtml(s.opens || '')}</span></span></label>`).join('')}
       </div>
       <p class="agm-modal-err" id="sections-err" hidden></p>
     </div>

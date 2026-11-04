@@ -116,7 +116,7 @@ function accessTab(reg, sectionsList, name) {
   const sections = isAdmin ? section({
     title: 'Sections they can open', note: '· none ticked = every section',
     bodyHtml: `<form class="aui-panel" data-json-action="/admin/users/${attr(reg.id)}/sections" data-done="Sections saved.">
-      <div class="aui-checks aui-checks--rows">${sectionsList.map(s => `<label class="aui-check"><input type="checkbox" name="sections[]" value="${attr(s.key)}"${allowed.includes(s.key) ? ' checked' : ''}><span>${escHtml(s.label)}</span></label>`).join('')}</div>
+      <div class="aui-checks aui-checks--rows">${sectionsList.map(s => `<label class="aui-check"><input type="checkbox" name="sections[]" value="${attr(s.key)}"${allowed.includes(s.key) ? ' checked' : ''}><span>${escHtml(s.label)}<span class="aui-check__opens">${escHtml(s.opens || '')}</span></span></label>`).join('')}</div>
       <div class="aui-row aud-sections__save">${button('Save sections', { kind: 'primary', size: 'sm', type: 'submit' })}<span class="aui-muted">The sidebar only shows what they can open.</span></div>
     </form>`,
   }) : '';

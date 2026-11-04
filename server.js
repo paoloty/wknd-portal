@@ -2721,7 +2721,7 @@ function renderAdminPage(req, opts) {
   const me = req.session?.isElevatedPlayer
     ? { name: req.session.playerName || 'Admin', role: allowed ? `Admin · ${ADMIN_SECTIONS.filter(x => allowed.includes(x.key)).map(x => x.label).join(', ')}` : 'Admin' }
     : { name: 'Super admin', role: 'Full access' };
-  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, allowedSections: allowed, navBadges: adminNavBadges(), season: `Season ${getPortalCurrentSeason()}`, me, ...opts, body });
+  return adminLayout({ gaSnippet: buildGaSnippet(req, { banner: false }), cssVer: CSS_VER, isSuperAdmin: !req.session?.isElevatedPlayer, currentPath: req.path, requestPath: req.path, allowedSections: allowed, navBadges: adminNavBadges(), me, ...opts, body });
 }
 
 // ── Each feature's public switches, on its own admin page ──────────────────────────────

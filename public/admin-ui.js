@@ -507,8 +507,33 @@
   // fetches its own fresh HTML and swaps just the content area (#admin-main), instead of a
   // full reload: the sidebar, scroll position and focus stay put. Pages show the result of
   // the action exactly as a reload would, since the server renders them the same way.
-  // Anything that goes to a different page still navigates normally.
+  // A tab of the same menu link also swaps in place when its page allows it (canSwapAcross).
+  // Anything else that goes to a different page still navigates normally.
   var samePage = function (url) { return new URL(url, location.origin).pathname === location.pathname; };
+  var shownPath = location.pathname; // the page in #admin-main (Back changes the address first)
+
+  // Page scripts that can arrive after the page has loaded and run again on 'admin:updated'.
+  // A page with any other script, or an inline one, needs a real load: those run once.
+  var SWAPPABLE_SCRIPT = /\/admin-(papawis|reach|ledger|picks|polls|players|team-builder)\.js/;
+  var pageScripts = {};
+  [].forEach.call(document.scripts, function (s) { if (s.src) pageScripts[new URL(s.src).pathname] = true; });
+  function canSwapAcross(html) {
+    var fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('admin-main');
+    var main = document.getElementById('admin-main');
+    if (!fresh || !main || !fresh.dataset.menuItem || fresh.dataset.menuItem !== main.dataset.menuItem) return false;
+    return [].every.call(fresh.querySelectorAll('script'), function (s) { return SWAPPABLE_SCRIPT.test(s.getAttribute('src') || ''); });
+  }
+  // innerHTML never runs scripts, so a tab's script not loaded yet is added here, once.
+  function loadPageScripts(main) {
+    [].forEach.call(main.querySelectorAll('script[src]'), function (s) {
+      var path = new URL(s.getAttribute('src'), location.origin).pathname;
+      if (pageScripts[path]) return;
+      pageScripts[path] = true;
+      var el = document.createElement('script');
+      el.src = s.getAttribute('src');
+      document.body.appendChild(el);
+    });
+  }
 
   // Show and drop a ?toast= message carried in a URL; returns the URL without it.
   function takeToast(url) {
@@ -532,6 +557,7 @@
     var caret = focusName && typeof active.selectionStart === 'number' ? active.selectionStart : null;
     var y = window.scrollY;
     main.innerHTML = fresh.innerHTML;
+    main.dataset.menuItem = fresh.dataset.menuItem || '';
     document.title = doc.title;
     // Sidebar counts (things waiting) may have changed.
     var oldRows = document.querySelectorAll('.admin-nav__row'), newRows = doc.querySelectorAll('.admin-nav__row');
@@ -544,6 +570,7 @@
     });
     var clean = takeToast(url);
     if (opts.push) history.pushState(null, '', clean); else history.replaceState(null, '', clean);
+    shownPath = location.pathname;
     window.scrollTo(0, opts.top ? 0 : y);
     if (focusName) {
       var again = main.querySelector('[name="' + focusName + '"]');
@@ -551,14 +578,20 @@
     }
     initDynamic(main);
     document.dispatchEvent(new CustomEvent('admin:updated'));
+    loadPageScripts(main);
   }
 
   // Fetch a page and swap it in (or navigate if it turns out to be a different page).
+  // opts.cross: moving to another tab of this menu link, which may need a real load after all.
   function softLoad(url, opts) {
+    opts = opts || {};
     return fetch(url, { credentials: 'same-origin' })
       .then(function (r) {
-        if (!r.ok || !samePage(r.url)) { location.href = r.url || url; return; }
-        return r.text().then(function (html) { swapIn(html, r.url, opts); });
+        if (!r.ok || (!opts.cross && !samePage(r.url))) { location.href = r.url || url; return; }
+        return r.text().then(function (html) {
+          if (opts.cross && !canSwapAcross(html)) { location.href = r.url; return; }
+          swapIn(html, r.url, opts);
+        });
       })
       .catch(function () { location.href = url; });
   }
@@ -606,13 +639,14 @@
     var a = e.target.closest && e.target.closest('a[href]');
     if (!a || a.target || a.hasAttribute('download')) return;
     if (!a.closest('.aui-views, .aui-tabs, .aui-grid__sort, .aui-pager, .aui-density, .aui-chips, .aui-menu')) return;
-    if (!samePage(a.href)) return;
+    var cross = !samePage(a.href);
+    if (cross && !a.closest('.aui-hubtabs')) return;
     e.preventDefault();
-    var go = function () { softLoad(a.href, { push: true, top: !!a.closest('.aui-tabs, .aui-menu') }); };
+    var go = function () { softLoad(a.href, { push: true, top: !!a.closest('.aui-tabs, .aui-menu'), cross: cross }); };
     if (!hasUnsaved()) { go(); return; }
     confirmDialog({ title: 'Discard your unsaved changes?', body: 'You haven’t saved them yet.', sendLabel: 'Discard' }).then(function (ok) { if (ok) go(); });
   });
-  window.addEventListener('popstate', function () { softLoad(location.href); });
+  window.addEventListener('popstate', function () { softLoad(location.href, { cross: location.pathname !== shownPath }); });
 
   // One-time message carried in the URL of a full page load.
   try {

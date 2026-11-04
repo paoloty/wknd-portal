@@ -9,7 +9,7 @@ Legend for the Mockup column:
 - **needed**: a mockup comes first; the page isn't built until it's approved.
 - **n/a**: no mockup; the page is built straight from the components.
 
-Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages added since then were built on the kit from the start (see "Added since the plan").
+Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages added since then were built on the kit from the start (see "Added since the plan"). The menu was regrouped in 2026-11: where each page now sits is MENU in views/admin/layout.js, and the Area column below is the old group.
 
 ## Foundation
 
