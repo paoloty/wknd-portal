@@ -52,7 +52,7 @@ Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages a
 | 27 | Season | Assessment detail | /admin/season/assessments/:id | n/a | [ ] |
 | 28 | Season | Liveness checks and detail | /admin/season/liveness | n/a | [ ] |
 | 29 | Season | Team builder | /admin/season/teams | done | [x] |
-| 30 | Season | Team builder review | /admin/season/teams/review | n/a | [ ] |
+| 30 | Season | Team builder review | /admin/season/teams/review | n/a | [x] |
 | 31 | Season | Team builder sandbox | /admin/season/teams/sandbox | done | [x] |
 | 32 | Community | Polls | /admin/polls (+ /admin/polls/:id, 2026-10-19) | n/a | [x] |
 | 33 | Community | Fines and conduct | /admin/fines | n/a | [ ] |

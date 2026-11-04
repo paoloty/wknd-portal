@@ -205,6 +205,7 @@ import { adminPrivilegesBody }  from './views/admin/privileges.js';
 import { adminLogsPage }        from './views/admin/logs.js';
 import { buildLogRows, playerAuditRoute, captureConsoleErrors } from './lib/activity-log.js';
 import { seasonStepState } from './lib/season-steps.js';
+import { startRefusal, startEmailState } from './lib/season-start.js';
 import { cleanNominations, summarizeNominations } from './lib/season-nominations.js';
 import { adminShareCardLogPage } from './views/admin/share-log.js';
 import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays.js';
@@ -310,7 +311,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // every request in a given run), but it's not the clean version string it looks like it
 // should be. Math.floor just keeps it an integer without the overflow.
 // Also bumped by the admin's own files (admin.css, admin-ui.js), which share this version.
-const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/table-scroll.js', 'public/player-cards.js', 'public/live-score.js', 'public/admin-ui.js', 'public/admin-settings.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js', 'public/potg-frame.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
+const CSS_VER = (() => { try { return Math.floor(Math.max(...['public/styles.css', 'public/admin.css', 'public/table-scroll.js', 'public/player-cards.js', 'public/live-score.js', 'public/admin-ui.js', 'public/admin-settings.js', 'public/admin-papawis.js', 'public/admin-reach.js', 'public/admin-games.js', 'public/admin-game.js', 'public/admin-picks.js', 'public/admin-players.js', 'public/admin-ledger.js', 'public/admin-award-graphic.js', 'public/admin-team-builder.js', 'public/admin-season-start.js', 'public/admin-polls.js', 'public/admin-potg-video.js', 'public/admin-media.js', 'public/potg-frame.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 // The player profile's own stylesheet (public/profile.css), versioned the same way.
 const PROFILE_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirname, 'public/profile.css')).mtimeMs); } catch { return Date.now(); } })();
 // /teams and /teams/:slug (public/teams.css), versioned the same way.
@@ -24210,8 +24211,8 @@ function buildChargeReviewRows(season) {
       teamId:    p.assigned_team_id || '',
       jerseyTop: p.jersey_top || '', jerseyShorts: p.jersey_shorts || '', pockets: !!p.pockets,
       quotaAmount,
-      topAmount, topExcluded: !!p.jersey_top_excluded,
-      shortsAmount, shortsExcluded: !!p.jersey_shorts_excluded,
+      topAmount, topExcluded: !!p.jersey_top_excluded, topFull: breakdown.topAmount,
+      shortsAmount, shortsExcluded: !!p.jersey_shorts_excluded, shortsFull: breakdown.shortsAmount,
       extraAmount, extraLabel: p.extra_charge_label || '',
       total: quotaAmount + topAmount + shortsAmount + extraAmount,
     };
@@ -24223,22 +24224,41 @@ function buildChargeReviewRows(season) {
 app.get('/admin/season/teams/review', requireAuth, (req, res) => {
   const sigSeason = getSetting('signup_target_season', '');
   if (!sigSeason) return res.redirect('/admin/season');
-  if (getSetting('season_draft_status', '') === 'started') return res.redirect('/admin/season/teams');
 
   const teams = getSeasonTeams(sigSeason);
   const teamById = Object.fromEntries(teams.map(t => [t.id, t]));
-  const { rows } = buildChargeReviewRows(sigSeason);
-  rows.forEach(r => { r.teamName = teamById[r.teamId]?.name || ''; });
+  const signups = getSeasonSignupsWithStats(sigSeason);
+  const page = body => res.send(renderAdminPage(req, { title: 'Review and start', currentPath: '/admin/season/teams/review', body }));
 
-  const notSelected = getSeasonSignupsWithStats(sigSeason)
-    .filter(p => p.status !== 'confirmed')
-    .map(p => ({ name: displayPlayerName(p.full_name), status: p.status }));
+  if (getSetting('season_draft_status', '') === 'started') {
+    const charged = {};
+    for (const t of getAllTransactionsBySeason(sigSeason)) {
+      if (t.season === String(sigSeason) && t.type === 'charge' && t.category === 'Season Fee' && t.status === 'confirmed') charged[t.player_id] = (charged[t.player_id] || 0) + Number(t.amount || 0);
+    }
+    const emails = getLatestEmailsByRef(['season_confirmed', 'season_not_selected']);
+    const anyLogged = signups.some(s => emails[s.id]);
+    const people = signups.map(s => {
+      const team = teamById[s.assigned_team_id];
+      return {
+        signupId: s.id, name: displayPlayerName(s.full_name), email: s.email || '', status: s.status, playerId: s.player_id || '',
+        teamName: team?.name || '', teamColor: team?.color || '', charged: charged[s.player_id] || 0,
+        emailState: startEmailState(emails[s.id], { hasEmail: !!s.email, anyLogged }),
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    return page(adminSeasonReviewBody({ sigSeason, started: true, people, query: req.query }));
+  }
 
-  res.send(renderAdminPage(req, {
-    title: 'Review & Start Season',
-    currentPath: '/admin/season/teams',
-    body: adminSeasonReviewBody({ sigSeason, rows, notSelected }),
-  }));
+  const liveTeamNames = new Set(getAllTeams().map(t => t.name.trim().toUpperCase()));
+  const { rows, quotaAmount } = buildChargeReviewRows(sigSeason);
+  rows.forEach(r => {
+    const team = teamById[r.teamId];
+    r.teamName = team?.name || '';
+    r.teamColor = team?.color || '';
+    r.teamIsLive = !!team && liveTeamNames.has(team.name.trim().toUpperCase());
+  });
+  rows.sort((a, b) => (a.teamName || '').localeCompare(b.teamName || '') || a.name.localeCompare(b.name));
+  const notSelected = signups.filter(p => p.status !== 'confirmed').map(p => ({ name: displayPlayerName(p.full_name), status: p.status }));
+  page(adminSeasonReviewBody({ sigSeason, rows, notSelected, fee: quotaAmount, query: req.query }));
 });
 
 // Same math as the review screen, exported as a CSV for reconciling against actual
@@ -24272,6 +24292,10 @@ app.get('/admin/season/teams/export-charges', requireAuth, (req, res) => {
 app.post('/admin/season-signups/:id/charge-adjustments', requireAuth, express.json(), (req, res) => {
   const signup = getSeasonSignupById(req.params.id);
   if (!signup) return res.status(404).json({ error: 'Signup not found.' });
+  // Charges are on the ledger by then: a change here would no longer match them.
+  if (getSetting('season_draft_status', '') === 'started' && String(signup.season) === getSetting('signup_target_season', '')) {
+    return res.status(400).json({ error: 'This season has already been started.' });
+  }
   const { top_excluded = false, shorts_excluded = false, extra_amount = 0, extra_label = '' } = req.body || {};
   const amount = Number(extra_amount) || 0;
   setSeasonSignupChargeAdjustments(signup.id, {
@@ -24283,14 +24307,15 @@ app.post('/admin/season-signups/:id/charge-adjustments', requireAuth, express.js
 
 app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, res) => {
   const season = (req.body?.season || getSetting('signup_target_season', '')).toString();
-  if (!season) return res.status(400).json({ error: 'season required' });
   // Guards against a double-charge: two open tabs, a slow response retried, or the client
   // button re-enabling somehow all end up calling this route twice for the same season. The
   // client already disables the button after one click, but that's not a real safeguard —
   // this is the one that actually matters, since this route charges real money.
-  if (getSetting('season_draft_status', '') === 'started') {
-    return res.status(400).json({ error: 'This season has already been started — charges were already applied.' });
-  }
+  const refusal = startRefusal({
+    season, target: getSetting('signup_target_season', ''), draft: getSetting('season_draft_status', ''),
+    confirmed: getSeasonSignups(season).filter(s => s.status === 'confirmed').length,
+  });
+  if (refusal) return res.status(400).json({ error: refusal });
 
   const quotaAmount = Number(getSetting('season_quota_amount', '0')) || 0;
   // Snapshot the fee into season_quotas so Ledger/Finance collection-rate reporting
@@ -24362,6 +24387,11 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
     teamsCleared++;
   }
 
+  // Before the first email: the sends take a while and a second request could get in between
+  // them. Everything above runs without a pause, so nothing can get in before this line.
+  setSetting('season_draft_status', 'started');
+  setSetting('season_signup_open', '0');
+
   // Email confirmed players — itemized breakdown of exactly what they were charged,
   // matching the review screen line for line.
   const emailErrors = [];
@@ -24393,12 +24423,10 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   }
   finishCampaign(campaignId, { emails: emailsSent });
 
-  setSetting('season_draft_status', 'started');
-  setSetting('season_signup_open', '0');
-
   res.json({
     ok: true, charged: chargedCount, teams_synced: teamsSynced, teams_cleared: teamsCleared,
-    emails_sent: chargeRows.length + notSelected.length, email_errors: emailErrors,
+    emails_sent: emailsSent, email_errors: emailErrors,
+    message: `Season ${season} started: ${chargedCount} charged, ${emailsSent} emails sent${emailErrors.length ? `, ${emailErrors.length} failed` : ''}.`,
   });
 });
 

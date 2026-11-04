@@ -513,7 +513,7 @@
 
   // Page scripts that can arrive after the page has loaded and run again on 'admin:updated'.
   // A page with any other script, or an inline one, needs a real load: those run once.
-  var SWAPPABLE_SCRIPT = /\/admin-(papawis|reach|ledger|picks|polls|players|team-builder|settings)\.js/;
+  var SWAPPABLE_SCRIPT = /\/admin-(papawis|reach|ledger|picks|polls|players|team-builder|season-start|settings)\.js/;
   var pageScripts = {};
   [].forEach.call(document.scripts, function (s) { if (s.src) pageScripts[new URL(s.src).pathname] = true; });
   function canSwapAcross(html) {

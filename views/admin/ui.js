@@ -255,7 +255,7 @@ export function dataGrid(o) {
   </div>`;
   const bulkHtml = o.bulk?.length ? `<div class="aui-bulk" data-grid-bulk hidden role="toolbar" aria-label="Bulk actions">
     <span class="aui-bulk__count"><span data-bulk-count>0</span> selected</span>
-    <div class="aui-bulk__actions">${o.bulk.map((b, i) => `<button type="button" class="aui-btn aui-btn--sm aui-btn--${i === 0 ? 'primary' : 'secondary'}" data-bulk-each="${attr(b.eachUrl)}" data-done="${attr(b.done || 'Done.')}"${b.confirm ? ` data-bulk-title="${attr(b.confirm.title)}" data-bulk-body="${attr(b.confirm.body || '')}"` : ''}>${escHtml(b.label)}</button>`).join('')}<button type="button" class="aui-btn aui-btn--sm aui-btn--ghost" data-bulk-clear>Clear</button></div>
+    <div class="aui-bulk__actions">${o.bulk.map((b, i) => b.attrs ? `<button type="button" class="aui-btn aui-btn--sm aui-btn--${i === 0 ? 'primary' : 'secondary'}" ${b.attrs}>${escHtml(b.label)}</button>` : `<button type="button" class="aui-btn aui-btn--sm aui-btn--${i === 0 ? 'primary' : 'secondary'}" data-bulk-each="${attr(b.eachUrl)}" data-done="${attr(b.done || 'Done.')}"${b.confirm ? ` data-bulk-title="${attr(b.confirm.title)}" data-bulk-body="${attr(b.confirm.body || '')}"` : ''}>${escHtml(b.label)}</button>`).join('')}<button type="button" class="aui-btn aui-btn--sm aui-btn--ghost" data-bulk-clear>Clear</button></div>
   </div>` : '';
 
   // Head
@@ -423,5 +423,5 @@ export function timeline(items) {
 
 // Small numbers inside a page: [{ label, value, of }]
 export function statStrip(items) {
-  return `<div class="aui-stats">${items.map(s => `<div class="aui-stats__cell"><div class="aui-stats__label">${escHtml(s.label)}</div><div class="aui-stats__value">${escHtml(s.value)}${s.of ? `<span>${escHtml(s.of)}</span>` : ''}</div></div>`).join('')}</div>`;
+  return `<div class="aui-stats">${items.map(s => `<div class="aui-stats__cell"${s.key ? ` data-stat="${attr(s.key)}"` : ''}><div class="aui-stats__label">${escHtml(s.label)}</div><div class="aui-stats__value">${escHtml(s.value)}${s.of ? `<span>${escHtml(s.of)}</span>` : ''}</div></div>`).join('')}</div>`;
 }

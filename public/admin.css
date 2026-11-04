@@ -3388,3 +3388,12 @@ select.aui-input { padding-left: 9px; }
 /* The closed phone menu's shadow shows on white. */
 .ashell__side:not(.is-open) { box-shadow: none; }
 .asu-comment { display: block; white-space: pre-line; overflow-wrap: anywhere; color: var(--text); font-size: 13px; line-height: 1.5; max-width: 72ch; }
+/* Review and start */
+.asr-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; cursor: pointer; }
+.asr-item input { accent-color: var(--amber); }
+.asr-item__price, .asr-none { color: var(--text-muted); }
+.asr-extra { display: flex; gap: 6px; }
+.asr-extra__label { width: 130px; }
+.asr-extra__amount { width: 88px; }
+.asr-total { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+.asr-names { margin: 0; padding: 12px 16px; background: var(--surface); border: 1px solid var(--aui-line); border-radius: var(--aui-card); font-size: 13px; line-height: 1.6; color: var(--text-2); }
