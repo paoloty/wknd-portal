@@ -7,7 +7,7 @@
 import { escHtml } from '../layout.js';
 import { displayPlayerName, PAYMENT_CATEGORIES } from '../utils.js';
 import { outlineDarkRings } from './season-teams.js';
-import { pageHeader, dataGrid, section, badge, button, drawer, field, fieldGrid, segmented, menu, avatar, playerPicker, breadcrumb, personStrip, progress } from './ui.js';
+import { pageHeader, dataGrid, section, badge, banner, button, drawer, field, fieldGrid, segmented, menu, avatar, playerPicker, breadcrumb, personStrip, progress } from './ui.js';
 
 const attr = s => escHtml(String(s ?? ''));
 export const EPS = 0.005;
@@ -164,18 +164,17 @@ export function adminLedgerBody({
   const allBal = Object.values(balMap).map(b => Number(b.balance) || 0);
   const owed = allBal.filter(b => b > EPS), credit = allBal.filter(b => b < -EPS);
   const sum = a => a.reduce((t, n) => t + n, 0);
-  const stats = tiles([
-    { label: 'Owed to the league', value: peso(sum(owed)), tone: 'aui-tone--red', sub: `${plural(owed.length, 'player')} · all time` },
-    { label: 'Players in credit', value: peso(sum(credit)), tone: 'aui-tone--green', sub: `${plural(credit.length, 'player')} · all time` },
-    { label: season ? `Collected, Season ${season}` : 'Collected, all time', value: peso(collected), ...(season && !quota ? { subHtml: 'No season fee set · <a class="aui-link" href="/admin/season">Set the season fee</a>' } : { sub: season ? `Season fee ${peso(quota)} each` : 'Confirmed payments' }) },
-    { label: 'To confirm', value: String(pending.length), tone: pending.length ? 'aui-tone--amber' : '', sub: pending.length === 1 ? 'payment waiting' : 'payments waiting' },
-  ]);
+  const status = [
+    `${plural(owed.length, 'player')} owe ${peso(sum(owed))}`,
+    credit.length ? `${credit.length} in credit ${peso(sum(credit))}` : '',
+    `${peso(collected)} collected ${season ? `in Season ${season}` : 'all time'}`,
+  ].filter(Boolean).join(' · ');
 
   const teams = [...new Set(rows.map(r => r.team).filter(Boolean))].sort();
   const openHref = r => `/admin/ledger?season=${encodeURIComponent(sp)}&player=${encodeURIComponent(r.id)}`;
   const columns = [
     { key: 'player', label: 'Player', primary: true, sort: r => r.name.toLowerCase(),
-      cell: r => `${avatar(r.name, r.color, { size: 32, playerId: r.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}${r.banned ? ` ${badge('Banned', 'red')}` : r.deadlinePassed ? ` ${badge('Deadline passed', 'amber')}` : ''}</span><span class="aui-cell__sub">${escHtml(r.team || 'No team')}</span></span>` },
+      cell: r => `${avatar(r.name, r.color, { size: 28, playerId: r.id })}<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(r.name)}${r.banned ? ` ${badge('Banned', 'red')}` : r.deadlinePassed ? ` ${badge('Deadline passed', 'amber')}` : ''}</span><span class="aui-cell__sub">${escHtml(r.team || 'No team')}</span></span>` },
     // Owing players who haven't paid or reached out in overdueDays get the "No word" line:
     // their reminder carries the suspension warning (lib/balance-reminders.js).
     { key: 'balance', label: 'Balance', num: true, sort: r => r.bal,
@@ -188,7 +187,7 @@ export function adminLedgerBody({
   ].filter(Boolean);
 
   const grid = dataGrid({
-    id: 'alg-balances', baseUrl: '/admin/ledger', query, keep: { season: sp },
+    id: 'alg-balances', baseUrl: '/admin/ledger', query, keep: { season: sp }, minimal: true,
     rows, rowKey: r => r.id, noun: ['player', 'players'],
     views: [
       { key: 'all', label: 'All', test: () => true },
@@ -237,12 +236,12 @@ export function adminLedgerBody({
   return outlineDarkRings(`<div class="aui-page alg" data-alg-page>
     ${pageHeader({
       title: 'Ledger',
-      sub: 'Every player’s balance. Balances are all-time; the season pick changes the fee progress and what’s collected.',
+      sub: `${status}. Balances are all-time; the season changes fee progress and collected.`,
       actionsHtml: `${seasonSwitch(s => `/admin/ledger?season=${encodeURIComponent(s)}`, seasons, season)}${button('Copy summary', { kind: 'secondary', attrs: `data-alg-copy="${attr(summaryText)}"` })}`,
     })}
-    ${stats}
-    ${section({ title: 'To confirm', note: '· payments players sent in, oldest first', bodyHtml: confirmQueue(pending, colorById, { season }) })}
-    ${section({ title: 'Balances', bodyHtml: grid })}
+    ${season && !quota ? banner('warn', `No season fee set for Season ${season}.`, '<a class="aui-link" href="/admin/season">Set the season fee</a>') : ''}
+    ${pending.length ? section({ title: 'To confirm', note: '· payments players sent in, oldest first', bodyHtml: confirmQueue(pending, colorById, { season }) }) : ''}
+    ${grid}
     ${open ? playerDrawer(open, { season, quota, colorById, remindedAt: remindedById[open.player.id]?.at || 0 }) : ''}
     ${chargeDrawer({ id: 'alg-charge', action: '/admin/ledger/bulk-charge', seasons, season, players: pickerPlayers })}
   </div>
