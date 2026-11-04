@@ -24288,7 +24288,7 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
         id: txId, player_id: row.playerId, amount: row.total, type: 'charge',
         payment_method: '', date: today, status: 'confirmed',
         notes: chargeNotes,
-        reference_no: '', season, category: 'season_fee',
+        reference_no: '', season, category: 'Season Fee',
       });
       notifyLedgerEvent({ playerId: row.playerId, type: 'charge', amount: row.total, notes: chargeNotes });
     }

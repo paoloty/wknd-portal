@@ -62,7 +62,7 @@ export function adminFinanceDashBody({ seasons = [], season = '', summary = {}, 
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
   ${kpiTile('Total Outstanding', fmt(totalOutstanding), `${owedBalances.length} players owe · all time`, '#ef4444')}
   ${kpiTile('Total Collected', fmt(totalPaid), `${collectionRate}% collection rate`, '#22c55e')}
-  ${kpiTile('Players Settled', `${settledCount} / ${totalPlayers}`, season, '#f59332')}
+  ${kpiTile('Players Settled', `${settledCount} / ${totalPlayers}`, `Season ${season}`, '#f59332')}
   ${kpiTile('Pending Transactions', String(pendingCount), 'awaiting confirmation', pendingCount > 0 ? '#f59332' : '#64748b')}
 </div>
 ${quota ? `
