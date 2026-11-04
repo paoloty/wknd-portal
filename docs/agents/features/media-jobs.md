@@ -33,7 +33,7 @@ pm2 restart wknd-portal
 ```
 The renderer finds `/opt/chrome/chrome-headless-shell/*/…/chrome-headless-shell` on its own; `CHROME_PATH` / `FFMPEG_PATH` in `.env` override.
 
-For feed videos: `curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp && chmod +x /usr/local/bin/yt-dlp`, kept current by `/etc/cron.weekly/yt-dlp` (`yt-dlp -U`). `YTDLP_PATH` / `FFPROBE_PATH` in `.env` override.
+For feed videos: `curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp && chmod +x /usr/local/bin/yt-dlp`. Update it by hand with `yt-dlp -U` when Facebook copies start failing. `YTDLP_PATH` / `FFPROBE_PATH` in `.env` override.
 
 ## Gotchas
 - Fonts for the video are bundled next to the template (Big Shoulders, Archivo); the server needs no system fonts.
