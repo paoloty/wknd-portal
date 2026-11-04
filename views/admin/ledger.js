@@ -236,7 +236,7 @@ export function adminLedgerBody({
   return outlineDarkRings(`<div class="aui-page alg" data-alg-page>
     ${pageHeader({
       title: 'Ledger',
-      sub: `${status}. Balances are all-time; the season changes fee progress and collected.`,
+      sub: status,
       actionsHtml: `${seasonSwitch(s => `/admin/ledger?season=${encodeURIComponent(s)}`, seasons, season)}${button('Copy summary', { kind: 'secondary', attrs: `data-alg-copy="${attr(summaryText)}"` })}`,
     })}
     ${season && !quota ? banner('warn', `No season fee set for Season ${season}.`, '<a class="aui-link" href="/admin/season">Set the season fee</a>') : ''}
