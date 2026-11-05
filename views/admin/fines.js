@@ -1,638 +1,233 @@
+// /admin/fines: Conduct → Cases and Categories (rewrite, 2026-11). A case moves from a player's report
+// (pending_admin: admins vote on escalating it) to open (votes are guidance, an admin decides) to
+// approved, rejected or dismissed. A player only ever hears the outcome.
 import { escHtml } from '../layout.js';
 import { displayPlayerName } from '../utils.js';
+import { pageHeader, breadcrumb, section, needsYou, statStrip, dataGrid, badge, button, drawer, field, fieldGrid, playerPicker, emptyState } from './ui.js';
 
-function fmtDate(ms) {
-  return ms ? new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
-}
-function peso(n) { return '₱' + Number(n || 0).toLocaleString(); }
+const peso = n => `₱${Number(n || 0).toLocaleString()}`;
+const fmtDate = ms => (ms ? new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' }) : '—');
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const pts = n => plural(n, 'pt', 'pts');
+const none = '<span class="asr-none">None</span>';
 
-function statusBadge(status) {
-  if (status === 'approved') return `<span class="agm-badge agm-badge--blue">Fined</span>`;
-  if (status === 'rejected') return `<span class="agm-badge agm-badge--gray">Rejected</span>`;
-  if (status === 'pending_admin') return `<span class="agm-badge agm-badge--amber">Pending Escalation</span>`;
-  if (status === 'dismissed') return `<span class="agm-badge agm-badge--gray">Dismissed</span>`;
-  return `<span class="agm-badge agm-badge--amber">Open</span>`;
-}
+const STATUS = { approved: ['Fined', 'blue'], rejected: ['Rejected', 'gray'], pending_admin: ['Needs escalation vote', 'amber'], dismissed: ['Dismissed', 'gray'], open: ['Open', 'amber'] };
+const statusBadge = status => badge(...(STATUS[status] || [status, 'gray']));
+// Only a charged case has anything to pay: anything else shows nothing, not an "Unpaid".
+const paidBadge = c => (c.status !== 'approved' ? none : c.paid_at ? badge('Paid', 'green') : badge('Unpaid', 'amber'));
 
-// Only an approved (i.e. actually charged) case has anything to be paid — everything else
-// shows a dash rather than an "Unpaid" that implies money is owed when none was ever charged.
-function paidBadge(c) {
-  if (c.status !== 'approved') return `<span class="text-slate-700">—</span>`;
-  return c.paid_at
-    ? `<span class="agm-badge agm-badge--green">Paid</span>`
-    : `<span class="agm-badge agm-badge--amber">Unpaid</span>`;
-}
+const row = (who, text, asideHtml = '') => `<div class="aas-qa"><div class="aas-qa__text"><div class="aas-qa__q">${who}</div><div class="aas-qa__a">${text}</div></div>${asideHtml}</div>`;
+const list = rows => `<div class="aui-panel aas-list">${rows.join('')}</div>`;
 
-function statTile(label, value, color = '#e2e8f0') {
-  return `<div class="bg-admin-surface border border-admin-border rounded-lg px-5 py-4">
-    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">${escHtml(label)}</div>
-    <div class="text-xl font-bold font-saira" style="color:${color}">${value}</div>
-  </div>`;
-}
-
-function reportModal(players, categories) {
-  const playersData = JSON.stringify(players.map(p => ({ id: p.id, name: displayPlayerName(p.name) }))).replace(/</g, '\\u003c');
-  const categoryOptions = categories.map(c => `<option value="${escHtml(c.id)}" data-amount="${c.amount}">${escHtml(c.label)} (${peso(c.amount)}${c.points ? ` · ${c.points}pt` : ''})</option>`).join('');
-  return `
-<div class="agm-modal-backdrop" id="fine-modal-backdrop" hidden>
-  <div class="agm-modal">
-    <div class="agm-modal-header">
-      <h3 class="agm-modal-title">Report Incident</h3>
-      <button class="agm-modal-close" id="fine-modal-close">&times;</button>
-    </div>
-    <div class="agm-modal-body" style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <label class="admin-field-label">Player</label>
-        <div style="position:relative">
-          <input id="fine-player-search" type="text" class="admin-input" placeholder="Search players…" autocomplete="off">
-          <input type="hidden" id="fine-player-id">
-          <div id="fine-player-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#0f1623;border:1px solid #1c2840;border-radius:6px;max-height:220px;overflow-y:auto"></div>
-        </div>
-      </div>
-      <div>
-        <label class="admin-field-label">Category</label>
-        <select id="fine-category" class="admin-input">${categoryOptions}</select>
-      </div>
-      <div>
-        <label class="admin-field-label">What happened</label>
-        <textarea id="fine-description" class="admin-input" rows="4" placeholder="Describe the incident — game, context, who saw it…"></textarea>
-      </div>
-      <div id="fine-modal-msg" class="text-xs text-error" style="display:none"></div>
-      <button class="agm-new-btn" id="fine-submit-btn">File Report</button>
-    </div>
-  </div>
-</div>
-<style>.priv-search-result{display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:#94a3b8;background:transparent;border:none;border-bottom:1px solid rgba(28,40,64,.5);cursor:pointer}.priv-search-result:hover{background:rgba(255,255,255,.04);color:#e2e8f0}</style>
-<script>
-(function() {
-  var PLAYERS = ${playersData};
-  var input = document.getElementById('fine-player-search');
-  var hidden = document.getElementById('fine-player-id');
-  var dropdown = document.getElementById('fine-player-dropdown');
-  input.addEventListener('input', function() {
-    hidden.value = '';
-    var q = this.value.trim().toLowerCase();
-    if (!q) { dropdown.style.display = 'none'; return; }
-    var results = PLAYERS.filter(function(p) { return p.name.toLowerCase().includes(q); }).slice(0, 10);
-    dropdown.innerHTML = results.length
-      ? results.map(function(p) { return '<button type="button" class="priv-search-result" data-id="' + p.id + '" data-name="' + p.name.replace(/"/g, '&quot;') + '">' + p.name + '</button>'; }).join('')
-      : '<div style="padding:10px 14px;font-size:12px;color:#475569">No matching players</div>';
-    dropdown.style.display = 'block';
-  });
-  dropdown.addEventListener('click', function(e) {
-    var btn = e.target.closest('.priv-search-result');
-    if (!btn || !btn.dataset.id) return;
-    hidden.value = btn.dataset.id;
-    input.value = btn.dataset.name;
-    dropdown.style.display = 'none';
-  });
-  document.addEventListener('click', function(e) {
-    if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
-  });
-
-  document.getElementById('fine-modal-close').addEventListener('click', function() {
-    document.getElementById('fine-modal-backdrop').hidden = true;
-  });
-  window.openFineModal = function() {
-    input.value = ''; hidden.value = '';
-    document.getElementById('fine-description').value = '';
-    document.getElementById('fine-modal-msg').style.display = 'none';
-    document.getElementById('fine-modal-backdrop').hidden = false;
-  };
-
-  document.getElementById('fine-submit-btn').addEventListener('click', async function() {
-    var msg = document.getElementById('fine-modal-msg');
-    msg.style.display = 'none';
-    if (!hidden.value) { msg.textContent = 'Pick a player from the list.'; msg.style.display = 'block'; return; }
-    var btn = this; btn.disabled = true;
-    try {
-      var r = await fetch('${'REPORT_ENDPOINT'}', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          playerId: hidden.value,
-          categoryId: document.getElementById('fine-category').value,
-          description: document.getElementById('fine-description').value,
-        }),
-      });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Failed');
-      location.reload();
-    } catch (e) {
-      msg.textContent = e.message; msg.style.display = 'block'; btn.disabled = false;
-    }
-  });
-})();
-</script>`;
-}
-
-function caseRow(c, base) {
-  return `<tr class="border-b border-admin-border/40 last:border-0 hover:bg-white/[.015] transition-colors">
-    <td class="px-4 py-3 text-sm font-medium text-slate-200">${escHtml(displayPlayerName(c.player_name))}</td>
-    <td class="px-4 py-3 text-xs text-slate-400">${escHtml(c.category_label)}</td>
-    <td class="px-4 py-3 text-sm font-saira text-brand">${peso(c.amount)}${c.points ? ` <span class="text-xs text-slate-500 font-sans">(${c.points}pt)</span>` : ''}</td>
-    <td class="px-4 py-3 text-xs text-slate-500">${escHtml(c.reported_by_name)} (${c.reported_by_type})</td>
-    <td class="px-4 py-3">${statusBadge(c.status)}</td>
-    <td class="px-4 py-3">${paidBadge(c)}</td>
-    <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">${fmtDate(c.created_at)}</td>
-    <td class="px-4 py-3 text-right"><a href="${base}/${escHtml(c.id)}" class="agm-edit-link">Review</a></td>
-  </tr>`;
-}
-
-export function adminFinesListBody({ pendingAdmin = [], open = [], resolved = [], players = [], categories = [], summary = null } = {}) {
+export function adminFinesListBody({ pendingAdmin = [], open = [], resolved = [], players = [], categories = [], summary = null, query = {} } = {}) {
   const s = summary || { caseCount: 0, paidCount: 0, totalFined: 0, totalPaid: 0, totalOutstanding: 0 };
-  const summaryStrip = `
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-  ${statTile('Total Fined', peso(s.totalFined))}
-  ${statTile('Collected', peso(s.totalPaid), '#22c55e')}
-  ${statTile('Outstanding', peso(s.totalOutstanding), s.totalOutstanding > 0 ? '#f59332' : '#e2e8f0')}
-  ${statTile('Fines Paid', `${s.paidCount} <span class="text-sm text-slate-500">/ ${s.caseCount}</span>`)}
-</div>`;
+  const waiting = c => c.status === 'open' || c.status === 'pending_admin';
+  const unpaid = c => c.status === 'approved' && !c.paid_at;
+  const rows = [...pendingAdmin, ...open, ...resolved].map(c => ({ ...c, name: displayPlayerName(c.player_name) }));
 
-  return `
-<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-  <div>
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">Conduct</h2>
-    <p class="text-sm text-slate-500 mt-0.5">${open.length} open case${open.length === 1 ? '' : 's'}${pendingAdmin.length ? ` · ${pendingAdmin.length} awaiting escalation` : ''}</p>
-  </div>
-  <div class="flex items-center gap-2">
-    <a href="/admin/team-heads" class="admin-btn">Team Heads</a>
-    <a href="/admin/fines/categories" class="admin-btn">Categories</a>
-    <button class="agm-new-btn" onclick="openFineModal()">Report Incident</button>
-  </div>
-</div>
+  const grid = dataGrid({
+    id: 'cases', baseUrl: '/admin/fines', query, minimal: true, perPage: 50,
+    rows, rowKey: c => c.id, noun: ['case', 'cases'],
+    views: [
+      { key: 'all', label: 'All', test: () => true },
+      { key: 'waiting', label: 'Waiting', test: waiting },
+      { key: 'unpaid', label: 'Unpaid', test: unpaid },
+      { key: 'closed', label: 'Closed', test: c => !waiting(c) },
+    ],
+    search: { placeholder: 'Search player or category', text: c => `${c.name} ${c.category_label}` },
+    columns: [
+      { key: 'name', label: 'Player', primary: true, cell: c => `<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(c.name)}</span><span class="aui-cell__sub">${escHtml(c.category_label)}</span></span>` },
+      { key: 'status', label: 'Status', bare: true, cell: c => statusBadge(c.status) },
+      { key: 'amount', label: 'Fine', num: true, phone: true, cell: c => `${peso(c.amount)}${c.points ? ` <span class="asr-none">${pts(c.points)}</span>` : ''}` },
+      { key: 'paid', label: 'Paid', phone: false, cell: paidBadge },
+      { key: 'by', label: 'Reported by', phone: true, cell: c => escHtml(c.reported_by_name) },
+      { key: 'date', label: 'Date', phone: false, cell: c => escHtml(fmtDate(c.created_at)) },
+    ],
+    rowHref: c => `/admin/fines/${c.id}`,
+    empty: { title: 'No cases yet', sub: 'Reports from players and admins show here.' },
+  });
 
-${summaryStrip}
-
-${pendingAdmin.length ? `
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-6">
-  <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Pending Escalation — player-submitted, needs an admin vote</div>
-  <table class="w-full border-collapse"><tbody>${pendingAdmin.map(c => caseRow(c, '/admin/fines')).join('')}</tbody></table>
-</div>` : ''}
-
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden mb-6">
-  <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Open cases</div>
-  ${open.length === 0
-    ? `<div class="p-8 text-center text-sm text-slate-500">No open cases.</div>`
-    : `<table class="w-full border-collapse"><tbody>${open.map(c => caseRow(c, '/admin/fines')).join('')}</tbody></table>`}
-</div>
-
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-  <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Resolved</div>
-  ${resolved.length === 0
-    ? `<div class="p-8 text-center text-sm text-slate-500">No resolved cases yet.</div>`
-    : `<table class="w-full border-collapse"><tbody>${resolved.map(c => caseRow(c, '/admin/fines')).join('')}</tbody></table>`}
-</div>
-
-${reportModal(players, categories).replace('REPORT_ENDPOINT', '/admin/fines')}`;
-}
-
-function voteRow(v) {
-  const color = v.vote === 'approve' ? 'text-emerald-400' : 'text-red-400';
-  return `<tr class="border-b border-admin-border/40 last:border-0">
-    <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(v.voter_name)} <span class="text-xs text-slate-500">(${v.voter_type})</span></td>
-    <td class="px-4 py-2.5 text-sm font-semibold ${color}">${v.vote === 'approve' ? 'Approve' : 'Reject'}</td>
-    <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(v.comment || '—')}</td>
-    <td class="px-4 py-2.5 text-xs text-slate-500 text-right whitespace-nowrap">${fmtDate(v.created_at)}</td>
-  </tr>`;
-}
-
-function escalationVoteRow(v) {
-  const color = v.vote === 'escalate' ? 'text-emerald-400' : 'text-red-400';
-  return `<tr class="border-b border-admin-border/40 last:border-0">
-    <td class="px-4 py-2.5 text-sm text-slate-200">${escHtml(v.admin_name)}</td>
-    <td class="px-4 py-2.5 text-sm font-semibold ${color}">${v.vote === 'escalate' ? 'Escalate' : 'Dismiss'}</td>
-    <td class="px-4 py-2.5 text-xs text-slate-500">${escHtml(v.comment || '—')}</td>
-    <td class="px-4 py-2.5 text-xs text-slate-500 text-right whitespace-nowrap">${fmtDate(v.created_at)}</td>
-  </tr>`;
-}
-
-const descriptionCard = c => `<div class="bg-admin-surface border border-admin-border rounded-lg p-5">
-  <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Description</div>
-  <p class="text-sm text-slate-300 leading-relaxed">${escHtml(c.description) || '<span class="text-slate-600">No description provided.</span>'}</p>
-  <p class="text-xs text-slate-600 mt-3">Reported by ${escHtml(c.reported_by_name)} (${c.reported_by_type}) · ${fmtDate(c.created_at)}</p>
-</div>`;
-
-// Shown on every case-detail page regardless of status — gives the admin the player's
-// full season picture (not just this one case) before they vote or resolve. Purely
-// informational (see getPlayerSuspensionStatus in lib/portal-db.js): nothing here blocks
-// anything automatically, an admin still has to act on it.
-function suspensionSummaryCard(s) {
-  if (!s) return '';
-  const color = s.needsReview ? '#f87171' : s.gamesSuspended > 0 ? '#f59332' : '#64748b';
-  const label = s.needsReview ? 'League Review' : s.gamesSuspended > 0 ? `${s.gamesSuspended} game${s.gamesSuspended === 1 ? '' : 's'}` : 'None';
-  return `<div class="bg-admin-surface border border-admin-border rounded-lg p-5">
-    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Season Conduct Points</div>
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-2xl font-bold font-saira text-slate-100">${s.activePoints}<span class="text-sm text-slate-500 font-sans"> pts</span></div>
-        <div class="text-xs text-slate-500 mt-0.5">from approved fines this season</div>
-      </div>
-      <div class="text-right">
-        <div class="text-lg font-bold font-saira" style="color:${color}">${label}</div>
-        <div class="text-xs text-slate-500 mt-0.5">suspension</div>
-      </div>
-    </div>
-    ${s.categoryFloor > 0 ? `<p class="text-xs text-slate-500 mt-3 pt-3" style="border-top:1px solid var(--border-2)">Includes a mandatory ${s.categoryFloor}-game floor from a category charged this season.</p>` : ''}
+  return `<div class="aui-page">
+    ${pageHeader({
+      title: 'Conduct',
+      sub: 'Reports, votes and fines. A player only hears the outcome.',
+      actionsHtml: `${button('Team heads', { href: '/admin/team-heads' })}${categories.length ? button('Report incident', { kind: 'primary', attrs: 'data-drawer-open="fine-report"' }) : ''}`,
+    })}
+    ${needsYou([
+      pendingAdmin.length && { title: `${plural(pendingAdmin.length, 'player report')} to vote on`, sub: 'Admins decide whether each goes to the team heads.', href: pendingAdmin.length === 1 ? `/admin/fines/${pendingAdmin[0].id}` : '/admin/fines?view=waiting', label: 'Vote', hot: true },
+      open.length && { title: `${plural(open.length, 'open case')} to decide`, sub: 'Votes are guidance. An admin makes the call.', href: open.length === 1 ? `/admin/fines/${open[0].id}` : '/admin/fines?view=waiting', label: 'Review' },
+    ])}
+    ${statStrip([
+      { label: 'Total fined', value: peso(s.totalFined) },
+      { label: 'Collected', value: peso(s.totalPaid) },
+      { label: 'Outstanding', value: peso(s.totalOutstanding) },
+      { label: 'Fines paid', value: String(s.paidCount), of: ` of ${s.caseCount}` },
+    ])}
+    ${grid}
+    ${categories.length ? drawer({
+      id: 'fine-report', eyebrow: 'Conduct', title: 'Report incident',
+      bodyHtml: `<form id="fine-report-form" class="afn-form" data-json-action="/admin/fines" data-then="/admin/fines/{id}" data-done="Report filed.">
+        ${playerPicker({ name: 'playerId', label: 'Player', multiple: false, options: players.map(p => ({ id: p.id, name: displayPlayerName(p.name) })) })}
+        ${field({ label: 'Category', name: 'categoryId', type: 'select', wide: true, options: categories.map(c => [c.id, `${c.label} (${peso(c.amount)}${c.points ? `, ${pts(c.points)}` : ''})`]) })}
+        ${field({ label: 'What happened', name: 'description', type: 'textarea', rows: 4, wide: true, placeholder: 'Game, context, who saw it' })}
+      </form>`,
+      footerHtml: button('File report', { kind: 'primary', type: 'submit', attrs: 'form="fine-report-form"' }),
+    }) : ''}
   </div>`;
+}
+
+// The player's whole season, on every case, before anyone votes or decides. For information only:
+// nothing here blocks anything by itself (getPlayerSuspensionStatus in lib/portal-db.js).
+function conductSection(s) {
+  if (!s) return '';
+  const label = s.needsReview ? 'League review' : s.gamesSuspended > 0 ? plural(s.gamesSuspended, 'game') : 'None';
+  return section({
+    title: 'This season',
+    bodyHtml: `${statStrip([{ label: 'Conduct points', value: String(s.activePoints) }, { label: 'Suspension', value: label }])}${s.categoryFloor > 0 ? `<p class="alv-note afn-note">Includes a mandatory ${plural(s.categoryFloor, 'game')} from a category charged this season.</p>` : ''}`,
+  });
+}
+
+const descriptionSection = c => section({
+  title: 'What happened',
+  note: `Reported by ${c.reported_by_name} (${c.reported_by_type}), ${fmtDate(c.created_at)}`,
+  bodyHtml: `<div class="aui-panel">${c.description ? `<span class="asu-comment">${escHtml(c.description)}</span>` : '<span class="asr-none">No description.</span>'}</div>`,
+});
+
+const voteButton = (id, path, label, kind, body, withId, extra = '') => button(label, { kind, attrs: `data-post-json="/admin/fines/${escHtml(id)}/${path}" data-body='${escHtml(JSON.stringify(body))}' data-with="#${withId}" ${extra}` });
+
+function escalationView(c, { escalationVotes, totalAdmins, viewerAdminId, isSuperAdmin, suspension, heading }) {
+  const pending = c.status === 'pending_admin';
+  const up = escalationVotes.filter(v => v.vote === 'escalate').length;
+  const down = escalationVotes.filter(v => v.vote === 'dismiss').length;
+  const upNeeded = Math.floor(totalAdmins / 2) + 1;
+  const mine = escalationVotes.find(v => v.admin_id === viewerAdminId);
+  const votes = escalationVotes.map(v => row(escHtml(v.admin_name), v.comment ? escHtml(v.comment) : '<span class="asr-none">No comment</span>', `<span class="aui-cell__badges">${v.vote === 'escalate' ? badge('Escalate', 'amber') : badge('Dismiss', 'gray')}<span class="asr-none">${escHtml(fmtDate(v.created_at))}</span></span>`));
+  return `${heading}
+    <div class="aui-cols">
+      <div class="aui-cols__main">
+        ${descriptionSection(c)}
+        ${section({ title: `Escalation votes (${up} escalate, ${down} dismiss)`, note: pending ? `${upNeeded} of ${totalAdmins} admins needed to escalate, ${totalAdmins - upNeeded + 1} to dismiss` : '', bodyHtml: votes.length ? list(votes) : '<div class="aui-panel asr-none">No votes yet.</div>' })}
+        ${pending ? section({
+          title: mine ? `Your vote: ${mine.vote === 'escalate' ? 'Escalate' : 'Dismiss'}` : 'Your vote',
+          bodyHtml: `<div class="aui-panel afn-form">${field({ label: 'Comment (optional)', name: 'comment', type: 'textarea', rows: 2, value: mine?.comment || '', id: 'afn-comment' })}
+            <div class="aui-row">${voteButton(c.id, 'escalate-vote', 'Escalate to heads', 'primary', { vote: 'escalate' }, 'afn-comment', 'data-done="Vote saved."')}${voteButton(c.id, 'escalate-vote', 'Dismiss', 'secondary', { vote: 'dismiss' }, 'afn-comment', 'data-done="Vote saved."')}</div></div>`,
+        }) : ''}
+      </div>
+      <aside class="aui-cols__side">
+        ${conductSection(suspension)}
+        ${pending ? section({
+          title: 'Escalation',
+          bodyHtml: `<div class="aui-panel afn-form"><p class="alv-note">A player filed this. Once most admins vote to escalate, it goes to the team heads for a recommendation. An admin still decides after that.</p>
+            ${isSuperAdmin ? `<p class="alv-note">If the vote has stalled, super admin can settle it:</p><div class="aui-row">
+              ${button('Force escalate', { attrs: `data-post-json="/admin/fines/${escHtml(c.id)}/force-escalation" data-body='{"escalate":true}' data-confirm data-confirm-title="Escalate this case to the team heads?" data-confirm-send="Escalate" data-done="Escalated."` })}
+              ${button('Force dismiss', { kind: 'danger', attrs: `data-post-json="/admin/fines/${escHtml(c.id)}/force-escalation" data-body='{"escalate":false}' data-confirm data-confirm-title="Dismiss this case?" data-confirm-body="The player who reported it gets told it wasn't escalated." data-confirm-send="Dismiss" data-done="Dismissed."` })}
+            </div>` : ''}</div>`,
+        }) : section({
+          title: 'Result',
+          bodyHtml: `<div class="aui-panel afn-form"><p class="afn-result">${c.resolution_note ? escHtml(c.resolution_note) : `Dismissed by admin vote, ${down} to ${up}.`}</p><p class="alv-note">Never reached the team heads. The player who reported it was told.</p></div>`,
+        })}
+      </aside>
+    </div>`;
 }
 
 export function adminFineCaseBody({ case: c, votes = [], player, escalationVotes = [], totalAdmins = 0, viewerAdminId = '', isSuperAdmin = false, suspension = null } = {}) {
-  const header = `
-<div class="mb-5">
-  <a href="/admin/fines" class="text-xs text-slate-500 hover:text-slate-300 no-underline">&larr; Back to Fines</a>
-  <div class="flex items-center gap-3 mt-2">
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">${escHtml(displayPlayerName(c.player_name))}</h2>
-    ${statusBadge(c.status)}
-  </div>
-  <p class="text-sm text-slate-500 mt-1">${escHtml(c.category_label)} · <span class="text-brand font-saira">${peso(c.amount)}</span>${c.points ? ` · ${c.points} pt${c.points === 1 ? '' : 's'}` : ''}${player?.team_name ? ` · ${escHtml(player.team_name)}` : ''}</p>
-</div>`;
+  const name = displayPlayerName(c.player_name);
+  const heading = `${breadcrumb([{ label: 'Conduct', href: '/admin/fines' }, { label: name }])}
+    ${pageHeader({
+      title: name,
+      sub: [c.category_label, peso(c.amount), c.points ? pts(c.points) : '', player?.team_name].filter(Boolean).join(' · '),
+      actionsHtml: statusBadge(c.status),
+    })}`;
 
-  // ── Player-submitted, awaiting an admin escalation vote ────────────────────────
-  if (c.status === 'pending_admin') {
-    const escalateCount = escalationVotes.filter(v => v.vote === 'escalate').length;
-    const dismissCount  = escalationVotes.filter(v => v.vote === 'dismiss').length;
-    const escalateNeeded = Math.floor(totalAdmins / 2) + 1;
-    const dismissNeeded  = totalAdmins - escalateNeeded + 1;
-    const myVote = escalationVotes.find(v => v.admin_id === viewerAdminId);
-    return `${header}
-<div class="grid gap-5" style="grid-template-columns:1fr 340px;align-items:start">
-  <div class="flex flex-col gap-5">
-    ${descriptionCard(c)}
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Escalation votes (${escalateCount} escalate · ${dismissCount} dismiss — needs ${escalateNeeded} of ${totalAdmins} to escalate, ${dismissNeeded} to dismiss)</div>
-      ${escalationVotes.length === 0
-        ? `<div class="p-6 text-center text-sm text-slate-500">No votes yet.</div>`
-        : `<table class="w-full border-collapse"><tbody>${escalationVotes.map(escalationVoteRow).join('')}</tbody></table>`}
-    </div>
-
-    <div class="bg-admin-surface border border-admin-border rounded-lg p-5">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Cast your vote${myVote ? ` — you voted ${myVote.vote === 'escalate' ? 'Escalate' : 'Dismiss'}` : ''}</div>
-      <textarea id="esc-comment" class="admin-input mb-3" rows="2" placeholder="Optional comment…">${myVote ? escHtml(myVote.comment) : ''}</textarea>
-      <div class="flex gap-2">
-        <button class="admin-btn admin-btn--success" onclick="castEscalationVote('escalate')">Escalate to heads</button>
-        <button class="admin-btn admin-btn--danger" onclick="castEscalationVote('dismiss')">Dismiss</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="flex flex-col gap-5" style="position:sticky;top:24px">
-    ${suspensionSummaryCard(suspension)}
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Escalation</div>
-      <div class="p-4">
-        <p class="text-xs text-slate-500 leading-relaxed">A player filed this report directly. Once a majority of admins vote to escalate, it moves to team heads for a recommendation — you still have final say after that, same as any other case.</p>
-        ${isSuperAdmin ? `
-        <div class="mt-4 pt-4" style="border-top:1px solid var(--border-2)">
-          <p class="text-[11px] text-slate-600 mb-2">Super admin override — use if the vote has stalled.</p>
-          <div class="flex flex-col gap-2">
-            <button class="admin-btn admin-btn--block" onclick="forceEscalation(true)">Force Escalate</button>
-            <button class="admin-btn admin-btn--danger admin-btn--block" onclick="forceEscalation(false)">Force Dismiss</button>
-          </div>
-        </div>` : ''}
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-window.castEscalationVote = async function(vote) {
-  var btn = event.target; btn.disabled = true;
-  try {
-    var r = await fetch('/admin/fines/${escHtml(c.id)}/escalate-vote', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vote: vote, comment: document.getElementById('esc-comment').value }),
-    });
-    var j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Failed');
-    location.reload();
-  } catch (e) { alert(e.message); btn.disabled = false; }
-};
-window.forceEscalation = async function(escalate) {
-  if (!confirm(escalate ? 'Force-escalate this case to team heads?' : 'Force-dismiss this case?')) return;
-  try {
-    var r = await fetch('/admin/fines/${escHtml(c.id)}/force-escalation', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ escalate: escalate }),
-    });
-    var j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Failed');
-    location.reload();
-  } catch (e) { alert(e.message); }
-};
-</script>`;
+  if (c.status === 'pending_admin' || c.status === 'dismissed') {
+    return `<div class="aui-page">${escalationView(c, { escalationVotes, totalAdmins, viewerAdminId, isSuperAdmin, suspension, heading })}</div>`;
   }
 
-  // ── Dismissed by admin vote (or forced) before ever reaching a head ────────────
-  if (c.status === 'dismissed') {
-    const escalateCount = escalationVotes.filter(v => v.vote === 'escalate').length;
-    const dismissCount  = escalationVotes.filter(v => v.vote === 'dismiss').length;
-    return `${header}
-<div class="grid gap-5" style="grid-template-columns:1fr 340px;align-items:start">
-  <div class="flex flex-col gap-5">
-    ${descriptionCard(c)}
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Escalation votes (${escalateCount} escalate · ${dismissCount} dismiss)</div>
-      ${escalationVotes.length === 0
-        ? `<div class="p-6 text-center text-sm text-slate-500">No votes recorded.</div>`
-        : `<table class="w-full border-collapse"><tbody>${escalationVotes.map(escalationVoteRow).join('')}</tbody></table>`}
-    </div>
-  </div>
-
-  <div class="flex flex-col gap-5" style="position:sticky;top:24px">
-    ${suspensionSummaryCard(suspension)}
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Resolution</div>
-    <div class="p-4">
-      <p class="text-sm text-slate-300">${c.resolution_note ? escHtml(c.resolution_note) : `Dismissed by admin vote — ${dismissCount} dismiss vs ${escalateCount} escalate.`}</p>
-      <p class="text-xs text-slate-600 mt-2">Never reached team heads. The reporting player was notified.</p>
-    </div>
-    </div>
-  </div>
-</div>`;
-  }
-
-  // ── Open (head-voting) / approved / rejected — unchanged from before escalation existed ──
-  const approveCount = votes.filter(v => v.vote === 'approve').length;
-  const rejectCount  = votes.filter(v => v.vote === 'reject').length;
   const isOpen = c.status === 'open';
-  return `${header}
-<div class="grid gap-5" style="grid-template-columns:1fr 340px;align-items:start">
-  <div class="flex flex-col gap-5">
-    ${descriptionCard(c)}
+  const yes = votes.filter(v => v.vote === 'approve').length;
+  const no = votes.filter(v => v.vote === 'reject').length;
+  const mine = votes.find(v => v.voter_id === viewerAdminId);
+  const voteRows = votes.map(v => row(`${escHtml(v.voter_name)} (${escHtml(v.voter_type)})`, v.comment ? escHtml(v.comment) : '<span class="asr-none">No comment</span>', `<span class="aui-cell__badges">${v.vote === 'approve' ? badge('Approve', 'green') : badge('Reject', 'red')}<span class="asr-none">${escHtml(fmtDate(v.created_at))}</span></span>`));
+  const charge = `${peso(c.amount)}${c.points ? ` and ${pts(c.points)}` : ''}`;
 
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">Votes (${approveCount} approve · ${rejectCount} reject)</div>
-      ${votes.length === 0
-        ? `<div class="p-6 text-center text-sm text-slate-500">No votes yet.</div>`
-        : `<table class="w-full border-collapse"><tbody>${votes.map(voteRow).join('')}</tbody></table>`}
-    </div>
-
-    ${isOpen ? `
-    <div class="bg-admin-surface border border-admin-border rounded-lg p-5">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Cast your vote</div>
-      <textarea id="vote-comment" class="admin-input mb-3" rows="2" placeholder="Optional comment…"></textarea>
-      <div class="flex gap-2">
-        <button class="admin-btn admin-btn--success" onclick="castVote('approve')">Approve</button>
-        <button class="admin-btn admin-btn--danger" onclick="castVote('reject')">Reject</button>
+  return `<div class="aui-page">
+    ${heading}
+    <div class="aui-cols">
+      <div class="aui-cols__main">
+        ${descriptionSection(c)}
+        ${section({ title: `Votes (${yes} approve, ${no} reject)`, bodyHtml: voteRows.length ? list(voteRows) : '<div class="aui-panel asr-none">No votes yet.</div>' })}
+        ${isOpen ? section({
+          title: mine ? `Your vote: ${mine.vote === 'approve' ? 'Approve' : 'Reject'}` : 'Your vote',
+          bodyHtml: `<div class="aui-panel afn-form">${field({ label: 'Comment (optional)', name: 'comment', type: 'textarea', rows: 2, value: mine?.comment || '', id: 'afn-comment' })}
+            <div class="aui-row">${voteButton(c.id, 'vote', 'Approve', 'secondary', { vote: 'approve' }, 'afn-comment', 'data-done="Vote saved."')}${voteButton(c.id, 'vote', 'Reject', 'secondary', { vote: 'reject' }, 'afn-comment', 'data-done="Vote saved."')}</div></div>`,
+        }) : ''}
       </div>
-    </div>` : ''}
-  </div>
-
-  <div class="flex flex-col gap-5" style="position:sticky;top:24px">
-    ${suspensionSummaryCard(suspension)}
-    <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
-    <div class="px-4 py-3 border-b border-admin-border text-[10px] font-bold uppercase tracking-widest text-slate-500">${isOpen ? 'Resolve' : 'Resolution'}</div>
-    <div class="p-4">
-      ${isOpen ? `
-      <p class="text-xs text-slate-500 mb-3 leading-relaxed">The vote tally above is guidance — the final call is yours. Approving charges ${peso(c.amount)}${c.points ? ` and adds ${c.points} conduct point${c.points === 1 ? '' : 's'}` : ''} to the player's record (category: Penalty) and notifies them.</p>
-      <textarea id="resolve-note" class="admin-input mb-3" rows="2" placeholder="Optional resolution note…"></textarea>
-      <div class="flex flex-col gap-2">
-        <button class="agm-new-btn" onclick="resolveCase(true)">Approve &amp; Charge ${peso(c.amount)}</button>
-        <button class="admin-btn admin-btn--danger" onclick="resolveCase(false)">Reject — No Fine</button>
-      </div>
-      ` : `
-      <p class="text-sm text-slate-300">Resolved by <strong>${escHtml(c.resolved_by_name)}</strong> on ${fmtDate(c.resolved_at)}.</p>
-      ${c.resolution_note ? `<p class="text-xs text-slate-500 mt-2">${escHtml(c.resolution_note)}</p>` : ''}
-      ${c.status === 'approved' ? `
-      <p class="text-xs text-emerald-400 mt-3">Charged ${peso(c.amount)}${c.points ? ` · ${c.points} pt${c.points === 1 ? '' : 's'}` : ''} to the player's record.</p>
-      <div class="flex items-center gap-2 mt-3 pt-3" style="border-top:1px solid var(--border-2)">
-        ${paidBadge(c)}
-        ${c.paid_at ? `<span class="text-xs text-slate-500">${fmtDate(c.paid_at)}</span>` : ''}
-        <button class="admin-btn admin-btn--sm ${c.paid_at ? '' : 'admin-btn--success'}" style="margin-left:auto" onclick="markFinePaid(${c.paid_at ? 'false' : 'true'})">${c.paid_at ? 'Mark Unpaid' : 'Mark Paid'}</button>
-      </div>
-      ` : ''}
-      `}
+      <aside class="aui-cols__side">
+        ${conductSection(suspension)}
+        ${section({
+          title: isOpen ? 'Decide' : 'Result',
+          bodyHtml: isOpen ? `<div class="aui-panel afn-form">
+              <p class="alv-note">Votes are guidance, and the call is yours. Approving charges ${escHtml(charge)} to the player's record as a Penalty and tells them.</p>
+              ${field({ label: 'Note (optional)', name: 'note', type: 'textarea', rows: 2, id: 'afn-note' })}
+              <div class="aui-row">
+                ${voteButton(c.id, 'resolve', `Approve and charge ${peso(c.amount)}`, 'primary', { approved: true }, 'afn-note', `data-confirm data-confirm-title="Fine ${escHtml(name)} ${peso(c.amount)}?" data-confirm-body="This charges their ledger and tells them." data-confirm-send="Approve and charge" data-done="Fine approved."`)}
+                ${voteButton(c.id, 'resolve', 'Reject, no fine', 'secondary', { approved: false }, 'afn-note', `data-confirm data-confirm-title="Reject this case?" data-confirm-body="No fine is charged. ${escHtml(name)} is told a report was reviewed." data-confirm-send="Reject" data-done="Case rejected."`)}
+              </div>
+            </div>` : `<div class="aui-panel afn-form">
+              <p class="afn-result">Decided by <b>${escHtml(c.resolved_by_name)}</b>, ${escHtml(fmtDate(c.resolved_at))}.</p>
+              ${c.resolution_note ? `<span class="asu-comment">${escHtml(c.resolution_note)}</span>` : ''}
+              ${c.status === 'approved' ? `<p class="alv-note">Charged ${escHtml(charge)} to the player's record.</p>
+                <div class="aui-row afn-paid">${paidBadge(c)}${c.paid_at ? `<span class="asr-none">${escHtml(fmtDate(c.paid_at))}</span>` : ''}
+                  ${c.paid_at
+                    ? button('Mark unpaid', { size: 'sm', attrs: `data-post-json="/admin/fines/${escHtml(c.id)}/paid" data-body='{"paid":false}' data-confirm data-confirm-title="Mark this fine unpaid?" data-confirm-body="This voids the payment on their ledger." data-confirm-send="Mark unpaid" data-done="Marked unpaid."` })
+                    : button('Mark paid', { size: 'sm', kind: 'primary', attrs: `data-post-json="/admin/fines/${escHtml(c.id)}/paid" data-body='{"paid":true}' data-done="Marked paid."` })}
+                </div>` : ''}
+            </div>`,
+        })}
+      </aside>
     </div>
-    </div>
-  </div>
-</div>
-
-<script>
-window.markFinePaid = async function(paid) {
-  var btn = event.target; btn.disabled = true;
-  try {
-    var r = await fetch('/admin/fines/${escHtml(c.id)}/paid', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paid: paid }),
-    });
-    var j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Failed');
-    location.reload();
-  } catch (e) { alert(e.message); btn.disabled = false; }
-};
-window.castVote = async function(vote) {
-  var btn = event.target; btn.disabled = true;
-  try {
-    var r = await fetch('/admin/fines/${escHtml(c.id)}/vote', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vote: vote, comment: document.getElementById('vote-comment').value }),
-    });
-    var j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Failed');
-    location.reload();
-  } catch (e) { alert(e.message); btn.disabled = false; }
-};
-window.resolveCase = async function(approved) {
-  if (!confirm(approved ? 'Approve this fine and charge the player?' : 'Reject this case — no fine will be charged?')) return;
-  try {
-    var r = await fetch('/admin/fines/${escHtml(c.id)}/resolve', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approved: approved, note: document.getElementById('resolve-note').value }),
-    });
-    var j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Failed');
-    location.reload();
-  } catch (e) { alert(e.message); }
-};
-</script>`;
-}
-
-function examplePillsDisplay(examples) {
-  if (!examples.length) return '';
-  return `<div class="flex flex-wrap gap-1">
-    ${examples.map(ex => `<span class="inline-block text-[11px] bg-admin-border/50 text-slate-300 px-2 py-0.5 rounded-full">${escHtml(ex)}</span>`).join('')}
   </div>`;
 }
 
-function categoryRow(c) {
-  return `<tr class="border-b border-admin-border/40 last:border-0" data-id="${escHtml(c.id)}">
-    <td class="px-4 py-3 text-sm font-medium text-slate-200 align-top">${escHtml(c.label)}</td>
-    <td class="px-4 py-3 text-sm font-saira text-brand align-top">${peso(c.amount)}</td>
-    <td class="px-4 py-3 text-sm font-saira text-slate-200 align-top">${c.points || 0}</td>
-    <td class="px-4 py-3 text-xs text-slate-400 align-top">${c.min_suspension_games > 0 ? `${c.min_suspension_games} game${c.min_suspension_games === 1 ? '' : 's'}` : `<span class="text-slate-600">—</span>`}</td>
-    <td class="px-4 py-3 text-xs text-slate-400 max-w-xs align-top">${c.description ? escHtml(c.description) : `<span class="text-slate-600">—</span>`}</td>
-    <td class="px-4 py-3 max-w-sm align-top">${examplePillsDisplay(c.examples) || `<span class="text-xs text-slate-600">—</span>`}</td>
-    <td class="px-4 py-3 align-top">${c.active ? `<span class="agm-badge agm-badge--amber">Active</span>` : `<span class="agm-badge agm-badge--gray">Inactive</span>`}</td>
-    <td class="px-4 py-3 text-right whitespace-nowrap align-top">
-      <button class="admin-btn admin-btn--sm" onclick='openCategoryModal(${JSON.stringify({ id: c.id, label: c.label, amount: c.amount, description: c.description, examples: c.examples, points: c.points, minSuspensionGames: c.min_suspension_games }).replace(/'/g, '&#39;')})'>Edit</button>
-      <button class="admin-btn admin-btn--sm ${c.active ? 'admin-btn--danger' : 'admin-btn--success'}" onclick="toggleCategory('${escHtml(c.id)}')">${c.active ? 'Deactivate' : 'Activate'}</button>
-    </td>
-  </tr>`;
+function categoryForm(c) {
+  const key = c ? c.id : 'new';
+  return drawer({
+    id: `fine-cat-${key}`, eyebrow: 'Conduct', title: c ? `Edit ${c.label}` : 'Add category',
+    bodyHtml: `<form id="fine-cat-form-${escHtml(key)}" data-json-action="/admin/fines/categories${c ? `/${escHtml(c.id)}` : ''}" data-done="Saved.">
+      ${fieldGrid(`${field({ label: 'Name', name: 'label', value: c?.label || '', required: true, wide: true, id: `cat-label-${key}`, placeholder: 'Standard unsportsmanlike conduct' })}
+        ${field({ label: 'Fine', name: 'amount', type: 'money', value: c ? c.amount : '', required: true, id: `cat-amount-${key}`, help: '0 for a category that only gives points.' })}
+        ${field({ label: 'Conduct points', name: 'points', type: 'number', value: c?.points || 0, id: `cat-points-${key}`, attrs: 'min="0"' })}
+        ${field({ label: 'Minimum suspension (games)', name: 'minSuspensionGames', type: 'number', value: c?.min_suspension_games || 0, id: `cat-min-${key}`, attrs: 'min="0"', help: 'Applies whatever their points are.' })}
+        ${field({ label: 'Description', name: 'description', type: 'textarea', rows: 2, value: c?.description || '', wide: true, id: `cat-desc-${key}` })}
+        ${field({ label: 'Examples', name: 'examples', type: 'textarea', rows: 4, value: (c?.examples || []).join('\n'), wide: true, id: `cat-ex-${key}`, help: 'One per line.' })}`)}
+    </form>`,
+    footerHtml: button('Save', { kind: 'primary', type: 'submit', attrs: `form="fine-cat-form-${escHtml(key)}"` }),
+  });
 }
 
-export function adminFineCategoriesBody({ categories = [] } = {}) {
-  return `
-<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-  <div>
-    <h2 class="text-xl font-bold tracking-tight text-slate-100">Categories</h2>
-    <p class="text-sm text-slate-500 mt-0.5">Editable conduct policy — changes apply to new reports immediately.</p>
-  </div>
-  <div class="flex items-center gap-2">
-    <a href="/admin/fines" class="admin-btn">&larr; Back to Fines</a>
-    <button class="agm-new-btn" onclick="openCategoryModal(null)">Add Category</button>
-  </div>
-</div>
+export function adminFineCategoriesBody({ categories = [], query = {} } = {}) {
+  const grid = categories.length ? dataGrid({
+    id: 'fine-cats', baseUrl: '/admin/fines/categories', query, minimal: true, perPage: 100,
+    rows: categories, rowKey: c => c.id, noun: ['category', 'categories'],
+    columns: [
+      { key: 'label', label: 'Category', primary: true, cell: c => `<span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(c.label)}</span>${c.description ? `<span class="aui-cell__sub afn-desc">${escHtml(c.description)}</span>` : ''}</span>` },
+      { key: 'amount', label: 'Fine', num: true, phone: true, cell: c => peso(c.amount) },
+      { key: 'points', label: 'Points', num: true, phone: true, cell: c => String(c.points || 0) },
+      { key: 'min', label: 'Min. suspension', phone: true, cell: c => (c.min_suspension_games > 0 ? plural(c.min_suspension_games, 'game') : none) },
+      { key: 'status', label: 'Status', bare: true, cell: c => (c.active ? badge('Active', 'green') : badge('Off', 'gray')) },
+      { key: 'go', label: '', bare: true, cell: c => `<span class="aui-cell__badges">${button('Edit', { size: 'sm', attrs: `data-drawer-open="fine-cat-${escHtml(c.id)}"` })}${button(c.active ? 'Turn off' : 'Turn on', { size: 'sm', kind: 'ghost', attrs: `data-post-json="/admin/fines/categories/${escHtml(c.id)}/toggle" data-done="${c.active ? 'Turned off.' : 'Turned on.'}"` })}</span>` },
+    ],
+    expand: c => (c.examples?.length ? `<ul class="afn-examples">${c.examples.map(e => `<li>${escHtml(e)}</li>`).join('')}</ul>` : '<span class="asr-none">No examples.</span>'),
+  }) : emptyState({ title: 'No categories yet', sub: 'Add one to start taking reports.' });
 
-<div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden overflow-x-auto">
-  ${categories.length === 0
-    ? `<div class="p-8 text-center text-sm text-slate-500">No categories yet.</div>`
-    : `<table class="w-full border-collapse">
-        <thead><tr class="border-b border-admin-border">
-          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Category</th>
-          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Amount</th>
-          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Points</th>
-          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Min. Suspension</th>
-          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Description</th>
-          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Examples</th>
-          <th class="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Status</th>
-          <th class="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-widest text-slate-500">Actions</th>
-        </tr></thead>
-        <tbody>${categories.map(categoryRow).join('')}</tbody>
-      </table>`}
-</div>
-
-<div class="agm-modal-backdrop" id="cat-modal-backdrop" hidden>
-  <div class="agm-modal">
-    <div class="agm-modal-header">
-      <h3 class="agm-modal-title" id="cat-modal-title">Add Category</h3>
-      <button class="agm-modal-close" id="cat-modal-close">&times;</button>
-    </div>
-    <div class="agm-modal-body" style="display:flex;flex-direction:column;gap:12px">
-      <input type="hidden" id="cat-id">
-      <div>
-        <label class="admin-field-label">Label</label>
-        <input id="cat-label" type="text" class="admin-input" placeholder="e.g. Standard Unsportsmanlike Conduct">
-      </div>
-      <div>
-        <label class="admin-field-label">Amount (₱)</label>
-        <input id="cat-amount" type="number" min="0" step="1" class="admin-input" placeholder="0 for a reference-only, non-fineable category">
-      </div>
-      <div style="display:flex;gap:12px">
-        <div style="flex:1">
-          <label class="admin-field-label">Conduct Points</label>
-          <input id="cat-points" type="number" min="0" step="1" class="admin-input" placeholder="0">
-        </div>
-        <div style="flex:1">
-          <label class="admin-field-label">Min. Suspension (games)</label>
-          <input id="cat-min-suspension" type="number" min="0" step="1" class="admin-input" placeholder="0">
-        </div>
-      </div>
-      <p class="text-[11px] text-slate-600" style="margin-top:-6px">Points accumulate toward the season suspension tiers. Min. suspension is a mandatory floor for this category alone, regardless of points.</p>
-      <div>
-        <label class="admin-field-label">Description</label>
-        <textarea id="cat-description" class="admin-input" rows="2" placeholder="One sentence describing this category…"></textarea>
-      </div>
-      <div>
-        <label class="admin-field-label">Examples</label>
-        <div id="cat-examples-pills" class="flex flex-wrap gap-1 mb-2"></div>
-        <input id="cat-examples-input" type="text" class="admin-input" placeholder="Type an example, press Enter or comma to add…">
-      </div>
-      <div id="cat-modal-msg" class="text-xs text-error" style="display:none"></div>
-      <button class="agm-new-btn" id="cat-submit-btn">Save</button>
-    </div>
-  </div>
-</div>
-
-<script>
-var catExamples = [];
-function renderCatExamplePills() {
-  var container = document.getElementById('cat-examples-pills');
-  container.innerHTML = catExamples.map(function(ex, i) {
-    var span = document.createElement('span');
-    span.textContent = ex;
-    return '<span class="inline-flex items-center gap-1.5 text-[11px] bg-admin-border/50 text-slate-300 px-2 py-0.5 rounded-full">' + span.innerHTML +
-      '<button type="button" class="text-slate-500 hover:text-red-400" data-i="' + i + '">&times;</button></span>';
-  }).join('');
-}
-document.getElementById('cat-examples-input').addEventListener('keydown', function(e) {
-  // Enter-only — commas are a valid character inside a single example (e.g. "getting in
-  // faces, chest bumping"), so treating comma as a second add-pill trigger would split
-  // that mid-word the moment it's typed. Paste-to-split-many still uses commas, just not
-  // this key handler.
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    var val = this.value.trim();
-    if (val) { catExamples.push(val); renderCatExamplePills(); this.value = ''; }
-  } else if (e.key === 'Backspace' && !this.value && catExamples.length) {
-    catExamples.pop(); renderCatExamplePills();
-  }
-});
-// Pasting a comma-separated list (e.g. copied straight from the original policy doc)
-// splits into multiple pills at once instead of landing as one giant pill.
-document.getElementById('cat-examples-input').addEventListener('paste', function(e) {
-  var text = (e.clipboardData || window.clipboardData).getData('text');
-  if (!text || text.indexOf(',') === -1) return;
-  e.preventDefault();
-  text.split(',').map(function(s) { return s.trim(); }).filter(Boolean).forEach(function(s) { catExamples.push(s); });
-  renderCatExamplePills();
-});
-document.getElementById('cat-examples-pills').addEventListener('click', function(e) {
-  var btn = e.target.closest('button[data-i]');
-  if (!btn) return;
-  catExamples.splice(Number(btn.dataset.i), 1);
-  renderCatExamplePills();
-});
-
-document.getElementById('cat-modal-close').addEventListener('click', function() { document.getElementById('cat-modal-backdrop').hidden = true; });
-window.openCategoryModal = function(cat) {
-  document.getElementById('cat-modal-title').textContent = cat ? 'Edit Category' : 'Add Category';
-  document.getElementById('cat-id').value = cat ? cat.id : '';
-  document.getElementById('cat-label').value = cat ? cat.label : '';
-  document.getElementById('cat-amount').value = cat ? cat.amount : '';
-  document.getElementById('cat-points').value = cat ? (cat.points || 0) : '';
-  document.getElementById('cat-min-suspension').value = cat ? (cat.minSuspensionGames || 0) : '';
-  document.getElementById('cat-description').value = cat ? (cat.description || '') : '';
-  catExamples = cat && Array.isArray(cat.examples) ? cat.examples.slice() : [];
-  renderCatExamplePills();
-  document.getElementById('cat-examples-input').value = '';
-  document.getElementById('cat-modal-msg').style.display = 'none';
-  document.getElementById('cat-modal-backdrop').hidden = false;
-};
-document.getElementById('cat-submit-btn').addEventListener('click', async function() {
-  var msg = document.getElementById('cat-modal-msg');
-  msg.style.display = 'none';
-  var id = document.getElementById('cat-id').value;
-  // A pending, not-yet-committed example still sitting in the input counts too — easy to
-  // type one and hit Save without remembering to press Enter first.
-  var pending = document.getElementById('cat-examples-input').value.trim();
-  var examples = pending ? catExamples.concat([pending]) : catExamples.slice();
-  var body = {
-    label: document.getElementById('cat-label').value.trim(),
-    amount: Number(document.getElementById('cat-amount').value),
-    points: Number(document.getElementById('cat-points').value) || 0,
-    minSuspensionGames: Number(document.getElementById('cat-min-suspension').value) || 0,
-    description: document.getElementById('cat-description').value.trim(),
-    examples: examples,
-  };
-  if (!body.label || Number.isNaN(body.amount) || body.amount < 0) { msg.textContent = 'Label and an amount of 0 or more are required.'; msg.style.display = 'block'; return; }
-  var btn = this; btn.disabled = true;
-  try {
-    var r = await fetch(id ? '/admin/fines/categories/' + id : '/admin/fines/categories', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    });
-    var j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Failed');
-    location.reload();
-  } catch (e) { msg.textContent = e.message; msg.style.display = 'block'; btn.disabled = false; }
-});
-window.toggleCategory = async function(id) {
-  try {
-    var r = await fetch('/admin/fines/categories/' + id + '/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    var j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Failed');
-    location.reload();
-  } catch (e) { alert(e.message); }
-};
-</script>`;
+  return `<div class="aui-page">
+    ${pageHeader({
+      title: 'Categories',
+      sub: 'The conduct policy. Changes apply to new reports straight away.',
+      actionsHtml: button('Add category', { kind: 'primary', attrs: 'data-drawer-open="fine-cat-new"' }),
+    })}
+    ${grid}
+    ${categoryForm(null)}
+    ${categories.map(categoryForm).join('')}
+  </div>`;
 }

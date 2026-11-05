@@ -55,8 +55,8 @@ Last updated: 2026-11-04. The rebuild has been on hold since 2026-10-15; pages a
 | 30 | Season | Team builder review | /admin/season/teams/review | n/a | [x] |
 | 31 | Season | Team builder sandbox | /admin/season/teams/sandbox | done | [x] |
 | 32 | Community | Polls | /admin/polls (+ /admin/polls/:id, 2026-10-19) | n/a | [x] |
-| 33 | Community | Fines and conduct | /admin/fines | n/a | [ ] |
-| 34 | Community | Fine categories | /admin/fines/categories | n/a | [ ] |
+| 33 | Community | Fines and conduct | /admin/fines | n/a | [x] |
+| 34 | Community | Fine categories | /admin/fines/categories | n/a | [x] |
 | 35 | Marketplace | Listings | /admin/marketplace | n/a | [ ] |
 | 36 | Marketplace | New and edit group buy | /admin/marketplace/new | n/a | [ ] |
 | 37 | Marketplace | Listing page | /admin/marketplace/:id | n/a | [ ] |

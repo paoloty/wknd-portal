@@ -28078,9 +28078,11 @@ app.delete('/marketplace/:id/comments/:commentId', (req, res) => {
 app.get('/admin/fines/categories', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Categories', currentPath: '/admin/fines/categories',
-    body: adminFineCategoriesBody({ categories: getAllFineCategories() }),
+    body: adminFineCategoriesBody({ categories: getAllFineCategories(), query: req.query }),
   }));
 });
+// One example per line in the form; an example can have commas in it.
+const fineExamples = raw => [].concat(raw || []).flatMap(v => String(v).split('\n')).map(v => v.trim()).filter(Boolean);
 app.post('/admin/fines/categories', requireAuth, express.json(), (req, res) => {
   const { label, amount, description = '', examples = [], points = 0, minSuspensionGames = 0 } = req.body || {};
   const amt = Number(amount);
@@ -28088,7 +28090,7 @@ app.post('/admin/fines/categories', requireAuth, express.json(), (req, res) => {
   const minGames = Number(minSuspensionGames) || 0;
   if (!label || Number.isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Label and an amount of 0 or more are required.' });
   if (pts < 0 || minGames < 0) return res.status(400).json({ error: 'Points and suspension games must be 0 or more.' });
-  const id = createFineCategory({ label, amount: amt, description, examples: Array.isArray(examples) ? examples : [], points: pts, minSuspensionGames: minGames });
+  const id = createFineCategory({ label, amount: amt, description, examples: fineExamples(examples), points: pts, minSuspensionGames: minGames });
   res.json({ ok: true, id });
 });
 app.post('/admin/fines/categories/:id', requireAuth, express.json(), (req, res) => {
@@ -28098,7 +28100,7 @@ app.post('/admin/fines/categories/:id', requireAuth, express.json(), (req, res) 
   const minGames = Number(minSuspensionGames) || 0;
   if (!label || Number.isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Label and an amount of 0 or more are required.' });
   if (pts < 0 || minGames < 0) return res.status(400).json({ error: 'Points and suspension games must be 0 or more.' });
-  updateFineCategory(req.params.id, { label, amount: amt, description, examples: Array.isArray(examples) ? examples : [], points: pts, minSuspensionGames: minGames });
+  updateFineCategory(req.params.id, { label, amount: amt, description, examples: fineExamples(examples), points: pts, minSuspensionGames: minGames });
   res.json({ ok: true });
 });
 app.post('/admin/fines/categories/:id/toggle', requireAuth, express.json(), (req, res) => {
@@ -28283,7 +28285,7 @@ app.get('/admin/fines', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Conduct', currentPath: '/admin/fines',
     settings: finesSettingsPanel(),
-    body: adminFinesListBody({ pendingAdmin, open, resolved, players: getAllPlayers(), categories: getActiveFineCategories(), summary: getFineCollectionSummary() }),
+    body: adminFinesListBody({ pendingAdmin, open, resolved, players: getAllPlayers(), categories: getActiveFineCategories(), summary: getFineCollectionSummary(), query: req.query }),
   }));
 });
 app.post('/admin/fines', requireAuth, express.json(), (req, res) => {
@@ -28299,7 +28301,7 @@ app.get('/admin/fines/:id', requireAuth, (req, res) => {
   if (!kase) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/fines', body: '<p style="padding:40px;color:var(--text-muted)">Case not found.</p>' }));
   const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
   res.send(renderAdminPage(req, {
-    title: 'Fine Case', currentPath: '/admin/fines',
+    title: 'Case', currentPath: '/admin/fines',
     body: adminFineCaseBody({
       case: kase, votes: getFineVotesForCase(kase.id), player: getPlayerWithTeam(kase.player_id),
       escalationVotes: getEscalationVotesForCase(kase.id), totalAdmins: getTotalAdminCount(),
