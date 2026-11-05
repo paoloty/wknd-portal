@@ -340,7 +340,7 @@ function reportPlayerSection(player, categories, otherCategoryId) {
     </div>
 
     <div class="rp-step" id="rp-step-category">
-      <p class="rp-intro">Reports are reviewed by admins before anything happens — the player you're reporting is never notified unless a case is actually escalated and resolved.</p>
+      <p class="rp-intro">Admins review it first. Only if most of them agree does it go further: then the player is told what it's about and gets 72 hours to answer. They see "a player", not your name. <a href="/rules/conduct#reports" target="_blank" rel="noopener">How reports work</a></p>
       <div class="rp-option-list" id="rp-category-list"></div>
     </div>
 
@@ -351,7 +351,11 @@ function reportPlayerSection(player, categories, otherCategoryId) {
     <div class="rp-step" id="rp-step-detail" hidden>
       <div class="rp-detail-body">
         <div class="rp-context-note" id="rp-context-note"></div>
-        <textarea id="rp-description" rows="5" maxlength="500" placeholder="Tell us what happened — game, context, who else saw it…"></textarea>
+        <div class="rp-row">
+          <label class="rp-field"><span>When</span><input type="date" id="rp-date"></label>
+          <label class="rp-field"><span>Where</span><select id="rp-where"><option value="league">League game</option><option value="papawis">Papawis run</option><option value="online">Online</option><option value="other">Elsewhere</option></select></label>
+        </div>
+        <textarea id="rp-description" rows="5" maxlength="500" placeholder="What happened, where, and who else saw it"></textarea>
         <div class="rp-charcount" id="rp-charcount">0 / 500</div>
         <div id="rp-msg" hidden></div>
       </div>
@@ -388,6 +392,9 @@ function reportPlayerSection(player, categories, otherCategoryId) {
 .rp-context-note { font-size: 11.5px; font-weight: 600; color: var(--amber); text-transform: uppercase; letter-spacing: .03em; }
 .rp-detail-body textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; font-size: 13.5px; color: var(--text); font-family: inherit; resize: vertical; }
 .rp-charcount { font-size: 11px; color: var(--text-subtle); text-align: right; }
+.rp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rp-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.rp-field input, .rp-field select { width: 100%; }
 #rp-msg { font-size: 12px; color: #f87171; }
 </style>
 
@@ -439,8 +446,10 @@ function reportPlayerSection(player, categories, otherCategoryId) {
 
   function goToDetail() {
     contextNote.textContent = state.categoryLabel + (state.example ? ' — ' + state.example : '');
-    textarea.value = state.example || '';
-    charcount.textContent = textarea.value.length + ' / 500';
+    textarea.value = '';
+    charcount.textContent = '0 / 500';
+    var d = document.getElementById('rp-date');
+    if (!d.value) { var t = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10); d.value = t; d.max = t; }
     msg.hidden = true;
     showStep('detail');
   }
@@ -517,7 +526,7 @@ function reportPlayerSection(player, categories, otherCategoryId) {
     submitBtn.disabled = true;
     fetch('/players/' + PLAYER_ID + '/report', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoryId: state.categoryId, description: textarea.value }),
+      body: JSON.stringify({ categoryId: state.categoryId, description: (state.example ? state.example + '. ' : '') + textarea.value, incidentDate: document.getElementById('rp-date').value, context: document.getElementById('rp-where').value }),
     })
       .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
       .then(function(res) {
@@ -1659,6 +1668,16 @@ function prfToday(o) {
   if (o.papawisProbation) {
     due++;
     tiles.push(prfTile({ label: 'PAPAWIS DEPOSIT', chip: { kind: 'due', text: 'NEEDED' }, value: 'Hold', sub: 'You join Papawis games on the waitlist until a deposit is confirmed.', cta: { href: `/settle-balance?category=${encodeURIComponent('Papawis Deposit')}`, text: 'Submit a deposit' } }));
+  }
+  // Conduct (views/my-conduct.js): a case waiting for their side, or games left to sit out.
+  const cd = o.conduct;
+  const toAnswer = (cd?.cases || []).filter(k => k.status === 'open' && !k.response_at && k.respond_by > Date.now());
+  if (toAnswer.length) {
+    due++;
+    tiles.push(prfTile({ label: 'CONDUCT', chip: { kind: 'due', text: 'YOUR SIDE' }, value: String(toAnswer.length), sub: `A case about you: ${toAnswer[0].category_label}. Answer by ${new Date(toAnswer[0].respond_by).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' })}.`, cta: { href: '/me/conduct', text: 'Give your side' } }));
+  } else if (cd?.suspension?.active) {
+    due++;
+    tiles.push(prfTile({ label: 'CONDUCT', chip: { kind: 'due', text: 'SUSPENDED' }, value: cd.suspension.rest ? 'Season' : String(cd.suspension.left), sub: cd.suspension.rest ? 'Suspended for the rest of the season. No Papawis runs.' : 'League games left to sit out. No Papawis runs until then.', cta: { href: '/me/conduct', text: 'My conduct' } }));
   }
   const live = (o.pickRecord?.own?.open || []).filter(g => !g.closed);
   if (live.length) {

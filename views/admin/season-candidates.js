@@ -83,7 +83,9 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nomi
     if (c.maxTechs) parts.push(`most technicals in a season: ${c.maxTechs}`);
     if (c.dq) parts.push(`${c.dq} disqualification${c.dq > 1 ? 's' : ''}`);
     if (c.suspended) parts.push('a fine with a suspension');
-    return parts.length ? escHtml(parts.join(' · ')) + (r.discuss ? ' · admin decides before a spot' : '') : 'Clean';
+    if (c.maxPoints) parts.push(`most conduct points in a season: ${c.maxPoints}`);
+    if (c.warnings) parts.push(`${c.warnings} warning${c.warnings > 1 ? 's' : ''}`);
+    return parts.length ? escHtml(parts.join(' · ')) + (r.removal ? ' · not invited back unless most admins decide otherwise, after hearing them' : r.discuss ? ' · admin decides before a spot' : '') : 'Clean';
   };
   const helpFact = r => {
     const h = r.helped, parts = [];

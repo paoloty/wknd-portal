@@ -72,6 +72,7 @@ export function papawisAction(r) {
     case 'pending': return `${status(icons.clock, 'You\'re listed', 'Held until an admin confirms your deposit')}<a class="btn" href="/app/settle?category=Papawis%20Deposit&amp;from=papawis">Pay deposit</a>${btn('Cancel my request', 'cancel')}`;
     case 'waitlist': return `${status(icons.clock, `You're #${s.pos} on the waitlist`, r.held ? 'An admin moves you in (late drops or no-shows lately)' : 'You move up on your own if someone drops')}${btn('Leave the waitlist', 'cancel')}`;
     case 'banned': return `<a class="btn" href="/app/settle?from=papawis">Pay my balance</a>${note('Your account is banned', ' · settle your balance and message us to get it lifted')}`;
+    case 'suspended': return `<a class="btn btn--ghost" href="/app/conduct?from=papawis">My conduct</a>${note('You’re suspended', ' · no Papawis runs until it’s served')}`;
     case 'unpaid': return `<a class="btn" href="/app/settle?from=papawis">Pay my balance</a>${note('You have an unpaid Papawis game', ' · settle it to join')}`;
     case 'join-waitlist': return `${btn('Join the waitlist', 'join')}${r.held ? note('You join on the waitlist', ' · 3 late drops or no-shows in 60 days, so an admin moves you in') : s.waiting ? note(`${s.waiting} waiting`, ' · you move up if a slot opens') : note('Be first in line', ' · you move up if a slot opens')}`;
     // Every claim confirms first in a sheet: free to cancel until …, then yours to pay for.

@@ -452,7 +452,7 @@ export function layout({ title = 'WKND Basketball', currentPath = '/', body, tic
       features.marketplace ? ['/marketplace', 'Marketplace'] : null,
     ]],
     ['League', [
-      ['/join', 'How to join'], ['/rules', 'League rules'], ['/rules/fines', 'League fines'],
+      ['/join', 'How to join'], ['/rules', 'League rules'], ['/rules/conduct', 'Conduct rules'],
       features.picks ? ['/picks/rules', 'Pickmaster rules'] : null,
       isGuest ? ['/register', 'Join the community', 'site-footer__join-link'] : null,
     ]],

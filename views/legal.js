@@ -107,7 +107,7 @@ export function rulesPage(contactEmail = DEFAULT_CONTACT_EMAIL) {
     {
       heading: 'Fouls & Free Throws',
       content: `<p>FIBA's foul rules apply: 5 personal fouls disqualifies a player for the rest of the game. On team fouls, the bonus kicks in starting on a team's 5th foul of the quarter — every non-shooting foul after that sends the other team to the line for 2 free throws.</p>
-      <p>Technical and flagrant fouls carry their standard FIBA on-court consequences (free throws, possession, and ejection for a Flagrant 2). For the monetary penalty that comes with them, see the <a href="/rules/fines">League Fines</a> page.</p>`,
+      <p>Technical and flagrant fouls carry their standard FIBA on-court consequences (free throws, possession, and ejection for a Flagrant 2). They aren’t fines by themselves; an ejection or a disqualifying foul opens a conduct case. See the <a href="/rules/conduct">conduct rules</a>.</p>`,
     },
     {
       heading: 'Timeouts',

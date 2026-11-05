@@ -63,7 +63,8 @@ const spark = (pts, color) => {
   return `<svg class="me-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" points="${xy.join(' ')}"/><circle cx="${last[0]}" cy="${last[1]}" r="2.6" fill="${color}"/></svg>`;
 };
 // feedAdmin: an admin, so Me has the Feed posts row (/app/admin/feed).
-export function appMePage({ me, positions, todos = [], scoring = null, cover = null, now = null, week = [], doing = null, recent = [], things = 0, feedAdmin = false }) {
+// conduct: { sub, alert } for the Conduct row (server.js appConductRow), or null.
+export function appMePage({ me, positions, todos = [], scoring = null, cover = null, now = null, week = [], doing = null, recent = [], things = 0, feedAdmin = false, conduct = null }) {
   // Given names ("Jose Paolo TY" → "Jose Paolo"); the team in title case.
   const words = String(me.name || '').split(' ').filter(Boolean);
   const first = (words.length > 1 ? words.slice(0, -1).join(' ') : words[0]) || 'there';
@@ -105,6 +106,7 @@ export function appMePage({ me, positions, todos = [], scoring = null, cover = n
   <div class="group group--icons">
     <a class="cell" href="/app/players/${encodeURIComponent(me.playerId)}?from=me"><span class="ico">${icons.user}</span><span class="cell__t">View my profile<small>${esc([teamName, me.number !== '' ? `#${me.number}` : '', positions].filter(Boolean).join(' · ') || 'As other players see it')}</small></span>${chev}</a>
     <a class="cell" href="/app/setup/photo"><span class="ico">${icons.camera}</span><span class="cell__t">Change photo</span>${chev}</a>
+    ${conduct ? `<a class="cell" href="/app/conduct"><span class="ico${conduct.alert ? ' ico--amber' : ''}">${icons.scale}</span><span class="cell__t">Conduct<small>${esc(conduct.sub)}</small></span>${chev}</a>` : ''}
     ${cover ? `<button type="button" class="cell" data-cover-pick><span class="ico">${icons.image}</span><span class="cell__t">${cover.own ? 'Change cover photo' : 'Add a cover photo'}<small>${cover.own ? 'The wide photo at the top of your profile' : 'For now it’s your team’s colours'}</small></span>${chev}</button>
     ${cover.own ? `<button type="button" class="cell" data-cover-remove><span class="ico">${icons.close}</span><span class="cell__t">Remove cover photo<small>Go back to your team’s colours</small></span></button>` : ''}
     <input type="file" accept="image/*" data-cover-input hidden>` : ''}

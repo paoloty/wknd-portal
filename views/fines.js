@@ -9,10 +9,18 @@ function peso(n) { return '₱' + Number(n || 0).toLocaleString(); }
 function statusPill(status) {
   if (status === 'approved') return `<span class="fn-pill fn-pill--fined">Fined</span>`;
   if (status === 'rejected') return `<span class="fn-pill fn-pill--rejected">Rejected</span>`;
+  if (status === 'voided') return `<span class="fn-pill fn-pill--rejected">Cancelled</span>`;
   return `<span class="fn-pill fn-pill--open">Open</span>`;
 }
 
-function openCaseCard(c, votes, viewerId) {
+const CONTEXT = { league: 'League game', papawis: 'Papawis run', online: 'Online', other: 'Elsewhere' };
+const day = ms => (ms ? new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' }) : '');
+// Heads see "a player" on a player's report: only admins see who (conduct rule 6).
+const reporter = c => (c.reported_by_type === 'player' ? 'a player' : c.reported_by_name);
+const incident = c => [CONTEXT[c.incident_context] || '', day(c.incident_at || c.created_at)].filter(Boolean).join(', ');
+
+// block: why this head can't vote on it ('' = can). The player's side shows once they've given it.
+function openCaseCard(c, votes, viewerId, block = '') {
   const myVote = votes.find(v => v.voter_id === viewerId);
   const approveCount = votes.filter(v => v.vote === 'approve').length;
   const rejectCount  = votes.filter(v => v.vote === 'reject').length;
@@ -25,13 +33,39 @@ function openCaseCard(c, votes, viewerId) {
       ${statusPill(c.status)}
     </div>
     ${c.description ? `<p class="fn-card__desc">${escHtml(c.description)}</p>` : ''}
-    <div class="fn-card__reported">Reported by ${escHtml(c.reported_by_name)} · ${fmtDate(c.created_at)}</div>
+    <div class="fn-card__reported">${escHtml(incident(c))} · reported by ${escHtml(reporter(c))}${c.late ? ' · reported late, a warning at most' : ''}</div>
+    ${c.response ? `<p class="fn-card__desc"><b>Their side:</b> ${escHtml(c.response)}</p>` : c.respond_by > Date.now() ? `<div class="fn-card__reported">They have until ${fmtDate(c.respond_by)} to give their side.</div>` : ''}
     <div class="fn-card__tally">${approveCount} approve · ${rejectCount} reject</div>
+    ${block ? `<div class="fn-card__reported">${escHtml(block)}</div>` : `
     ${myVote ? `<div class="fn-card__myvote">You voted: <strong>${myVote.vote === 'approve' ? 'Approve' : 'Reject'}</strong> — you can change it below.</div>` : ''}
     <textarea class="fn-input fn-vote-comment" rows="2" placeholder="Optional comment…">${myVote ? escHtml(myVote.comment) : ''}</textarea>
     <div class="fn-card__actions">
       <button class="fn-btn fn-btn--approve" data-vote="approve">Approve</button>
       <button class="fn-btn fn-btn--reject" data-vote="reject">Reject</button>
+    </div>`}
+  </article>`;
+}
+
+// An appeal (conduct rule 9): heads from teams not involved give their view; the super admin decides.
+function appealCard(c, votes, viewerId) {
+  const mine = votes.find(v => v.voter_id === viewerId);
+  return `<article class="fn-card" data-appeal="${escHtml(c.id)}">
+    <div class="fn-card__top">
+      <div>
+        <div class="fn-card__player">${escHtml(displayPlayerName(c.player_name))}</div>
+        <div class="fn-card__meta">${escHtml(c.category_label)} · <span class="fn-amount">${peso(c.amount)}</span></div>
+      </div>
+      <span class="fn-pill fn-pill--open">Appeal</span>
+    </div>
+    ${c.description ? `<p class="fn-card__desc">${escHtml(c.description)}</p>` : ''}
+    ${c.resolution_note ? `<p class="fn-card__desc"><b>Decision:</b> ${escHtml(c.resolution_note)}</p>` : ''}
+    <p class="fn-card__desc"><b>Their appeal:</b> ${escHtml(c.appeal_text)}</p>
+    <div class="fn-card__tally">${votes.length} view${votes.length === 1 ? '' : 's'} in</div>
+    ${mine ? `<div class="fn-card__myvote">You said: <strong>${mine.vote === 'uphold' ? 'Keep it' : 'Lower it'}</strong></div>` : ''}
+    <textarea class="fn-input fn-vote-comment" rows="2" placeholder="Why (optional)…">${mine ? escHtml(mine.comment) : ''}</textarea>
+    <div class="fn-card__actions">
+      <button class="fn-btn" data-appeal-vote="uphold">Keep it</button>
+      <button class="fn-btn" data-appeal-vote="lower">Lower it</button>
     </div>
   </article>`;
 }
@@ -68,8 +102,12 @@ function reportModal(players, categories) {
       </div>
       <label class="fn-label">Category</label>
       <select id="fn-category" class="fn-input">${categoryOptions}</select>
+      <label class="fn-label">When</label>
+      <input id="fn-date" class="fn-input" type="date">
+      <label class="fn-label">Where</label>
+      <select id="fn-context" class="fn-input">${Object.entries(CONTEXT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
       <label class="fn-label">What happened</label>
-      <textarea id="fn-description" class="fn-input" rows="4" placeholder="Describe the incident — game, context, who saw it…"></textarea>
+      <textarea id="fn-description" class="fn-input" rows="4" placeholder="What happened, where, and who else saw it"></textarea>
       <div id="fn-modal-msg" class="fn-error" hidden></div>
       <button class="fn-btn fn-btn--primary" id="fn-submit-btn">File Report</button>
     </div>
@@ -78,16 +116,20 @@ function reportModal(players, categories) {
 <script>window.__FN_PLAYERS__ = ${playersData};</script>`;
 }
 
-export function finesPage({ open = [], resolved = [], votesByCase = {}, categories = [], players = [], viewerId = '' } = {}) {
-  const openCards = open.map(c => openCaseCard(c, votesByCase[c.id] || [], viewerId)).join('');
+// blocks: { [caseId]: why this head can't vote }. appeals: appeals this head can weigh in on.
+export function finesPage({ open = [], resolved = [], votesByCase = {}, categories = [], players = [], viewerId = '', blocks = {}, appeals = [], appealVotesByCase = {} } = {}) {
+  const openCards = open.map(c => openCaseCard(c, votesByCase[c.id] || [], viewerId, blocks[c.id] || '')).join('');
   const resolvedRows = resolved.map(resolvedCaseRow).join('');
 
   return `<div class="page-content">
   ${pageHeader({
     title: 'Fines &amp; Conduct',
     description: 'Report incidents and vote on conduct cases. An admin makes the final call on every case, informed by the votes here.',
-    actions: '<a class="fn-btn" href="/rules/fines" target="_blank" rel="noopener">View Public Schedule</a><button class="fn-btn fn-btn--primary" id="fn-open-report-btn">Report Incident</button>',
+    actions: '<a class="fn-btn" href="/rules/conduct" target="_blank" rel="noopener">Conduct rules</a><button class="fn-btn fn-btn--primary" id="fn-open-report-btn">Report Incident</button>',
   })}
+  ${appeals.length ? `<div class="section-header"><h2>Appeals</h2></div>
+  <p class="fn-card__desc" style="margin:-6px 0 14px">Your team isn't part of these. Give your view; the super admin decides.</p>
+  <div class="fn-grid" style="margin-bottom:28px">${appeals.map(c => appealCard(c, appealVotesByCase[c.id] || [], viewerId)).join('')}</div>` : ''}
 
   <div class="fn-tabs">
     <button type="button" class="fn-tab is-active" data-tab="open">Open (${open.length})</button>
@@ -211,15 +253,36 @@ ${reportModal(players, categories)}
           playerId: hiddenId.value,
           categoryId: document.getElementById('fn-category').value,
           description: document.getElementById('fn-description').value,
+          incidentDate: document.getElementById('fn-date').value,
+          context: document.getElementById('fn-context').value,
         }),
       });
       var j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Failed');
+      if (j.joined) alert('That incident is already reported, so your account was added to the same case.');
       location.reload();
     } catch (e) { msg.textContent = e.message; msg.hidden = false; btn.disabled = false; }
   });
 
-  document.querySelectorAll('.fn-card').forEach(function(card) {
+  document.querySelectorAll('[data-appeal]').forEach(function(card) {
+    card.querySelectorAll('[data-appeal-vote]').forEach(function(btn) {
+      btn.addEventListener('click', async function() {
+        var buttons = card.querySelectorAll('[data-appeal-vote]');
+        buttons.forEach(function(b) { b.disabled = true; });
+        try {
+          var r = await fetch('/fines/' + card.dataset.appeal + '/appeal-vote', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vote: btn.dataset.appealVote, comment: card.querySelector('.fn-vote-comment').value }),
+          });
+          var j = await r.json();
+          if (!r.ok) throw new Error(j.error || 'Failed');
+          location.reload();
+        } catch (e) { alert(e.message); buttons.forEach(function(b) { b.disabled = false; }); }
+      });
+    });
+  });
+
+  document.querySelectorAll('.fn-card[data-case]').forEach(function(card) {
     var caseId = card.dataset.case;
     card.querySelectorAll('[data-vote]').forEach(function(btn) {
       btn.addEventListener('click', async function() {

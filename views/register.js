@@ -137,7 +137,7 @@ export function registerPage({ error = null, success = false, prefill = {}, hype
         <p><strong>2. Release of Liability.</strong> To the fullest extent permitted by law, I release and hold harmless the League, its organizers, coaches, and fellow participants from claims, damages, or liability arising from my participation, except where caused by gross negligence or willful misconduct.</p>
         <p><strong>3. Medical Fitness.</strong> I confirm I am physically fit to participate and am not aware of any medical condition that would make participation unsafe. I am responsible for my own health insurance and any medical costs arising from participation.</p>
         <p><strong>4. Photo/Video.</strong> Games and events may be photographed or recorded for the League's social media and promotional use. By participating, I consent to this unless I notify admin otherwise in writing.</p>
-        <p><strong>5. Code of Conduct.</strong> I agree to follow the League's conduct policies and understand that violations may result in fines or removal from the League, per its published rules.</p>
+        <p><strong>5. Code of Conduct.</strong> I agree to follow the League's conduct policies and understand that violations may result in warnings, fines, suspensions or removal from the League, per its published <a href="/rules/conduct" target="_blank" rel="noopener">conduct rules</a>.</p>
         <p>This waiver applies to all League activities for as long as I remain an active member. I'll be asked to reconfirm it each season during Season Signup.</p>
         <p class="au-waiver__legal">This is a template, not a substitute for real legal advice specific to your jurisdiction.</p>
       </details>

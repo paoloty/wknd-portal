@@ -11,7 +11,7 @@
 //   <button data-post-json="/url" data-confirm …> POSTs JSON after the confirm, then goes to
 //     data-then (default: reload) with ?toast=<message from the response or data-done>.
 //     data-body is the JSON, true/false staying real booleans; data-with="#field" adds that
-//     field's value under its name.
+//     field's value under its name (a list, "#a,#b", adds each).
 //   <button data-snooze="item-key"> hides the closest [data-item] till tomorrow, with Undo.
 //   <div data-filter-group> <button data-filter="cat"> shows only [data-item][data-cat=cat].
 //   ?toast=… on any admin URL shows that message once (then drops it from the address).
@@ -182,8 +182,8 @@
         jb.textContent = 'Sending…';
         // data-body: the JSON to send (default {}); data-method: e.g. DELETE (default POST).
         var sendBody = jb.getAttribute('data-body') || '{}';
-        var withEl = jb.getAttribute('data-with') && document.querySelector(jb.getAttribute('data-with'));
-        if (withEl) { var merged = JSON.parse(sendBody); merged[withEl.name] = withEl.value; sendBody = JSON.stringify(merged); }
+        var withEls = jb.getAttribute('data-with') ? document.querySelectorAll(jb.getAttribute('data-with')) : [];
+        if (withEls.length) { var merged = JSON.parse(sendBody); Array.prototype.forEach.call(withEls, function (el) { merged[el.name] = el.value; }); sendBody = JSON.stringify(merged); }
         fetch(jb.getAttribute('data-post-json'), { method: jb.getAttribute('data-method') || 'POST', headers: { 'Content-Type': 'application/json' }, body: sendBody })
           .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
           .then(function (res) {

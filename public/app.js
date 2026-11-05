@@ -877,6 +877,7 @@
     initPush();
     initSettle();
     initRate();
+    initConduct();
     initBlocks();
     initThreads();
     initShare();
@@ -1837,6 +1838,24 @@
           toast('Sent · an admin will confirm it');
           refreshScreen();
         }, function () { btn.classList.remove('is-busy'); form._sending = false; say('No connection. Nothing was sent.'); });
+    });
+  }
+
+  // ════ My conduct (views/app/conduct.js): give your side, appeal. Posts to the site's routes. ════
+  function initConduct() {
+    $$('[data-cd-form]').forEach(function (f) {
+      if (f._bound) return;
+      f._bound = true;
+      f.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var msg = $('[data-cd-msg]', f), btn = $('button', f);
+        if (!navigator.onLine) { msg.textContent = 'No connection. Nothing was sent.'; msg.hidden = false; return; }
+        btn.disabled = true; btn.classList.add('is-busy'); msg.hidden = true;
+        fetch(f.getAttribute('data-cd-form'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: $('textarea', f).value }) })
+          .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (x) { if (!x.ok) throw new Error(x.d.error || 'Something went wrong.'); location.reload(); })
+          .catch(function (err) { msg.textContent = err.message; msg.hidden = false; btn.disabled = false; btn.classList.remove('is-busy'); });
+      });
     });
   }
 

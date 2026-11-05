@@ -50,7 +50,7 @@ import { playerPage, AWARD_META } from './views/player.js';
 import { playersPage } from './views/players.js';
 import { scoreTicker } from './views/ticker.js';
 import { privacyPage, termsPage, rulesPage } from './views/legal.js';
-import { fineSchedulePage } from './views/fine-schedule.js';
+import { conductRulesPage } from './views/conduct-rules.js';
 import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
@@ -167,7 +167,7 @@ import {
   addTeamHead, removeTeamHead, getAllTeamHeads, getHeadTeamIds,
   createLeaguePoll, getAllLeaguePolls, getLeaguePollById, setLeaguePollStatus, getLeaguePollVotes, getMyLeaguePollVote, castLeaguePollVote,
   updateLeaguePoll, setLeaguePollFlag, getLeaguePollArt, setLeaguePollArt, deleteLeaguePoll,
-  getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive,
+  getActiveFineCategories, getAllFineCategories, getFineCategory, createFineCategory, updateFineCategory, setFineCategoryActive, setFineCategoryLevel,
   getReportableFineCategories, getOtherFineCategory,
   createFineCase, getFineCase, getFineCasesByStatus, getAllFineCases, getFineCasesForPlayer, hasOpenPlayerReport,
   getFineVotesForCase, castFineVote, resolveFineCase, markFineCasePaid, markFineCaseUnpaid, getFineCollectionSummary,
@@ -215,6 +215,12 @@ import { adminFinanceGcashBody } from './views/admin/finance-gcash.js';
 import { adminHomeBody } from './views/admin/home.js';
 import { sendBroadcast, startCampaign, finishCampaign, unsubscribeHeaders, leagueUnsubscribeUrl, verifyLeagueUnsubscribe, underEmailCaps } from './lib/broadcast.js';
 import { sendBalanceReminder, balanceStanding, runBanSweep, OVERDUE_DAYS } from './lib/balance-reminders.js';
+import {
+  fileCase, openCase, decideCase, voidCase, changeCaseCategory, appealCase, decideAppeal, appealVotes, appealReady, eligibleAppealHeads,
+  respondToCase, headVoteBlock, adminActBlock, appealHeadBlock, canDecideNow, decideOpensAt, suspensionStanding, syncSuspensions,
+  runFineSweep, conductRecord, seasonConductCounts, fileScorebookCases, caseLog, muteWarning, CONTEXTS, EVIDENCE,
+  RESPOND_HOURS, DECIDE_DAYS, APPEAL_DAYS, APPEAL_HEADS, PAY_DAYS, REPORT_DAYS, REPORT_DAYS_ONLINE, WARNINGS_FOR_L1, REVIEW_POINTS, REMOVAL_POINTS,
+} from './lib/conduct.js';
 import { getRecentBroadcasts, getBroadcastStats } from './lib/portal-db.js';
 import { adminReachComposeBody, adminReachSentBody } from './views/admin/reach.js';
 import { leagueNudgeEmail, raffleWinnerEmail } from './lib/mailer.js';
@@ -1031,6 +1037,7 @@ const PAGE_DESCRIPTIONS = {
   '/marketplace': 'Jerseys, gear and group buys for the WKND Basketball community.',
   '/register': 'Register to join WKND Basketball in Makati, Mandaluyong and Pasig. Once approved: pickup runs, league seasons, your own player card. Beginners welcome.',
   '/front-office': 'The people who run WKND Basketball.',
+  '/rules/conduct': 'The WKND Basketball conduct rules: where they apply, fines and points, warnings, suspensions, how a case is decided and how to appeal.',
   '/join': 'How to join WKND basketball in Makati, Mandaluyong and Pasig: register, get approved, play pickup runs and league seasons. No team needed, beginners welcome.',
   '/courts': 'Basketball courts in Makati, Mandaluyong and Pasig where WKND plays: Papawis pickup runs, league games, photos and stats for each court.',
 };
@@ -2625,6 +2632,8 @@ function renderPage(req, opts) {
   const impersonatingHtml = req.session?.impersonating ? impersonationBanner(req.session.impersonatingPlayerName || 'this player') : '';
   // The red "You're locked in" bar: a slot in a run whose free cancelling has closed (late drops).
   const lockedBarHtml = !focused && isPlayer && req.session?.playerPlayerId ? papawisLockedBar(pwLockedSlotFor(req.session.playerPlayerId)) : '';
+  // The red "You're suspended" bar (conduct rules), except on the page it points to.
+  const suspendedBarHtml = !focused && isPlayer && req.session?.playerPlayerId && opts.currentPath !== '/me/conduct' ? suspendedBar(suspensionStanding(req.session.playerPlayerId)) : '';
 
   // Players app: home-screen tags + the "Use the app" bar on phones (see APP_HOME_TAGS).
   const appPlayer = isPlayer && !!req.session?.playerPlayerId && !req.session?.impersonating && appAccess(req) === 'ok';
@@ -2632,7 +2641,7 @@ function renderPage(req, opts) {
   const appBarHtml = appPlayer && !focused && /iPhone|iPad|iPod|Android/i.test(req.get('user-agent') || '') ? appUseBar() : '';
 
   const raffleBarHtml = !focused && opts.currentPath === '/' ? raffleHomeBar() : '';
-  const body = impersonatingHtml + lockedBarHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
+  const body = impersonatingHtml + suspendedBarHtml + lockedBarHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
@@ -3416,7 +3425,7 @@ app.use('/admin', (req, res, next) => {
     insertAdminLog({ actor, actorType, method: req.method, path: req.path, details: req.body && typeof req.body === 'object' ? req.body : {}, status: res.statusCode });
     // A ledger or Papawis change can settle a balance (lift a ban) or create one.
     // (originalUrl: by 'finish' Express has put the /admin mount back on req.url.)
-    if (res.statusCode < 400 && /^\/admin\/(ledger|papawis)\b/.test(req.originalUrl)) setImmediate(() => runBanJobs());
+    if (res.statusCode < 400 && /^\/admin\/(ledger|papawis|fines)\b/.test(req.originalUrl)) setImmediate(() => runBanJobs());
   });
   next();
 });
@@ -6255,6 +6264,8 @@ import { appAdminScorersPage } from './views/app/admin-scorers.js';
 import { appFinishGamePage } from './views/app/finish.js';
 import { appSettlePage } from './views/app/settle.js';
 import { appRatePage } from './views/app/rate.js';
+import { appConductPage, appSuspendedBar } from './views/app/conduct.js';
+import { myConductPage, suspendedBar } from './views/my-conduct.js';
 import { appPollTakeover } from './views/app/poll.js';
 import { getUnpaidPapawisForPlayer } from './lib/portal-db.js';
 import { depositPresets } from './views/utils.js';
@@ -6756,7 +6767,7 @@ const appBadges = me => ({ picks: appOpenPicks(me).length, me: appAccountTodos(m
 const appWho = me => createHash('sha256').update(`wknd-app:${me.reg.id}`).digest('hex').slice(0, 12);
 // Every tab screen but the full-screen ones (bare) opens with the red "You're locked in" bar
 // while the player holds a slot whose free cancelling has closed (late drops).
-const sendTab = (res, me, opts) => sendApp(res, { ...opts, body: (opts.bare || !me?.playerId ? '' : appLockedBar(pwLockedSlotFor(me.playerId))) + (opts.body || ''), badges: { ...appBadges(me), unread: me.unread }, who: appWho(me) });
+const sendTab = (res, me, opts) => sendApp(res, { ...opts, body: (opts.bare || !me?.playerId ? '' : appSuspendedBar(suspensionStanding(me.playerId)) + appLockedBar(pwLockedSlotFor(me.playerId))) + (opts.body || ''), badges: { ...appBadges(me), unread: me.unread }, who: appWho(me) });
 const closeLabel = ms => manilaFormat(ms, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 
 // ── Home: the feed ──
@@ -7775,7 +7786,9 @@ app.post('/app/barkadahan/mute/:playerId', requireAppData, requireBarkadahan, ex
   const target = getPlayerById(req.params.playerId); if (!target) return res.status(404).json({ error: 'Not found.' });
   const days = [0, 1, 7].includes(Number(req.body?.days)) ? Number(req.body.days) : 1;
   setBarkadahanMute(target.id, days ? Date.now() + days * 864e5 : null);
-  res.json({ ok: true, message: days ? `${displayPlayerName(target.name || '')} is muted for ${days === 1 ? 'a day' : 'a week'}.` : 'Mute lifted.' });
+  // A mute is a warning on their record (conduct rule 3).
+  if (days) muteWarning(target.id, { days, byId: pid, byName: displayPlayerName(getPlayerById(pid)?.name || '') || 'Admin' });
+  res.json({ ok: true, message: days ? `${displayPlayerName(target.name || '')} is muted for ${days === 1 ? 'a day' : 'a week'}. It’s a warning on their record.` : 'Mute lifted.' });
 });
 app.post('/app/barkadahan/read', requireAppData, requireBarkadahan, (req, res) => {
   if (!req.session.impersonating) { markBarkadahanRead(req.session.playerPlayerId); bkSeenChanged(); }
@@ -8286,7 +8299,11 @@ function saveScoredBoxScore(game, pass, who, extra = {}, { usePlays = false } = 
     console.log(`[scorer] published game=${game.id} pass=${pass} plays=${events.length} score=${state.score.a}-${state.score.b}${extra.statsPending ? ' (stats pending review)' : ''}`);
     const off = official && (official.a !== state.score.a || official.b !== state.score.b) ? ` The plays add up to ${state.score.a}–${state.score.b}; the final score ${official.a}–${official.b} stays the result.` : '';
     return { status: 200, body: { ok: true, message: `Box score saved${visible ? '' : ', hidden until you switch Visible to everyone on'}: ${game.team_a_name} ${official ? official.a : state.score.a}, ${game.team_b_name} ${official ? official.b : state.score.b}.${off}`, next: `/admin/games/${encodeURIComponent(game.id)}?tab=content` },
-      after: () => { afterGameImport(game, Object.keys(payload.playerStats)); liveChanged(game.id); } }; // open live pages reload into the published game
+      after: () => {
+        afterGameImport(game, Object.keys(payload.playerStats)); liveChanged(game.id); // open live pages reload into the published game
+        // An ejection or a disqualifying foul opens a conduct case (conduct rule 5); an admin decides.
+        try { const ids = fileScorebookCases(game, state); if (ids.length) console.log(`[fines] scorebook opened ${ids.length} case(s) for game=${game.id}`); } catch (e) { console.error('[fines] scorebook cases:', e.message); }
+      } };
   } catch (err) {
     console.error('[scorer] publish failed:', err);
     releaseScorePublish(game.id, sg.status);
@@ -9690,6 +9707,7 @@ app.get('/app/me', requireApp, (req, res) => {
   const things = todos.length + (now ? 1 : 0);
   sendTab(res, me, { title: 'Me · WKND', tab: 'me', body: appMePage({ scoring, cover: { own: !!getPlayerCoverAt(me.playerId) },
     me, positions: parsePositions(me.player.positions).join(' · '), todos, now, week, doing, recent, things, feedAdmin: appFeedAdmin(req),
+    conduct: appConductRow(me.playerId),
   }) });
 });
 
@@ -9882,6 +9900,7 @@ function appPapawisRuns(me) {
   if (getSetting('papawis_enabled', '0') !== '1') return [];
   const teams = getAllTeams();
   const banned = !!me.player.banned_at;
+  const suspended = suspensionStanding(me.playerId).active;
   const unpaid = hasUnpaidCompletedPapawis(me.playerId);
   const vouchers = getVouchersForPlayer(me.playerId);
   const freeRun = vouchers.find(v => v.status === 'active') || null;
@@ -9913,6 +9932,7 @@ function appPapawisRuns(me) {
     else if (mine?.status === 'pending') state = { kind: 'pending' };
     else if (mine?.status === 'waitlist') state = { kind: 'waitlist', pos: waitlist.indexOf(mine) + 1 };
     else if (banned) state = { kind: 'banned' };
+    else if (suspended) state = { kind: 'suspended' };
     else if (unpaid) state = { kind: 'unpaid' };
     else if (full || held) state = { kind: 'join-waitlist', waiting: waitlist.length };
     else state = { kind: 'join', open, confirmFirst: !cancellable };
@@ -10028,6 +10048,22 @@ app.get('/app/settle', requireApp, (req, res) => {
     category: asked || (runs.length ? 'Papawis' : 'Other'), categories: PAYMENT_CATEGORIES,
     gcash: { name: getSetting('gcash_name', ''), number: getSetting('gcash_number', ''), hasQr: !!payload, amountInQr: !!qrPhWithAmount(payload, 1) },
   }) });
+});
+
+// My conduct in the app: the site's /me/conduct (views/app/conduct.js). The Me row's line.
+function appConductRow(playerId) {
+  const r = conductRecord(playerId);
+  const s = r.suspension;
+  const sub = s.active ? (s.rest ? 'Suspended for the rest of the season' : `Suspended: ${s.left} league game${s.left === 1 ? '' : 's'} left`)
+    : r.cases.some(k => k.status === 'open') ? 'A case needs your side'
+    : r.points || r.warnings ? [r.points ? `${r.points} point${r.points === 1 ? '' : 's'} this season` : '', r.warnings ? `${r.warnings} warning${r.warnings === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
+    : 'Nothing on your record';
+  return { sub, alert: s.active || r.cases.some(k => k.status === 'open') };
+}
+app.get('/app/conduct', requireApp, (req, res) => {
+  const me = appMe(req);
+  const back = req.query.from === 'notifications' ? { href: '/app/notifications', label: 'Notifications' } : { href: '/app/me', label: 'Me' };
+  sendTab(res, me, { title: 'Conduct · WKND', tab: 'me', body: appConductPage({ back, r: conductRecord(me.playerId) }) });
 });
 
 // Rate your game in the app: where a "Rate …" notification opens. Same data as the site's
@@ -10414,6 +10450,7 @@ function appLinkFor(link = '') {
   const pm = /^\/posts\/([^/?#]+)/.exec(path);
   if (pm) return `/app/posts/${pm[1]}`;
   if (path === '/' || path === '') return '/app';
+  if (/^\/me\/conduct\b/.test(path)) return '/app/conduct';
   if (/^\/me\b/.test(path)) return '/app/me';
   if (/^\/settle-balance/.test(path)) return '/app/settle';
   return '/app/notifications';
@@ -10848,6 +10885,28 @@ app.get('/me', (req, res) => {
   if (!playerId) return res.redirect('/login');
   const slug = getSlugForEntity('player', playerId);
   return res.redirect(slug ? `/players/${slug}` : `/players/${playerId}`);
+});
+
+// My conduct (conduct rules, 2026-11-06): the player's own record, where they give their side
+// and appeal. The app's /app/conduct shows the same and posts here.
+app.get('/me/conduct', (req, res) => {
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId) return res.redirect(loginUrl(req));
+  res.send(renderPage(req, { title: 'My conduct | WKND Basketball', currentPath: '/me/conduct', body: myConductPage(conductRecord(req.session.playerPlayerId)) }));
+});
+app.post('/me/conduct/:id/respond', express.json(), (req, res) => {
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId || req.session.impersonating) return res.status(401).json({ error: 'Log in first.' });
+  const r = respondToCase(req.params.id, req.session.playerPlayerId, req.body?.text);
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json({ ok: true });
+});
+app.post('/me/conduct/:id/appeal', express.json(), (req, res) => {
+  if (!req.session?.playerRegId || !req.session?.playerPlayerId || req.session.impersonating) return res.status(401).json({ error: 'Log in first.' });
+  const r = appealCase(req.params.id, req.session.playerPlayerId, req.body?.text);
+  if (r.error) return res.status(400).json({ error: r.error });
+  const k = getFineCase(req.params.id);
+  // Heads not involved give their view, then the super admin decides: they hear on the bell.
+  for (const h of eligibleAppealHeads(k)) createNotification({ playerId: h, type: 'appeal_review', title: 'An appeal needs your view', body: `${k.category_label}. Your team isn't part of it.`, link: '/fines' });
+  res.json({ ok: true });
 });
 
 // Self-service intro edit — a player editing their own profile, not the admin bio route
@@ -13754,6 +13813,8 @@ app.get('/sitemap.xml', (req, res) => {
     { loc: '/players',    priority: '0.7', changefreq: 'weekly' },
     { loc: '/leaders',    priority: '0.7', changefreq: 'daily' },
     { loc: '/roast',      priority: '0.5', changefreq: 'weekly' },
+    { loc: '/rules',      priority: '0.3', changefreq: 'monthly' },
+    { loc: '/rules/conduct', priority: '0.4', changefreq: 'monthly' },
   ];
   if (flags.awards)  urls.push({ loc: '/awards', priority: '0.5', changefreq: 'monthly' });
   if (flags.mvpRace) urls.push({ loc: '/mvp',    priority: '0.5', changefreq: 'weekly' });
@@ -16486,6 +16547,7 @@ app.post('/admin/games/:id/import', requireAuth, jsonLarge, (req, res) => {
 // after the response, non-blocking.
 function afterGameImport(game, playerIds) {
   setImmediate(() => settleGamePicks(game.id));
+  setImmediate(() => { try { syncSuspensions(); } catch (e) { console.error('[fines] suspensions:', e.message); } });
   setImmediate(() => askLeagueCourtRatings(game.id));
   setImmediate(() => {
     try {
@@ -22760,6 +22822,8 @@ app.get('/players/:ref', async (req, res) => {
       papawisLocked: isOwnProfile ? pwLockedSlotFor(resolved.id) : null,
       papawisRecord: isOwnProfile && getSetting('papawis_enabled', '0') === '1' ? { ...getPapawisRecord(resolved.id, Date.now() - PW_STRIKE_DAYS * 86400000), limit: PW_STRIKE_LIMIT, days: PW_STRIKE_DAYS } : null,
       papawisProbation: isOwnProfile && !!player.papawis_probation && !(minDeposit != null && papawisBalance <= -minDeposit),
+      // My conduct (conduct rules): an open case to answer, or a suspension, as a Today tile.
+      conduct: isOwnProfile ? conductRecord(player.id) : null,
       peerRatingsEnabled: getFeatureFlags().peerRatings,
       peerRatingSummary, peerRatingsFeed, canRate,
       gameRatings: gameRatingsOn() ? (() => {
@@ -22835,16 +22899,18 @@ app.post('/players/:id/report', express.json(), (req, res) => {
     return res.status(400).json({ error: 'You already have an open report against this player.' });
   }
 
-  const { categoryId, description = '' } = req.body || {};
+  const { categoryId, description = '', incidentDate = '', context = 'league' } = req.body || {};
   if (!categoryId) return res.status(400).json({ error: 'Category is required.' });
+  // A report says what happened, when, where and who else saw it (conduct rule 6).
+  if (String(description).trim().length < 20) return res.status(400).json({ error: 'Say what happened, where, and who else saw it.' });
 
   const reporterName = displayPlayerName(reporterPlayer?.name || '') || 'A player';
-  const result = createFineCase({
-    playerId: targetPlayerId, categoryId, description,
+  const result = fileCase({
+    playerId: targetPlayerId, categoryId, description: String(description).trim().slice(0, 2000), incidentDate, context,
     reportedByType: 'player', reportedById: reporterPlayerId, reportedByName: reporterName,
     status: 'pending_admin',
   });
-  if (result.error) return res.status(400).json({ error: 'Could not file the report.' });
+  if (result.error) return res.status(400).json({ error: result.error });
   res.json({ ok: true, id: result.id });
 });
 
@@ -22918,12 +22984,16 @@ app.get('/rules', (req, res) => {
 // no login required, unlike the team-head-only case-management tool at /fines. Excludes the
 // $0 catch-all categories ("Other/Pending" etc.) — those aren't fines with a set amount, they're
 // admin-review buckets, so listing them here as "penalties" would be misleading.
-app.get('/rules/fines', (req, res) => {
-  const categories = getActiveFineCategories().filter(c => c.amount > 0);
+// The conduct rules replaced it (2026-11-06): the ladder is on /rules/conduct.
+app.get('/rules/fines', (req, res) => res.redirect(301, '/rules/conduct#ladder'));
+app.get('/rules/conduct', (req, res) => {
   res.send(renderPage(req, {
-    title: 'League Fines | WKND Basketball',
-    currentPath: '/rules/fines',
-    body: fineSchedulePage({ categories }),
+    title: 'Conduct Rules | WKND Basketball',
+    currentPath: '/rules/conduct',
+    body: conductRulesPage({
+      categories: getActiveFineCategories(), counts: seasonConductCounts(),
+      n: { respondHours: RESPOND_HOURS, decideDays: DECIDE_DAYS, appealDays: APPEAL_DAYS, appealHeads: APPEAL_HEADS, payDays: PAY_DAYS, reportDays: REPORT_DAYS, reportDaysOnline: REPORT_DAYS_ONLINE, warningsForL1: WARNINGS_FOR_L1, reviewPoints: REVIEW_POINTS, removalPoints: REMOVAL_POINTS },
+    }),
   }));
 });
 
@@ -25292,6 +25362,7 @@ app.get('/papawis', (req, res) => {
     hasBalance = hasUnpaidCompletedPapawis(viewerPlayerId);
   }
   const viewerBanned = !!(viewerPlayerId && getPlayerById(viewerPlayerId)?.banned_at);
+  const viewerSuspended = !!viewerPlayerId && suspensionStanding(viewerPlayerId).active;
 
   const origin = getRequestOrigin(req);
   const papawisUrl  = `${SITE_ORIGIN}/papawis`;
@@ -25330,7 +25401,7 @@ app.get('/papawis', (req, res) => {
     title: 'Papawis: Pickup Basketball in Makati, Mandaluyong & Pasig',
     currentPath: '/papawis',
     metaTags: `${papawisMetaTags}\n  <link rel="stylesheet" href="/papawis.css?v=${PAPAWIS_CSS_VER}">`,
-    body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, banned: viewerBanned, summary, isAdmin, alertsOn,
+    body: papawisPage({ games, signupsByGame, viewerPlayerId, viewer, isLoggedIn, hasBalance, banned: viewerBanned, suspended: viewerSuspended, summary, isAdmin, alertsOn,
       // Late drops: who gave a slot back on each upcoming run, and joins held for too many lately.
       lateByGame: Object.fromEntries(games.filter(g => g.status === 'open' && pwDaysUntil(g.date) >= 0).map(g => [g.id, getPapawisLateDrops(g.id)])),
       held: !!viewerPlayerId && pwStrikes(viewerPlayerId) >= PW_STRIKE_LIMIT,
@@ -25488,6 +25559,10 @@ app.post('/papawis/:id/join', (req, res) => {
   if (getPlayerById(playerId).banned_at) {
     return res.status(403).json({ error: 'Your account is banned. Settle your balance and message us to get it lifted.' });
   }
+  // A suspension covers Papawis runs until it's served (conduct rule 4).
+  if (suspensionStanding(playerId).active) {
+    return res.status(403).json({ error: 'You’re suspended, so no Papawis runs until it’s served. See My conduct.' });
+  }
   // Blocks on a specific unpaid slot from an already-closed-out game, not a netted ledger
   // balance — a season fee or other non-Papawis balance was already excluded before this,
   // but even within Papawis a netted balance could read <= 0 (one game's overpayment
@@ -25619,28 +25694,57 @@ app.get('/fines', requireHead, (req, res) => {
   const categories = getActiveFineCategories();
   const players = getAllPlayers();
   const actor = currentHeadActor(req);
+  // Conduct rules: no vote on a case you're in or about your own team's player; appeals go to
+  // heads from teams not involved.
+  const blocks = Object.fromEntries(open.map(c => [c.id, headVoteBlock(actor.id, c)]));
+  const appeals = getFineCasesByStatus('approved').filter(c => c.appeal_status === 'pending' && !appealHeadBlock(actor.id, c));
+  const appealVotesByCase = Object.fromEntries(appeals.map(c => [c.id, appealVotes(c.id)]));
   res.send(renderPage(req, {
     title: 'Fines — WKND Basketball',
     currentPath: '/fines',
-    body: finesPage({ open, resolved, votesByCase, categories, players, viewerId: actor.id }),
+    body: finesPage({ open, resolved, votesByCase, categories, players, viewerId: actor.id, blocks, appeals, appealVotesByCase }),
   }));
 });
 
 app.post('/fines', requireHead, express.json(), (req, res) => {
   const actor = currentHeadActor(req);
-  const { playerId, gameId = '', categoryId, description = '' } = req.body || {};
+  const { playerId, gameId = '', categoryId, description = '', incidentDate = '', context = 'league' } = req.body || {};
   if (!playerId || !categoryId) return res.status(400).json({ error: 'Player and category are required.' });
-  const result = createFineCase({ playerId, gameId, categoryId, description, reportedByType: actor.type, reportedById: actor.id, reportedByName: actor.name });
-  if (result.error) return res.status(400).json({ error: 'Could not file the report.' });
-  res.json({ ok: true, id: result.id });
+  if (String(description).trim().length < 20) return res.status(400).json({ error: 'Say what happened, where, and who else saw it.' });
+  const result = fileCase({ playerId, gameId, categoryId, description: String(description).trim().slice(0, 2000), incidentDate, context, reportedByType: actor.type, reportedById: actor.id, reportedByName: actor.name });
+  if (result.error) return res.status(400).json({ error: result.error });
+  insertAdminLog({ actor: actor.name, actorType: 'head', method: 'POST', path: '/fines', details: { case: result.id, player: playerId, joined: !!result.joined } });
+  res.json({ ok: true, id: result.id, joined: !!result.joined });
 });
 
 app.post('/fines/:id/vote', requireHead, express.json(), (req, res) => {
   const actor = currentHeadActor(req);
   const { vote, comment = '' } = req.body || {};
   if (vote !== 'approve' && vote !== 'reject') return res.status(400).json({ error: 'Invalid vote.' });
+  const kase = getFineCase(req.params.id);
+  if (!kase) return res.status(404).json({ error: 'Not found.' });
+  const block = headVoteBlock(actor.id, kase);
+  if (block) return res.status(403).json({ error: block });
   const result = castFineVote({ caseId: req.params.id, voterType: actor.type, voterId: actor.id, voterName: actor.name, vote, comment });
   if (result.error) return res.status(400).json({ error: 'This case is no longer open for voting.' });
+  insertAdminLog({ actor: actor.name, actorType: 'head', method: 'POST', path: `/fines/${kase.id}/vote`, details: { vote } });
+  res.json({ ok: true });
+});
+
+// A head's view on an appeal (conduct rule 9). fine_votes with voter_type 'appeal', so it never
+// mixes with the case's own votes.
+app.post('/fines/:id/appeal-vote', requireHead, express.json(), (req, res) => {
+  const actor = currentHeadActor(req);
+  const { vote, comment = '' } = req.body || {};
+  if (vote !== 'uphold' && vote !== 'lower') return res.status(400).json({ error: 'Invalid vote.' });
+  const kase = getFineCase(req.params.id);
+  if (!kase || kase.appeal_status !== 'pending') return res.status(400).json({ error: 'This appeal is closed.' });
+  const block = appealHeadBlock(actor.id, kase);
+  if (block) return res.status(403).json({ error: block });
+  portalDb.prepare(`INSERT INTO fine_votes (id, case_id, voter_type, voter_id, voter_name, vote, comment, created_at) VALUES (?, ?, 'appeal', ?, ?, ?, ?, ?)
+    ON CONFLICT(case_id, voter_type, voter_id) DO UPDATE SET vote = excluded.vote, comment = excluded.comment, created_at = excluded.created_at`)
+    .run(`vote_${Date.now()}_${randomBytes(3).toString('hex')}`, kase.id, actor.id, actor.name, vote, String(comment).slice(0, 1000), Date.now());
+  insertAdminLog({ actor: actor.name, actorType: 'head', method: 'POST', path: `/fines/${kase.id}/appeal-vote`, details: { vote } });
   res.json({ ok: true });
 });
 
@@ -28112,6 +28216,7 @@ app.post('/admin/fines/categories', requireAuth, express.json(), (req, res) => {
   if (!label || Number.isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Label and an amount of 0 or more are required.' });
   if (pts < 0 || minGames < 0) return res.status(400).json({ error: 'Points and suspension games must be 0 or more.' });
   const id = createFineCategory({ label, amount: amt, description, examples: fineExamples(examples), points: pts, minSuspensionGames: minGames });
+  setFineCategoryLevel(id, req.body?.level);
   res.json({ ok: true, id });
 });
 app.post('/admin/fines/categories/:id', requireAuth, express.json(), (req, res) => {
@@ -28122,6 +28227,7 @@ app.post('/admin/fines/categories/:id', requireAuth, express.json(), (req, res) 
   if (!label || Number.isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Label and an amount of 0 or more are required.' });
   if (pts < 0 || minGames < 0) return res.status(400).json({ error: 'Points and suspension games must be 0 or more.' });
   updateFineCategory(req.params.id, { label, amount: amt, description, examples: fineExamples(examples), points: pts, minSuspensionGames: minGames });
+  setFineCategoryLevel(req.params.id, req.body?.level);
   res.json({ ok: true });
 });
 app.post('/admin/fines/categories/:id/toggle', requireAuth, express.json(), (req, res) => {
@@ -28301,33 +28407,46 @@ app.post('/admin/ratings/players/:id/links', requireAuth, express.json(), (req, 
 app.get('/admin/fines', requireAuth, (req, res) => {
   const pendingAdmin = getFineCasesByStatus('pending_admin');
   const open     = getFineCasesByStatus('open');
-  const resolved = [...getFineCasesByStatus('approved'), ...getFineCasesByStatus('rejected'), ...getFineCasesByStatus('dismissed')]
+  const resolved = [...getFineCasesByStatus('approved'), ...getFineCasesByStatus('rejected'), ...getFineCasesByStatus('dismissed'), ...getFineCasesByStatus('voided')]
     .sort((a, b) => (b.resolved_at || 0) - (a.resolved_at || 0));
+  const appeals = resolved.filter(c => c.appeal_status === 'pending');
   res.send(renderAdminPage(req, {
     title: 'Conduct', currentPath: '/admin/fines',
     settings: finesSettingsPanel(),
-    body: adminFinesListBody({ pendingAdmin, open, resolved, players: getAllPlayers(), categories: getActiveFineCategories(), summary: getFineCollectionSummary(), query: req.query }),
+    body: adminFinesListBody({ pendingAdmin, open, resolved, appeals, players: getAllPlayers(), categories: getActiveFineCategories(), summary: getFineCollectionSummary(), query: req.query, contexts: CONTEXTS }),
   }));
 });
 app.post('/admin/fines', requireAuth, express.json(), (req, res) => {
   const actor = currentAdminActor(req);
-  const { playerId, gameId = '', categoryId, description = '' } = req.body || {};
+  const { playerId, gameId = '', categoryId, description = '', incidentDate = '', context = 'league' } = req.body || {};
   if (!playerId || !categoryId) return res.status(400).json({ error: 'Player and category are required.' });
-  const result = createFineCase({ playerId, gameId, categoryId, description, reportedByType: actor.type, reportedById: actor.id, reportedByName: actor.name });
-  if (result.error) return res.status(400).json({ error: 'Could not file the report.' });
-  res.json({ ok: true, id: result.id });
+  if (String(description).trim().length < 20) return res.status(400).json({ error: 'Say what happened, where, and who else saw it.' });
+  const result = fileCase({ playerId, gameId, categoryId, description: String(description).trim().slice(0, 2000), incidentDate, context, reportedByType: actor.type, reportedById: actor.id, reportedByName: actor.name });
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({ ok: true, id: result.id, message: result.joined ? 'That incident was already reported: your account was added to the same case.' : 'Report filed. The player is told and has 72 hours to answer.' });
 });
 app.get('/admin/fines/:id', requireAuth, (req, res) => {
   const kase = getFineCase(req.params.id);
   if (!kase) return res.status(404).send(renderAdminPage(req, { title: 'Not Found', currentPath: '/admin/fines', body: '<p style="padding:40px;color:var(--text-muted)">Case not found.</p>' }));
-  const isSuperAdmin = !!req.session?.isAdmin && !req.session?.isElevatedPlayer;
+  const isSuperAdmin = isSuperAdminReq(req);
+  const actor = currentAdminActor(req);
+  const accusedAdmin = !!getRegistrationByPlayerId(kase.player_id)?.is_admin;
+  // The appeal goes to the super admin; when the super admin filed the case, to another admin.
+  const appealDecider = kase.reported_by_id === 'super_admin' ? !isSuperAdmin && !adminActBlock(actor.id, kase) : isSuperAdmin;
   res.send(renderAdminPage(req, {
     title: 'Case', currentPath: '/admin/fines',
     body: adminFineCaseBody({
-      case: kase, votes: getFineVotesForCase(kase.id), player: getPlayerWithTeam(kase.player_id),
+      case: kase, votes: getFineVotesForCase(kase.id).filter(v => v.voter_type !== 'appeal'), player: getPlayerWithTeam(kase.player_id),
       escalationVotes: getEscalationVotesForCase(kase.id), totalAdmins: getTotalAdminCount(),
-      viewerAdminId: currentAdminActor(req).id, isSuperAdmin,
+      viewerAdminId: actor.id, isSuperAdmin,
       suspension: getPlayerSuspensionStatus(kase.player_id, kase.season || getPortalCurrentSeason()),
+      standing: suspensionStanding(kase.player_id),
+      voteBlock: adminActBlock(actor.id, kase, { isSuperAdmin }),
+      decideBlock: adminActBlock(actor.id, kase, { isSuperAdmin, deciding: true }),
+      decideOpensAt: decideOpensAt(kase), canDecide: canDecideNow(kase), accusedAdmin,
+      appealVotes: appealVotes(kase.id), appealReady: kase.appeal_status === 'pending' && appealReady(kase), appealDecider,
+      appealHeads: kase.appeal_status === 'pending' ? eligibleAppealHeads(kase).map(id => displayPlayerName(getPlayerById(id)?.name || '')) : [],
+      categories: getAllFineCategories().filter(c => c.active || c.id === kase.category_id), log: caseLog(kase), contexts: CONTEXTS, evidence: EVIDENCE,
     }),
   }));
 });
@@ -28335,39 +28454,59 @@ app.post('/admin/fines/:id/vote', requireAuth, express.json(), (req, res) => {
   const actor = currentAdminActor(req);
   const { vote, comment = '' } = req.body || {};
   if (vote !== 'approve' && vote !== 'reject') return res.status(400).json({ error: 'Invalid vote.' });
+  const kase = getFineCase(req.params.id);
+  if (!kase) return res.status(404).json({ error: 'Not found.' });
+  const block = adminActBlock(actor.id, kase, { isSuperAdmin: isSuperAdminReq(req) });
+  if (block) return res.status(403).json({ error: block });
   const result = castFineVote({ caseId: req.params.id, voterType: actor.type, voterId: actor.id, voterName: actor.name, vote, comment });
   if (result.error) return res.status(400).json({ error: 'This case is no longer open for voting.' });
   res.json({ ok: true });
 });
-// Resolution is always a deliberate admin action (see lib/portal-db.js comment on
-// resolveFineCase) — the vote tally informs this, it doesn't auto-decide it. Approving
-// charges the ledger (category 'Penalty', same mechanism as season fees/Papawis) and
-// notifies the player only now, on resolution — never while the case is still open, so a
-// player never sees an in-progress accusation, only the outcome.
+// Deciding is always a deliberate admin action (votes are guidance), under the conduct rules
+// (lib/conduct.js decideCase): after the player's 72 hours, with a written reason, a fine only on
+// evidence beyond one player's word. outcome: 'fine' | 'warning' | 'reject'.
 app.post('/admin/fines/:id/resolve', requireAuth, express.json(), (req, res) => {
   const kase = getFineCase(req.params.id);
   if (!kase || kase.status !== 'open') return res.status(400).json({ error: 'Case is not open.' });
   const actor = currentAdminActor(req);
-  const { approved, note = '' } = req.body || {};
-  let transactionId = '';
-  if (approved) {
-    transactionId = randomBytes(6).toString('hex');
-    recordTransaction({
-      id: transactionId, player_id: kase.player_id, amount: kase.amount, type: 'charge',
-      payment_method: '', date: manilaTodayStr(), status: 'confirmed',
-      notes: `Fine — ${kase.category_label}${kase.description ? `: ${kase.description}` : ''}`,
-      reference_no: kase.id, season: '', category: 'Penalty',
-    });
-  }
-  resolveFineCase(kase.id, { approved: !!approved, resolvedByName: actor.name, note, transactionId });
-  createNotification({
-    playerId: kase.player_id,
-    type: approved ? 'fine_approved' : 'fine_rejected',
-    title: approved ? `You've been fined ₱${Number(kase.amount).toLocaleString()}` : 'A conduct report about you was reviewed',
-    body: approved ? kase.category_label : 'No fine was issued.',
-    link: '/me',
-  });
-  res.json({ ok: true, approved: !!approved });
+  const block = adminActBlock(actor.id, kase, { isSuperAdmin: isSuperAdminReq(req), deciding: true });
+  if (block) return res.status(403).json({ error: block });
+  const { outcome, note = '', evidence = '' } = req.body || {};
+  const r = decideCase(kase.id, { outcome, note: String(note).slice(0, 2000), evidence, actorName: actor.name });
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, message: r.message });
+});
+// Cancel a decided fine or warning (super admin): the charge, the points and any suspension go.
+app.post('/admin/fines/:id/void', requireSuperAdmin, express.json(), (req, res) => {
+  const note = String(req.body?.note || '').trim();
+  if (!note) return res.status(400).json({ error: 'Write why. The player reads it.' });
+  const r = voidCase(req.params.id, { actorName: currentAdminActor(req).name, note: note.slice(0, 1000) });
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, message: 'Cancelled. The player is told.' });
+});
+app.post('/admin/fines/:id/category', requireAuth, express.json(), (req, res) => {
+  const kase = getFineCase(req.params.id);
+  if (!kase) return res.status(404).json({ error: 'Not found.' });
+  const actor = currentAdminActor(req);
+  const block = adminActBlock(actor.id, kase, { isSuperAdmin: isSuperAdminReq(req), deciding: true });
+  if (block) return res.status(403).json({ error: block });
+  const r = changeCaseCategory(kase.id, String(req.body?.categoryId || ''), actor.name);
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, message: 'Category changed.' });
+});
+// The appeal decision (conduct rule 9). outcome: 'upheld' | 'lowered' | 'cancelled'.
+app.post('/admin/fines/:id/appeal', requireAuth, express.json(), (req, res) => {
+  const kase = getFineCase(req.params.id);
+  if (!kase) return res.status(404).json({ error: 'Not found.' });
+  const actor = currentAdminActor(req);
+  const isSuper = isSuperAdminReq(req);
+  const allowed = kase.reported_by_id === 'super_admin' ? !isSuper && !adminActBlock(actor.id, kase) : isSuper;
+  if (!allowed) return res.status(403).json({ error: kase.reported_by_id === 'super_admin' ? 'The super admin filed this case, so another admin decides the appeal.' : 'The super admin decides appeals.' });
+  const { outcome, categoryId = '', note = '' } = req.body || {};
+  const toWarning = categoryId === 'warning';
+  const r = decideAppeal(kase.id, { outcome, categoryId: toWarning ? '' : categoryId, toWarning, note: String(note).slice(0, 2000), actorName: actor.name });
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, message: r.message });
 });
 
 // Paid tracking, same shape as Papawis' per-signup "Mark Paid" (/admin/papawis/:id/signups/
@@ -28378,7 +28517,7 @@ app.post('/admin/fines/:id/resolve', requireAuth, express.json(), (req, res) => 
 app.post('/admin/fines/:id/paid', requireAuth, express.json(), (req, res) => {
   const kase = getFineCase(req.params.id);
   if (!kase) return res.status(404).json({ error: 'Not found.' });
-  if (kase.status !== 'approved') return res.status(400).json({ error: 'Only an approved (charged) fine can be marked paid.' });
+  if (kase.status !== 'approved' || !kase.transaction_id) return res.status(400).json({ error: 'Only a charged fine can be marked paid.' });
 
   const markPaid = req.body?.paid !== false;
   if (markPaid) {
@@ -28401,8 +28540,7 @@ app.post('/admin/fines/:id/paid', requireAuth, express.json(), (req, res) => {
 });
 
 // Notifies the reporting player their report didn't move forward — the accused is never
-// told a pending_admin/dismissed case existed at all (same "outcome only, never
-// in-progress" principle as /admin/fines/:id/resolve above).
+// told a pending_admin/dismissed case existed at all.
 function notifyReporterOfDismissal(kase) {
   if (kase.reported_by_type !== 'player' || !kase.reported_by_id) return;
   createNotification({
@@ -28416,12 +28554,14 @@ function notifyReporterOfDismissal(kase) {
 
 // Admin escalation vote — only meaningful on a pending_admin (player-submitted) case.
 // Majority math + auto-transition lives in recomputeEscalation (lib/portal-db.js); this
-// route just records the vote and lets that run, then notifies the reporter if the
-// case just went terminal without ever reaching a head.
+// route records the vote and lets that run. Escalated: the accused is told now (openCase);
+// dismissed: the reporter is.
 app.post('/admin/fines/:id/escalate-vote', requireAuth, express.json(), (req, res) => {
   const kase = getFineCase(req.params.id);
   if (!kase || kase.status !== 'pending_admin') return res.status(400).json({ error: 'This case is not awaiting escalation.' });
   const actor = currentAdminActor(req);
+  const block = adminActBlock(actor.id, kase, { isSuperAdmin: isSuperAdminReq(req) });
+  if (block) return res.status(403).json({ error: block });
   const { vote, comment = '' } = req.body || {};
   if (vote !== 'escalate' && vote !== 'dismiss') return res.status(400).json({ error: 'Invalid vote.' });
   const result = castEscalationVote({ caseId: kase.id, adminId: actor.id, adminName: actor.name, vote, comment });
@@ -28429,19 +28569,25 @@ app.post('/admin/fines/:id/escalate-vote', requireAuth, express.json(), (req, re
   recomputeEscalation(kase.id);
   const after = getFineCase(kase.id);
   if (after.status === 'dismissed') notifyReporterOfDismissal(after);
+  if (after.status === 'open') openCase(after.id);
   res.json({ ok: true, status: after.status });
 });
 
 // Super-admin-only escape hatch for a pending_admin case whose vote count has stalled —
-// see forceEscalationDecision's comment in lib/portal-db.js.
+// see forceEscalationDecision's comment in lib/portal-db.js. A written reason, since it's one
+// person's call on a path meant to need a majority.
 app.post('/admin/fines/:id/force-escalation', requireSuperAdmin, express.json(), (req, res) => {
   const kase = getFineCase(req.params.id);
   if (!kase || kase.status !== 'pending_admin') return res.status(400).json({ error: 'This case is not awaiting escalation.' });
   const actor = currentAdminActor(req);
   const { escalate } = req.body || {};
+  const why = String(req.body?.note || '').trim();
+  if (!why) return res.status(400).json({ error: 'Write why the vote is being settled.' });
   const result = forceEscalationDecision(kase.id, { escalate: !!escalate, decidedByName: actor.name });
   if (!result.ok) return res.status(400).json({ error: 'Could not update this case.' });
-  if (!escalate) notifyReporterOfDismissal(getFineCase(kase.id));
+  portalDb.prepare('UPDATE fine_cases SET resolution_note = ? WHERE id = ?').run(`${escalate ? 'Force-escalated' : 'Force-dismissed'} by ${actor.name}: ${why.slice(0, 500)}`, kase.id);
+  if (escalate) openCase(kase.id);
+  else notifyReporterOfDismissal(getFineCase(kase.id));
   res.json({ ok: true });
 });
 
@@ -28540,6 +28686,7 @@ setInterval(runBirthdayJobs, BIRTHDAY_AUTOMATION_CHECK_MS);
 // (a warning deadline passing), and after any admin ledger or Papawis change (a confirmed
 // payment lifts the ban straight away; see the /admin hook near the admin-action logger).
 // No email: bells only.
+// Unpaid fines past due (lib/conduct.js runFineSweep) ride along, with suspensions just served.
 function runBanJobs() {
   try {
     const { banned, lifted } = runBanSweep();
@@ -28547,6 +28694,13 @@ function runBanJobs() {
     for (const id of banned) logSystem('auto_ban', { player_id: id });
     for (const id of lifted) logSystem('auto_ban_lifted', { player_id: id });
   } catch (e) { console.error('[bans] sweep failed:', e.message); }
+  try {
+    const { banned, lifted } = runFineSweep();
+    if (banned.length || lifted.length) console.log(`[fines] banned ${banned.length}, lifted ${lifted.length}`);
+    for (const id of banned) logSystem('auto_ban', { player_id: id, kind: 'fine' });
+    for (const id of lifted) logSystem('auto_ban_lifted', { player_id: id, kind: 'fine' });
+    syncSuspensions();
+  } catch (e) { console.error('[fines] sweep failed:', e.message); }
 }
 runBanJobs();
 setInterval(runBanJobs, 60 * 60 * 1000);
