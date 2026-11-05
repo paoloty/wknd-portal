@@ -6,7 +6,7 @@ Rules marked **(target)** describe something not built yet: new code follows the
 
 ## Speed
 
-Each uncached request from the Philippines costs ~1.3–1.7 s (PH → Cloudflare LAX → VPS); the server renders in 10–90 ms. **What costs time is the number of requests a screen makes one after another, not how fast the code runs.**
+From the Philippines (PH → Cloudflare LAX → Germany), a new connection costs 0.7–1.3 s to first byte. Once connected, a server request costs ~0.35 s and a Cloudflare hit ~0.18 s; the server renders in 7–60 ms (Fable speed audit, 2026-11-05). **What costs time is new connections and requests that wait on each other, not how fast the code runs.** Real speeds from phones are on `/admin/app`.
 
 1. **One request per screen.** Everything above the fold comes in the screen's HTML. Fetch lazily (`lazyList()`, `data-block-src`) only for page 2 onward or content below the fold. **Nothing above the fold appears after the first paint:** a block or card that shows up late pushes everything under it down (Home's rail, live card and notifications card did, 2026-10-29). Build it into the HTML (`data-block-have` keeps a block's later refreshes), and a card only the phone can decide on gets a tiny inline script right after it.
 2. **No side effects on a GET.** Screens are prefetched on touch, refreshed in the background and re-fetched by the service worker. Logging, "seen" marks and counters go in a POST, a beacon or the lazy data request.
@@ -20,7 +20,7 @@ Each uncached request from the Philippines costs ~1.3–1.7 s (PH → Cloudflare
    - **always from the server:** money (Settle, balances). Never in `isScreen`.
 8. **Cache keys never carry per-visit params** (timestamps, `opened=`, cursors beyond page 1). Every cache on the phone has a cap.
 9. **Never queue a write for later** (pick, join, payment). Deadlines and slots are checked on the server; offline, the button says it needs a connection.
-10. **No new web fonts or weights; no third-party scripts on load.** YouTube loads near or on tap only. One exception: Share my stats loads Saira Condensed Black (`/fonts/sairacondensed-black-latin.woff2`, 18 KB) on that screen only, to draw the premium cards on the phone.
+10. **No new web fonts or weights; no third-party scripts on load.** YouTube loads near or on tap only. Google Analytics loads after the screen has settled (`settled` in `public/app.js`). One exception: Share my stats loads Saira Condensed Black (`/fonts/sairacondensed-black-latin.woff2`, 18 KB) on that screen only, to draw the premium cards on the phone.
 10a. **Work the phone can do, it does, when it saves a request:** the premium share cards are drawn on the phone (`public/share-cards.js`, shared with the server, which still makes locked cards and Receipt). Anything with a lock, a deadline or money stays on the server.
 11. **Register new files:** a new `views/app/*.js` or app script in `public/` goes into `APP_VER`'s list (server.js), a new cached screen into `isScreen`.
 

@@ -3012,7 +3012,14 @@
       e.preventDefault();
       go('/app/players/' + encodeURIComponent(pid), true);
     });
-    var warm = function (e) { var a = e.target.closest && e.target.closest('a'); if (eligible(a)) prefetch(urlOf(a.href)); };
+    var warm = function (e) {
+      if (!e.target.closest) return;
+      var a = e.target.closest('a');
+      if (eligible(a)) { prefetch(urlOf(a.href)); return; }
+      // A face isn't a link, but the same head start applies (the click handler above opens it).
+      var f = e.target.closest('[data-pid]');
+      if (f && !f.closest('button, label') && f.getAttribute('data-pid')) prefetch('/app/players/' + encodeURIComponent(f.getAttribute('data-pid')));
+    };
     document.addEventListener('touchstart', warm, { passive: true });
     document.addEventListener('mousedown', warm);
     // Back (iPhone's edge swipe, Android's back): iPhone animates the swipe itself, so the
@@ -3113,8 +3120,10 @@
   if (navOn && builtAt && Date.now() - builtAt > 15000 && navigator.onLine) {
     launchWait = setTimeout(function () { launchWait = null; refreshScreen(); }, navigator.serviceWorker && navigator.serviceWorker.controller ? 8000 : 0);
   }
+  var fromCopy = !!launchWait, freshAt = null;
   function launchFresh(d) {
     if (!launchWait) return;
+    freshAt = performance.now();
     clearTimeout(launchWait); launchWait = null;
     if (d.url !== currentUrl) return; // moved on meanwhile: that screen is fresh already
     if (!d.html) { refreshScreen(); return; } // not a plain screen (signed out, redirected): as before
@@ -3146,6 +3155,38 @@
   } catch (e) { ping({ standalone: standalone }); }
   window.addEventListener('appinstalled', function () { ping({ installed: true }); });
 
+  // Once a launch has settled. Google Analytics: its 150 KB from another host shouldn't compete
+  // with the screen, and the app's first events wait in dataLayer. Then this launch's real speed,
+  // for /admin/app (lib/app-timing.js). Once a day the Cloudflare location too, which shows whether
+  // moving the server would help (Fable speed audit, 2026-11-05).
+  var colo = function () {
+    var today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }), saved = '';
+    try { saved = localStorage.getItem('wknd-colo') || ''; } catch (e) {}
+    if (saved.indexOf(today + '|') === 0) return Promise.resolve(saved.slice(today.length + 1));
+    var ask = new AbortController();
+    setTimeout(function () { ask.abort(); }, 3000);
+    return fetch('/cdn-cgi/trace', { signal: ask.signal }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (t) {
+      var m = /^colo=([A-Z]{3})$/m.exec(t), c = m ? m[1] : '';
+      try { localStorage.setItem('wknd-colo', today + '|' + c); } catch (e) {}
+      return c;
+    }).catch(function () { return ''; });
+  };
+  var sendTiming = function () {
+    var nav = performance.getEntriesByType('navigation')[0], paint = performance.getEntriesByName('first-contentful-paint')[0];
+    if (!nav || !paint || document.visibilityState !== 'visible') return; // opened in the background: not a wait anyone had
+    colo().then(function (c) {
+      var net = navigator.connection || {};
+      ping({ timing: { ttfb: nav.responseStart, fcp: paint.startTime, ready: nav.domContentLoadedEventEnd, fresh: freshAt, kb: nav.transferSize, copy: fromCopy, standalone: standalone, nav: nav.type, net: net.effectiveType, colo: c, ver: ver.slice(0, 20) } });
+    });
+  };
+  var settled = function () {
+    setTimeout(function () {
+      if (window.wkndGaSrc) { var s = document.createElement('script'); s.async = true; s.src = window.wkndGaSrc; document.head.appendChild(s); }
+    }, 3000);
+    setTimeout(sendTiming, 6000);
+  };
+  if (document.readyState === 'complete') settled(); else window.addEventListener('load', settled, { once: true });
+
   // Offline shell
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/app/sw.js', { scope: '/app' }).catch(function () {});
@@ -3168,7 +3209,7 @@
   window.addEventListener('online', net); window.addEventListener('offline', net); net();
 
   // Updates: iPhone resumes the old screen without reloading, so on coming back to the app
-  // check the deployed version; reload when it changed or the screen is >30 min old. A
+  // check the deployed version; reload when it changed, refresh when the screen is >30 min old. A
   // half-filled form gets a "tap to refresh" bar instead of losing what was typed.
   var checking = false;
   var showBar = function () {
@@ -3183,7 +3224,10 @@
     checking = true;
     fetch('/app/version', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (j) {
       var stale = Date.now() - loadedAt > 30 * 60 * 1000;
-      if ((j.ver && j.ver !== ver) || stale) { pages = {}; if (dirty()) showBar(); else location.reload(); }
+      if (j.ver && j.ver !== ver) { pages = {}; if (dirty()) showBar(); else location.reload(); return; }
+      // Same version, just an old screen: bring it up to date where it is, with no white flash
+      // and the scroll kept (Fable speed audit, 2026-11-05).
+      if (stale) { pages = {}; if (!dirty()) return refreshScreen(); }
     }).catch(function () {}).then(function () { checking = false; });
   });
 })();

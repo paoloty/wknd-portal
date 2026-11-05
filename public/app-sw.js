@@ -52,7 +52,7 @@ const isScreen = (url) => url.origin === location.origin
   && /^\/app(\/(picks|papawis|papawis\/(?!past$)[^/]+|team|me|settings|players\/[^/]+|season|season\/(bracket|games)|notifications|games\/[^/]+|games\/[^/]+\/share|posts\/[^/]+|score|score\/[^/]+|practice|table|help\/scoring|help\/scoring\/[^/]+))?\/?$/.test(url.pathname);
 const isData = (url) => url.origin === location.origin && (/^\/app\/(feed|notifications)\/items$/.test(url.pathname) || url.pathname === '/app/papawis/past' || url.pathname === '/app/rail');
 const isImage = (url) => url.origin === location.origin
-  && (/^\/api\/photo\/[^/]+$/.test(url.pathname) || /^\/api\/player\/[^/]+\/(photo|cover)$/.test(url.pathname) || /^\/app\/announcements\/[^/]+\/image$/.test(url.pathname));
+  && (/^\/api\/photo\/[^/]+$/.test(url.pathname) || /^\/api\/player\/[^/]+\/(photo|cover)$/.test(url.pathname) || /^\/app\/announcements\/[^/]+\/image$/.test(url.pathname) || /^\/api\/papawis-(cover\/[^/]+|court\/[^/]+\/photo|map\/photo)$/.test(url.pathname));
 const keyOf = (url) => url.pathname + url.search;
 
 // A screen response worth keeping: a real page from this app, not a redirect to sign-in.

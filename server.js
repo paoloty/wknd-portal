@@ -206,6 +206,7 @@ import { adminLogsPage }        from './views/admin/logs.js';
 import { buildLogRows, playerAuditRoute, captureConsoleErrors } from './lib/activity-log.js';
 import { seasonStepState } from './lib/season-steps.js';
 import { startRefusal, startEmailState } from './lib/season-start.js';
+import { cleanTiming, summarizeTimings } from './lib/app-timing.js';
 import { cleanNominations, summarizeNominations } from './lib/season-nominations.js';
 import { adminShareCardLogPage } from './views/admin/share-log.js';
 import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays.js';
@@ -484,8 +485,9 @@ function buildAppGaSnippet(req) {
   gtag('js', new Date());
   gtag('config', '${safeId}', { user_id: '${uid}', content_group: 'app' });
   window.wkndGaView = function () { gtag('event', 'page_view', { page_location: location.href, page_title: document.title, content_group: 'app' }); };
-  </script>
-  <script async src="https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}"></script>`;
+  // public/app.js loads it once the screen has settled; what's above just waits in dataLayer.
+  window.wkndGaSrc = 'https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}';
+  </script>`;
 }
 
 function getRequestOrigin(req) {
@@ -6259,7 +6261,7 @@ import { depositPresets } from './views/utils.js';
 import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { addPasskey, getPasskeysForReg, getPasskey, touchPasskey, deletePasskey, deletePasskeysForReg } from './lib/portal-db.js';
 import { appPasskeysPage, appFaceIdOfferPage } from './views/app/passkeys.js';
-import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents } from './lib/portal-db.js';
+import { updateRegistrationProfile, getNotificationsPage, logAppEvent, hasAppEvent, getAppActivitySummary, getRecentAppEvents, insertAppTiming, getAppTimingsSince } from './lib/portal-db.js';
 import { setAppAnnouncementFb, getAppAnnouncements, getAppAnnouncement, getAppAnnouncementImage, addAppAnnouncement, setAppAnnouncementPin, setAppAnnouncementDate, deleteAppAnnouncement,
   editAppAnnouncement, setAppAnnouncementHidden, setAppAnnouncementVideo, addAppPostPhoto, getAppPostPhotoNumbers, getAppPostPhoto } from './lib/portal-db.js';
 import { adminAnnouncementsBody, feedThumb } from './views/admin/app-announcements.js';
@@ -6696,6 +6698,13 @@ app.post('/app/ping', express.json(), (req, res) => {
   if (typeof req.body?.photoFailed === 'string') { logApp(req, 'photo_failed', req.body.photoFailed.slice(0, 60)); return res.status(204).end(); }
   // A feed or game picture that didn't load even on a retry (public/app.js): its path.
   if (typeof req.body?.imgFailed === 'string') { logApp(req, 'img_failed', req.body.imgFailed.slice(0, 100)); return res.status(204).end(); }
+  // How fast this launch was (public/app.js): saved with no player on it, and not at all for
+  // someone who turned Analytics off.
+  if (req.body?.timing) {
+    const t = getPlayerById(req.session?.playerPlayerId)?.analytics_off ? null : cleanTiming(req.body.timing, { platform: appPlatform(req) });
+    if (t) insertAppTiming(t);
+    return res.status(204).end();
+  }
   const regId = req.session.playerRegId, platform = appPlatform(req);
   const standalone = req.body?.standalone === true;
   const dayStart = Date.parse(`${manilaTodayStr()}T00:00:00+08:00`);
@@ -9896,7 +9905,7 @@ function appPapawisRuns(me) {
     return {
       id: g.id, date: String(g.date), title: g.title || `${manilaFormat(Date.parse(`${g.date}T12:00:00+08:00`), { weekday: 'long' })} run`,
       day: pwDay(g.date), today: dLeft === 0, time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
-      place: g.location || 'Court to be announced', photo: papawisCoverUrl(g, court) || '',
+      place: g.location || 'Court to be announced', photo: appRunPhoto(papawisCoverUrl(g, court)),
       tipAt: Date.parse(`${g.date}T${g.start_time || '00:00'}:00+08:00`), opensAt, scheduled,
       opensLabel: `${opensDay.split(',')[0]}, 8:00 AM`, opensShort: opensDay.split(',')[0], ...pwCal(g.date),
       filled, max, open, full, waiting: waitlist.length, faces: confirmed.map(face), waitFaces: waitlist.map(face),
@@ -10052,7 +10061,7 @@ app.get('/app/papawis/:id', requireApp, (req, res) => {
     finish: results && pwCanFinish(req, g) ? `/app/papawis/${encodeURIComponent(g.id)}/finish` : '',
     share: results?.people.some(p => p.playerId && p.playerId === me.playerId) ? `/app/papawis/${encodeURIComponent(g.id)}/share` : '', run: {
     id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
-    place: g.location || 'Papawis', photo: papawisCoverUrl(g, getPapawisCourtByName(g.location)) || '',
+    place: g.location || 'Papawis', photo: appRunPhoto(papawisCoverUrl(g, getPapawisCourtByName(g.location))),
     kind, count: kind === 'cancelled' ? confirmed.length : played.length, max: g.max_slots || confirmed.length, price: kind === 'played' ? price : 0,
     // Teams out: a no-show or DNP stays in their side, greyed with the mark (Paolo, 2026-10-31);
     // with no teams (or no side) they sit under Didn't play.
@@ -10267,7 +10276,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
   const opensAt = papawisSignupOpensAtMs(g);
   const run = {
     id: g.id, title: g.title || 'Papawis run', day: pwDay(g.date), time: formatTimeRange(g.start_time, g.end_time) || g.time_label || '',
-    place: g.location || 'Court to be announced', photo: papawisCoverUrl(g) || '', hasCover: !!g.cover_ver,
+    place: g.location || 'Court to be announced', photo: appRunPhoto(papawisCoverUrl(g)), hasCover: !!g.cover_ver,
     open, completed, cancelled: g.status === 'cancelled', locked, scheduled: open && !isPapawisSignupOpenNow(g),
     opensLabel: `${pwDay(new Date(opensAt + 8 * 3600e3).toISOString().slice(0, 10))}, 8:00 AM`,
     max: g.max_slots || 0, price: Number(g.price_per_player) || 0, daysLeft: pwDaysUntil(g.date),
@@ -10353,7 +10362,7 @@ function notificationFaceData(n, me) {
   if (people.length) return { people };
   if (/^stat_card/.test(n.type)) return { people: [{ playerId: me.playerId, initials: me.initials, ring: me.ring, photoUrl: playerPhotoUrl(me.playerId, 96) }] };
   const run = /^papawis_/.test(n.type) && /#pw-game-([^&#]+)/.exec(n.link || '');
-  if (run) { const g = getPapawisGame(decodeURIComponent(run[1])); const cover = g && papawisCoverUrl(g); if (cover) return { cover }; }
+  if (run) { const g = getPapawisGame(decodeURIComponent(run[1])); const cover = g && appRunPhoto(papawisCoverUrl(g)); if (cover) return { cover }; }
   return {};
 }
 
@@ -10506,7 +10515,7 @@ app.get('/admin/app', requireAuth, (req, res) => {
   const isOpen = getSetting('app_open', '0') === '1';
   res.send(renderAdminPage(req, {
     title: 'Players app', currentPath: '/admin/app',
-    body: adminAppBody({ rows, events, query: req.query, isOpen, pushOn: new Set(getAllPushSubscriptions().map(x => x.reg_id)).size }),
+    body: adminAppBody({ rows, events, query: req.query, isOpen, pushOn: new Set(getAllPushSubscriptions().map(x => x.reg_id)).size, speed: summarizeTimings(getAppTimingsSince(Date.now() - 14 * 86400000)) }),
     settings: settingsPanel([
       { type: 'toggle', key: 'app_open', value: isOpen, reload: true, label: 'Open to every player', sub: `Off: only player-admins and the testers below can use ${codeTag('/app')}. Everyone else sees "almost here".` },
       { type: 'toggle', key: 'app_require_install', value: appInstallRequired(), label: 'Phones must install the app', sub: 'On a phone, the app only works from the home screen: in a browser (or Messenger) players get install steps instead. Computers can always use it in the browser.' },
@@ -19156,9 +19165,20 @@ function homeNextUpPapawis() {
 // slot count stays hidden while sign-ups haven't opened (held-back rosters stay private).
 // A run's picture, as the site picks it: the run's own cover (admin upload), else the court's
 // photo, else the map of the address. The homepage hero, the app's Papawis tab and feed card.
+// Hashing a stored photo on every screen adds up, so it's kept per court until the photo changes.
+const _courtPhotoVers = new Map();
+function courtPhotoVersion(court) {
+  const hit = _courtPhotoVers.get(court.id);
+  if (hit?.url === court.image_url) return hit.ver;
+  const ver = photoVersion(court.image_url);
+  _courtPhotoVers.set(court.id, { url: court.image_url, ver });
+  return ver;
+}
+// The same picture, at the size the app's cards use. A map isn't resized.
+const appRunPhoto = url => (url ? (/^\/api\/papawis-(cover|court)\//.test(url) ? `${url}&w=720` : url) : '');
 function papawisCoverUrl(g, court = getPapawisCourtByName(g.location)) {
   if (g.cover_ver) return `/api/papawis-cover/${encodeURIComponent(g.id)}?v=${g.cover_ver}`;
-  if (court?.image_url) return `/api/papawis-court/${encodeURIComponent(court.id)}/photo`;
+  if (court?.image_url) return `/api/papawis-court/${encodeURIComponent(court.id)}/photo?v=${courtPhotoVersion(court)}`;
   const mapQuery = court?.address?.trim() || g.location || '';
   if (mapQuery && getPapawisLocationGeocode(mapQuery)?.map_image) return `/api/papawis-map/photo?loc=${encodeURIComponent(mapQuery)}`;
   return null;
@@ -26583,15 +26603,17 @@ app.delete('/admin/papawis/:id/cover', requireAuth, (req, res) => {
   deletePapawisCover(req.params.id);
   res.json({ ok: true });
 });
+// 96: the court page's small picture. 720: the app's run cards.
+const RUN_PHOTO_WIDTHS = new Set([96, 192, 720]);
 app.get('/api/papawis-cover/:id', async (req, res) => {
-  await sendPlayerPhotoUrl(res, getPapawisCover(req.params.id));
+  await sendPlayerPhoto(req, res, getPapawisCover(req.params.id), { widths: RUN_PHOTO_WIDTHS });
 });
 
 // Same data:-URI-in-a-column storage as player photos — sendPlayerPhotoUrl is generic over
 // the url string, no player-specific logic, so it's reused as-is here.
 app.get('/api/papawis-court/:id/photo', async (req, res) => {
   const court = getPapawisCourtById(req.params.id);
-  await sendPlayerPhotoUrl(res, court?.image_url);
+  await sendPlayerPhoto(req, res, court?.image_url, { widths: RUN_PHOTO_WIDTHS });
 });
 
 // A query param, not a path segment — a free-text location can contain '/' and other

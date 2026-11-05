@@ -10,6 +10,26 @@ const fmtDay = ts => manilaFormat(ts, { month: 'short', day: 'numeric' });
 const PLATFORM = { ios: 'iPhone', android: 'Android', desktop: 'Computer' };
 const platformLabel = list => String(list || '').split(',').filter(Boolean).map(p => PLATFORM[p] || p).join(' + ');
 
+const secs = v => (v == null ? '—' : `${(v / 1000).toFixed(1)} s`);
+const both = s => `${secs(s.typical)} <span class="aui-cell__sub">slow ${secs(s.slow)}</span>`;
+
+// How fast the app really opens on phones, from lib/app-timing.js. "slow" is the worst one in ten.
+function speedSection(speed, query) {
+  const body = speed.total ? dataGrid({
+    id: 'speed', baseUrl: '/admin/app', query, minimal: true, perPage: 20,
+    rows: speed.groups, rowKey: g => `${g.fromCopy}${g.platform}`, noun: ['line', 'lines'],
+    columns: [
+      { key: 'kind', label: 'Launch', primary: true, cell: g => `<span class="aui-cell__stack"><span class="aui-cell__title">${g.fromCopy ? 'From the phone\'s copy' : 'From the server'}</span><span class="aui-cell__sub">${escHtml(PLATFORM[g.platform] || 'Unknown')}</span></span>` },
+      { key: 'count', label: 'Launches', num: true, phone: true, cell: g => String(g.count) },
+      { key: 'fcp', label: 'Screen appears', num: true, phone: true, cell: g => both(g.fcp) },
+      { key: 'fresh', label: 'Fresh screen', num: true, phone: true, cell: g => (g.fromCopy ? both(g.fresh) : '—') },
+      { key: 'ttfb', label: 'Server replies', num: true, phone: true, cell: g => both(g.ttfb) },
+    ],
+  }) : emptyState({ title: 'Nothing yet', sub: 'Launch speeds show here as players open the app.' });
+  const where = speed.colos.length ? `<p class="aui-section__note">Reaches Cloudflare through ${speed.colos.map(c => `${escHtml(c.colo)} ${Math.round(c.count / speed.colos.reduce((n, x) => n + x.count, 0) * 100)}%`).join(', ')}.</p>` : '';
+  return section({ title: 'App speed', note: '· real launches, last 14 days', bodyHtml: `${body}${where}` });
+}
+
 const EVENT = {
   signin: (d) => `signed in${d === 'email_code' ? ' with an email code' : d === 'password' ? ' with their password' : d === 'passkey' ? ' with Face ID / fingerprint' : ''}`,
   code_sent: () => 'asked for a sign-in code',
@@ -31,7 +51,7 @@ const EVENT_TONE = { signin: 'blue', installed: 'green', setup_done: 'green', se
 
 // rows: [{ regId, playerId, name, team, color, email, hasAccess, s (summary row | null),
 //          setup: { photo, details } }]
-export function adminAppBody({ rows, events, query = {}, isOpen, pushOn = 0, settingsHtml = '', now = Date.now() }) {
+export function adminAppBody({ speed = { total: 0, groups: [], colos: [] },  rows, events, query = {}, isOpen, pushOn = 0, settingsHtml = '', now = Date.now() }) {
   const stage = r => (r.s?.installed_at ? 'installed' : r.s?.first_signin_at ? 'signed_in' : 'not_yet');
   const total = rows.length;
   const signedIn = rows.filter(r => r.s?.first_signin_at).length;
@@ -92,6 +112,7 @@ export function adminAppBody({ rows, events, query = {}, isOpen, pushOn = 0, set
       ${kpi({ label: 'Opened in the last 7 days', value: String(active7) })}
       ${kpi({ label: 'Notifications on', value: String(pushOn), of: signedIn ? ` of ${signedIn} signed in` : '' })}
     </div>
+    ${speedSection(speed, query)}
     <div class="aui-cols">
       <div class="aui-cols__main">${grid}</div>
       <aside class="aui-cols__side">
