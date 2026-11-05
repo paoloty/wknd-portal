@@ -35,7 +35,7 @@
     current = { el: el, off: function () { offs.forEach(function (f) { f(); }); offs = []; } };
     var B = JSON.parse(el.querySelector('[data-bk-bundle]').textContent);
     var me = B.me, list = el.querySelector('[data-bk-list]'), form = el.querySelector('[data-bk-form]'), input = el.querySelector('[data-bk-input]');
-    var typingEl = el.querySelector('[data-bk-typing]'), replyEl = el.querySelector('[data-bk-reply]'), mentionEl = el.querySelector('[data-bk-mention]');
+    var typingEl = el.querySelector('[data-bk-typing]'), replyEl = el.querySelector('[data-bk-reply]'), mentionEl = el.querySelector('[data-bk-mention]'), pinEl = el.querySelector('[data-bk-pin]');
     var msgs = [], byId = {}, pending = [], replyTo = null, mentions = {}, loadingOld = false, noMore = false, typers = {}, readT = null;
     var nameOf = {}; B.people.forEach(function (p) { nameOf[p.pid] = p.name; });
     // Cards: { key: html } drawn by the server for this player; seen: who's seen the newest
@@ -450,13 +450,34 @@
       if (q) return ask(q, act === 'cancel' ? (b.textContent.trim() === 'Leave' ? 'Leave the waitlist' : 'Cancel my spot') : 'Claim it', go);
       go();
     }
-    // Welcome / birthday cards: greet one person (again to take it back) or everyone on it.
+    // Welcome / birthday cards: a wish to one person, Greet one (again or Undo takes it back), or
+    // everyone on it. A wish or Greet all plays the card's confetti / wave once more.
     function hiAct(b) {
-      var w = b.closest('[data-bk-card]');
+      var w = b.closest('[data-bk-card]'), key = w.getAttribute('data-bk-card'), wish = b.getAttribute('data-bk-wish'), to = b.getAttribute('data-bk-to');
+      if (w.classList.contains('is-busy')) return;
       if (!navigator.onLine) return toast('You’re offline. This needs a connection, so nothing was sent.', 'err');
+      var body = { to: to }; if (wish !== null) body.wish = Number(wish);
       cardBusy(w, true);
-      post('/app/barkadahan/hi/' + encodeURIComponent(b.getAttribute('data-bk-hi')), { to: b.getAttribute('data-bk-to') })
-        .then(function (j) { takeCards(j.cards); }, function (err) { toast(err.message, 'err'); fetchCards([w.getAttribute('data-bk-card')]); });
+      post('/app/barkadahan/hi/' + encodeURIComponent(b.getAttribute('data-bk-hi')), body)
+        .then(function (j) {
+          takeCards(j.cards);
+          if (wish === null && to !== 'all') return;
+          hiInit();
+          var c = !calm && list.querySelector('[data-bk-card="' + (window.CSS && CSS.escape ? CSS.escape(key) : key) + '"] [data-bk-hi-card]');
+          if (c) hiPlay(c, true);
+        }, function (err) { toast(err.message, 'err'); fetchCards([key]); });
+    }
+    // The strip under the navbar while today's card still has someone to greet: a tap scrolls to it.
+    var PIN_ICON = {
+      bday: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21h16M5 21v-7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7M5 16.5c2.3 1.6 3.7 1.6 7 0s4.7-1.6 7 0M12 12V8.5M12 4.5v.5"/></svg>',
+      welcome: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></svg>'
+    };
+    function paintPin() {
+      if (!pinEl) return;
+      var c = list.querySelector('[data-bk-hi-open]');
+      pinEl.hidden = !c;
+      if (!c) return;
+      pinEl.innerHTML = (PIN_ICON[c.getAttribute('data-bk-hi-kind')] || '') + '<span class="bk__pin-t">' + esc(c.getAttribute('data-bk-hi-open')) + '</span><b>' + esc(c.getAttribute('data-bk-hi-act')) + '</b>';
     }
     // The first time this phone shows a welcome or birthday card, it plays once: the card pops
     // in, a welcome waves a big hand, a birthday bursts with confetti (not with Reduce Motion).
@@ -498,7 +519,7 @@
       setTimeout(function () { c.classList.remove('is-new', 'is-replay'); c.querySelectorAll('.bkh__confetti, .bkh__wave').forEach(function (x) { x.remove(); }); }, 3200);
     }
     function hiWatch() {
-      hiInit();
+      hiInit(); paintPin();
       list.querySelectorAll('[data-bk-hi-card]:not([data-hi-w])').forEach(function (c) {
         c.setAttribute('data-hi-w', '1');
         if (hiSeen.indexOf(c.getAttribute('data-bk-hi-card')) !== -1) return;
@@ -598,6 +619,8 @@
       var rxb = t.closest('[data-bk-rx]'); if (rxb) return react(byId[rxb.closest('[data-id]').getAttribute('data-id')], rxb.getAttribute('data-bk-rx'));
       var hib = t.closest('[data-bk-hi]'); if (hib && !hib.disabled) return hiAct(hib);
       var hik = t.closest('[data-bk-hi-card] .bkh__k'); if (hik) return hiPlay(hik.closest('[data-bk-hi-card]'), true);
+      var him = t.closest('[data-bk-hi-more]'); if (him) { him.parentNode.querySelectorAll('.bkh__w[hidden]').forEach(function (n) { n.hidden = false; }); him.remove(); return; }
+      if (t.closest('[data-bk-pin]')) { var pc = list.querySelector('[data-bk-hi-open]'); if (pc) pc.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'center' }); return; }
       var sayb = t.closest('[data-bk-say]'); if (sayb && input) { input.value = sayb.getAttribute('data-bk-say'); input.dispatchEvent(new Event('input')); input.focus(); return; }
       var pwb = t.closest('[data-bk-pw]'); if (pwb && !pwb.disabled) return papawisAct(pwb);
       var pkb = t.closest('[data-bk-pick] .pick__opt'); if (pkb) return pickAct(pkb);

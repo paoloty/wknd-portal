@@ -11,6 +11,7 @@ export function appBarkadahanPage({ bundle }) {
   return `<div class="bk" data-bk>
     <div class="navbar bk__nav"><a class="navbar__back" href="/app">${backChev}Home</a><span class="navbar__title">Barkadahan</span>
       <a class="bk__online" href="/app/barkadahan/online" aria-label="${bundle.online} online. Who's online"><i aria-hidden="true"></i><span data-bk-online>${bundle.online}</span> online</a></div>
+    <button type="button" class="bk__pin" data-bk-pin hidden></button>
     <div class="bk__list" data-bk-list role="log" aria-live="polite" aria-label="Messages"></div>
     <p class="bk__typing" data-bk-typing aria-live="polite"></p>
     <div class="bk__reply" data-bk-reply hidden></div>
@@ -66,35 +67,64 @@ function pwAction(c) {
     default: return '';
   }
 }
-// A welcome or birthday card (server.js bkHiCard): a row per person with their own Greet and
-// who greeted; one person gets the big layout (and their intro, for a welcome). The person
-// themselves sees the count and Say hi / Say thanks. public/barkadahan.js plays the
-// first-time animation.
+// A welcome or birthday card (server.js bkHiCard), redrawn 2026-11-06 (mockup
+// claude.ai/artifact/EGHV2KRqup1RMc6BVag6L9, board D): a banner (amber with confetti and the
+// jersey number for a birthday, court lines for a welcome), the face over its edge, the latest
+// wishes and one-tap wish buttons. Several people: a row each with its own Greet, and Greet
+// all. The person themselves sees every wish and Say thanks / Say hi. public/barkadahan.js plays
+// the first-time animation, and again when a wish goes out.
+const BK_CONFETTI = `<svg width="366" height="104" viewBox="0 0 366 104" aria-hidden="true">
+  <rect x="196" y="14" width="6" height="11" rx="1.5" fill="#111" transform="rotate(24 199 19)"/><rect x="222" y="74" width="6" height="11" rx="1.5" fill="#111" transform="rotate(58 225 79)"/>
+  <rect x="344" y="18" width="6" height="11" rx="1.5" fill="#fff" transform="rotate(-18 347 23)"/><rect x="330" y="80" width="6" height="11" rx="1.5" fill="#111" transform="rotate(40 333 85)"/>
+  <rect x="248" y="10" width="6" height="11" rx="1.5" fill="#fff" transform="rotate(70 251 15)"/><circle cx="282" cy="90" r="3" fill="#fff"/><circle cx="306" cy="12" r="3" fill="#111"/></svg>`;
+const BK_COURT = `<svg width="366" height="104" viewBox="0 0 366 104" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+  <circle cx="366" cy="52" r="74"/><circle cx="366" cy="52" r="30"/><path d="M266-4v112M188-4c40 22 40 90 0 112"/></svg>`;
 function hiCard(c) {
-  const verb = c.bday ? '🎉 Greet' : '👋 Welcome', done = c.bday ? '🎉 Greeted' : '👋 Welcomed';
-  const faces = p => p.faces.length ? `<span class="bkh__faces" aria-hidden="true">${p.faces.map(f => appAvatar({ playerId: f.pid, initials: f.initials, ring: f.ring, photoUrl: f.photo })).join('')}</span>` : '';
-  const say = c.bday ? 'Say thanks 🙏' : 'Say hi 👋', sayText = c.bday ? 'Thank you, barkada! 🙏' : 'Hi everyone! 👋';
-  // A row's button is one word (the name keeps the room); the one-person card's has the emoji.
-  const word = p => (p.mine ? done : verb).replace(/^\S+ /, '');
-  const action = (p, big) => p.me
-    ? `<button type="button" class="btn bkc__btn bkh__say${big ? '' : ' bkh__sm'}" data-bk-say="${esc(sayText)}">${big ? say : say.replace(/ \S+$/, '')}</button>`
-    : `<button type="button" class="btn bkc__btn${p.mine ? ' is-on' : ''}${big ? '' : ' bkh__sm'}" data-bk-hi="${esc(c.id)}" data-bk-to="${esc(p.pid)}" aria-pressed="${p.mine}" aria-label="${esc(word(p))} ${esc(p.full)}">${big ? (p.mine ? done : verb) : word(p)}</button>`;
-  const line = p => p.me ? `<span class="bkh__you">${p.n ? `${p.n} ${c.bday ? 'greeted' : 'welcomed'} you` : 'That’s you'}</span>` : `<span>${esc(p.line)}</span>`;
-  const kicker = c.bday ? (c.people.length === 1 ? 'Birthday today' : `${c.people.length} birthdays today`) : (c.people.length === 1 ? 'New in the barkada' : `${c.people.length} new in the barkada`);
-  const head = `<div class="bkh__band" aria-hidden="true"></div><span class="bkc__k bkh__k"><span class="bkh__e" aria-hidden="true">${c.bday ? '🎂' : '👋'}</span> ${kicker}</span>`;
-  if (c.people.length === 1) {
-    const p = c.people[0];
-    return `<div class="bkc bkh${c.bday ? ' bkh--bday' : ''}" data-bk-hi-card="${esc(c.id)}">${head}
-      <div class="bkh__who"><span class="bkh__av">${appAvatar({ playerId: p.pid, initials: p.initials, ring: p.ring, photoUrl: p.photo })}</span><span class="bkh__t"><b>${esc(p.full)}</b>${p.sub ? `<small>${esc(p.sub)}</small>` : ''}</span></div>
-      ${p.intro ? `<p class="bkh__intro">“${esc(p.intro)}”</p>` : ''}
-      <div class="bkh__foot">${action(p, true)}<span class="bkh__by">${faces(p)}${line(p)}</span></div>
+  const many = c.people.length > 1, first = c.people[0];
+  const say = c.bday ? 'Say thanks' : 'Say hi', sayText = c.bday ? 'Thank you, barkada! 🙏' : 'Hi everyone! 👋';
+  const verb = c.bday ? 'Greet' : 'Welcome', done = c.bday ? 'Greeted' : 'Welcomed';
+  const av = (p, cls, photo) => `<span class="${cls}">${appAvatar({ playerId: p.pid, initials: p.initials, ring: p.ring, photoUrl: photo || p.photo })}</span>`;
+  const title = many ? (c.bday ? `${c.people.length} birthdays<br>today` : `${c.people.length} new in<br>the barkada`)
+    : first.me ? (c.bday ? `It’s your<br>day, ${esc(first.first)}` : `Welcome,<br>${esc(first.first)}`)
+    : (c.bday ? 'Happy<br>birthday' : 'New in<br>the barkada');
+  const num = c.bday && !many && first.number ? `<span class="bkh__num num" aria-hidden="true">${esc(first.number)}</span>` : '';
+  const ban = `<div class="bkh__ban">${c.bday ? BK_CONFETTI : BK_COURT}${num}<span class="bkh__k">${title}</span></div>`;
+  // The room's pinned strip reads these while there's someone left to greet today.
+  const pin = !c.open ? '' : ` data-bk-hi-open="${esc(many ? (c.bday ? `${c.people.length} birthdays today` : `${c.people.length} new in the barkada`) : c.bday ? `${first.first}’s birthday today` : `${first.first} is new in the barkada`)}" data-bk-hi-act="${verb}" data-bk-hi-kind="${c.bday ? 'bday' : 'welcome'}"`;
+  const open = `<div class="bkc bkh${c.bday ? ' bkh--bday' : ''}${many ? ' bkh--multi' : ''}" data-bk-hi-card="${esc(c.id)}"${pin}>`;
+  const wish = (w, hide) => `<div class="bkh__w"${hide ? ' hidden' : ''}>${av(w, 'bkh__wav')}<span class="bkh__wt">${esc(w.text)}</span></div>`;
+
+  if (!many) {
+    const p = first;
+    let wishes, act;
+    if (p.me) {
+      wishes = p.wishes.length ? `<div class="bkh__wishes">${p.wishes.map((w, i) => wish(w, i > 2)).join('')}${p.wishes.length > 3 ? `<button type="button" class="bkh__seeall" data-bk-hi-more>See all ${p.wishes.length}</button>` : ''}</div>` : '';
+      act = `<button type="button" class="btn bkc__btn bkh__wide" data-bk-say="${esc(sayText)}">${say}</button>`;
+    } else {
+      const rest = p.n - p.wishes.length;
+      const more = p.wishes.length ? (rest > 0 ? `<span class="bkh__more">and ${rest} more</span>` : '') : `<span class="bkh__more bkh__more--solo">${p.n ? `${esc(p.line)} ${c.bday ? 'greeted' : 'welcomed'} ${esc(p.first)}` : 'Be the first'}</span>`;
+      wishes = `<div class="bkh__wishes">${p.wishes.map(w => wish(w)).join('')}${more}</div>`;
+      act = p.mine
+        ? `<div class="bkh__sent"><span class="bkh__ok">${icons.check}${p.myWish ? 'Sent to' : `You ${c.bday ? 'greeted' : 'welcomed'}`} ${esc(p.first)}</span><button type="button" class="bkh__undo" data-bk-hi="${esc(c.id)}" data-bk-to="${esc(p.pid)}">Undo</button></div>`
+        : `<div class="bkh__chips">${p.chips.map((t, i) => `<button type="button" class="bkh__chip${i ? '' : ' is-main'}" data-bk-hi="${esc(c.id)}" data-bk-to="${esc(p.pid)}" data-bk-wish="${i}">${esc(t)}</button>`).join('')}</div>`;
+    }
+    const name = p.me ? (p.n ? `${p.n} ${p.n === 1 ? 'wish' : 'wishes'} so far` : 'No wishes yet') : esc(p.full);
+    const sub = p.me ? (p.n ? 'From the barkada' : 'They’ll show up here') : esc(p.sub);
+    return `${open}${ban}${av(p, 'bkh__av', p.bigPhoto)}
+      <div class="bkh__body"><div class="bkh__id"><b>${name}</b>${sub ? `<small>${sub}</small>` : ''}</div>
+      ${p.intro ? `<p class="bkh__intro">“${esc(p.intro)}”</p>` : ''}${wishes}${act}</div>
     </div>`;
   }
+
+  const action = p => p.me
+    ? `<button type="button" class="btn bkc__btn bkh__sm" data-bk-say="${esc(sayText)}">${say}</button>`
+    : `<button type="button" class="btn bkc__btn bkh__sm${p.mine ? ' is-on' : ''}" data-bk-hi="${esc(c.id)}" data-bk-to="${esc(p.pid)}" aria-pressed="${p.mine}" aria-label="${p.mine ? done : verb} ${esc(p.full)}">${p.mine ? done : verb}</button>`;
+  const line = p => p.me ? `<span class="bkh__you">${p.n ? `${p.n} ${c.bday ? 'greeted' : 'welcomed'} you` : 'That’s you'}</span>` : esc(p.line);
   const left = c.people.filter(p => !p.me && !p.mine).length;
-  return `<div class="bkc bkh${c.bday ? ' bkh--bday' : ''}" data-bk-hi-card="${esc(c.id)}">${head}
-    <div class="bkh__rows">${c.people.map(p => `<div class="bkh__row"><span class="bkh__av bkh__av--sm">${appAvatar({ playerId: p.pid, initials: p.initials, ring: p.ring, photoUrl: p.photo })}</span>
-      <span class="bkh__t"><b>${esc(p.full)}</b><small>${p.me || p.n ? '' : p.sub ? esc(p.sub) + ' · ' : ''}${p.me ? line(p) : esc(p.line)}</small></span>${action(p, false)}</div>`).join('')}</div>
-    ${left > 1 ? `<button type="button" class="btn bkc__btn bkh__all" data-bk-hi="${esc(c.id)}" data-bk-to="all">${c.bday ? '🎉 Greet' : '👋 Welcome'} all ${c.people.filter(p => !p.me).length}</button>` : ''}
+  return `${open}${ban}
+    <div class="bkh__body"><div class="bkh__rows">${c.people.map(p => `<div class="bkh__row">${av(p, 'bkh__sav')}
+      <span class="bkh__t"><b>${esc(p.full)}</b><small>${p.me || p.n || c.bday ? '' : p.sub ? esc(p.sub) + ' · ' : ''}${line(p)}</small></span>${action(p)}</div>`).join('')}</div>
+    ${left > 1 ? `<button type="button" class="btn bkc__btn bkh__wide" data-bk-hi="${esc(c.id)}" data-bk-to="all">${verb} all ${c.people.filter(p => !p.me).length}</button>` : ''}</div>
   </div>`;
 }
 export function bkCardHtml(c) {

@@ -6234,7 +6234,7 @@ import { appScorerGuidePage, appScorerChapterPage, PW_GUIDE_OPTS } from './views
 import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
-import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince, addBarkadahanGreeting, getBarkadahanGreeting, getBarkadahanGreetedIds, getBarkadahanGreets, toggleBarkadahanGreet, addBarkadahanGreets, hasOpenedBarkadahan } from './lib/portal-db.js';
+import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince, addBarkadahanGreeting, getBarkadahanGreeting, getBarkadahanGreetedIds, getBarkadahanGreets, toggleBarkadahanGreet, addBarkadahanGreets, setBarkadahanWish, hasOpenedBarkadahan } from './lib/portal-db.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
@@ -7839,12 +7839,18 @@ function bkHiItems() {
     chip: due.welcome.length === 1 ? `👋 ${bkFirst(due.welcome[0])} is new` : `👋 ${due.welcome.length} new`, act: 'Welcome' });
   return out;
 }
+// One-tap wishes (2026-11-06, mockup claude.ai/artifact/EGHV2KRqup1RMc6BVag6L9 board D): set
+// lines only, so the card needs no moderation; the message box is there for anything longer.
+const BK_WISHES = { bday: ['HBD, {n}!', 'Happy birthday, pare', 'Have a great one'], welcome: ['Welcome, {n}!', 'Kita-kits sa court', 'Glad you’re here'] };
+const bkWishes = (kind, pid) => BK_WISHES[kind === 'bday' ? 'bday' : 'welcome'].map(w => w.replace('{n}', bkFirst(pid)));
 // The card for the player looking.
 function bkHiCard(gid, me) {
   const g = getBarkadahanGreeting(gid);
   if (!g) return { gone: true };
   const greets = getBarkadahanGreets(gid), bday = g.kind === 'bday';
   const teams = getAllTeams();
+  // Birthdays: "3 seasons · 41 games" under the name.
+  const lines = bday ? getPlayerSeasonTotalsLite().filter(r => g.playerIds.includes(r.player_id)) : [];
   const people = g.playerIds.map(pid => {
     const p = getPlayerById(pid), who = bkPerson(pid);
     const by = greets.filter(r => r.to_id === pid).map(r => r.player_id);
@@ -7854,10 +7860,18 @@ function bkHiCard(gid, me) {
     const reg = !bday ? getRegistrationByPlayerId(pid) : null;
     const tn = teams.find(t => t.id === p?.team_id)?.name || '', team = tn.charAt(0) + tn.slice(1).toLowerCase();
     let pos = ''; try { pos = (JSON.parse(p?.positions || '[]') || [])[0] || ''; } catch {}
-    const sub = bday ? [team].filter(Boolean).join(' · ') : [reg?.approved_at ? `Joined ${manilaFormat(reg.approved_at, { month: 'short', day: 'numeric' })}` : '', pos].filter(Boolean).join(' · ');
-    return { ...who, sub, n: by.length, mine, line, me: pid === me.playerId, faces: by.slice(-3).map(bkPerson), intro: !bday && g.playerIds.length === 1 ? String(p?.writeup || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) : '' };
+    const own = lines.filter(r => r.player_id === pid), seasons = new Set(own.map(r => r.season)).size, games = own.reduce((s, r) => s + (r.games_played || 0), 0);
+    const sub = bday ? [team, seasons && `${seasons} season${seasons === 1 ? '' : 's'}`, games && `${games} game${games === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
+      : [reg?.approved_at ? `Joined ${manilaFormat(reg.approved_at, { month: 'short', day: 'numeric' })}` : '', pos].filter(Boolean).join(' · ');
+    // Newest wish first; the person themselves sees them all.
+    const wishes = greets.filter(r => r.to_id === pid && r.wish).reverse().map(r => ({ ...bkPerson(r.player_id), text: r.wish }));
+    return { ...who, first: bkFirst(pid), number: String(p?.number ?? '').trim(), bigPhoto: playerPhotoUrl(pid, 192), sub, n: by.length, mine, line, me: pid === me.playerId,
+      myWish: greets.find(r => r.to_id === pid && r.player_id === me.playerId)?.wish || '', wishes: wishes.slice(0, pid === me.playerId ? 30 : 3), chips: bkWishes(g.kind, pid),
+      intro: !bday && g.playerIds.length === 1 ? String(p?.writeup || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) : '' };
   });
-  return { kind: 'hi', id: gid, bday, people };
+  // Today's card with someone this player hasn't greeted yet: the room pins a strip for it.
+  const open = g.ymd === manilaTodayStr() && people.some(p => !p.me && !p.mine);
+  return { kind: 'hi', id: gid, bday, people, open };
 }
 app.post('/app/barkadahan/hi/:gid', requireAppData, requireBarkadahan, express.json(), (req, res) => {
   const pid = req.session.playerPlayerId, g = getBarkadahanGreeting(req.params.gid);
@@ -7866,8 +7880,12 @@ app.post('/app/barkadahan/hi/:gid', requireAppData, requireBarkadahan, express.j
   if (getPlayerById(pid)?.banned_at) return res.status(403).json({ error: bkCantPost(pid) });
   const to = String(req.body?.to || '');
   if (to === 'all') addBarkadahanGreets(g.id, g.playerIds.filter(x => x !== pid), pid);
-  else if (g.playerIds.includes(to) && to !== pid) toggleBarkadahanGreet(g.id, to, pid);
-  else return res.status(400).json({ error: 'Can’t greet that one.' });
+  else if (g.playerIds.includes(to) && to !== pid) {
+    // wish: the index of one of the card's set lines; without it, Greet / Undo toggles.
+    const wish = req.body?.wish != null ? bkWishes(g.kind, to)[Number(req.body.wish)] : null;
+    if (req.body?.wish != null && !wish) return res.status(400).json({ error: 'Can’t send that one.' });
+    if (wish) setBarkadahanWish(g.id, to, pid, wish); else toggleBarkadahanGreet(g.id, to, pid);
+  } else return res.status(400).json({ error: 'Can’t greet that one.' });
   bkCardChanged(`hi:${g.id}`);
   res.json({ ok: true, cards: bkCards([`hi:${g.id}`], appMe(req)) });
 });
