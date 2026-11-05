@@ -18,6 +18,8 @@ export const ACTIVITY_LABELS = {
   announced:     { label: 'sent new-game announcement', color: 'text-sky-400' },
   slot_alerted:  { label: 'sent slot-opened alert', color: 'text-sky-400' },
   team_notified: { label: 'told their team', color: 'text-sky-400' },
+  teams_final: { label: 'teams final', color: 'text-sky-400' },
+  teams_reopened: { label: 'teams reopened', color: 'text-sky-400' },
   updated_notified: { label: 'told about a time or court change', color: 'text-sky-400' },
 };
 

@@ -20,14 +20,14 @@ const postBtn = (label, url, { cls = 'btn btn--ghost', body = null, ask = '', do
 // The ⋯ sheet for one player: the same choices as the site's row menu (views/admin/papawis-run.js rosterRow).
 function rowActs(run, s, canManage, full) {
   const base = `/admin/papawis/${run.id}/signups/${s.id}`;
-  const canNotify = canManage && !s.guest && s.status === 'confirmed' && s.team && s.reminded && !s.teamNotified;
+  const canNotify = canManage && s.final && !s.guest && s.status === 'confirmed' && s.team && !s.teamNotified;
   return [
     canManage && s.status === 'waitlist' ? (full
       ? { label: 'Move to confirmed', sub: 'Confirmed is full', disabled: true }
       : { label: 'Move to confirmed', sub: 'Takes the next open slot', post: `${base}/status`, body: { status: 'confirmed' }, done: `${s.name} moved to confirmed` }) : null,
     canManage && s.status === 'confirmed' ? { label: 'Move to the waitlist', sub: 'Frees their slot for the next person', post: `${base}/status`, body: { status: 'waitlist' }, done: `${s.name} moved to the waitlist` } : null,
-    canNotify ? { label: `Email their team (${sideLabel(s.team)})`, sub: 'Their reminder went out before teams were set', post: `${base}/notify-team`, done: `${s.name} emailed their team`,
-      ask: `Email ${s.name} that they're on Team ${sideLabel(s.team)}? This is a one-time catch-up email.` } : null,
+    canNotify ? { label: `Email their team (${sideLabel(s.team)})`, sub: 'They haven\'t been told yet', post: `${base}/notify-team`, done: `${s.name} emailed their team`,
+      ask: `Email ${s.name} that they're on Team ${sideLabel(s.team)}? One time only, with a bell.` } : null,
     // On the day or after (also once closed out): who didn't show, who came and sat out.
     // Both stay on the bill.
     ...(s.canMark ? [
@@ -131,33 +131,39 @@ function teamsTab(run, d) {
   if (!run.open) return '<div class="empty">Teams are only for upcoming runs.</div>';
   if (run.locked) return '<div class="empty">The roster is locked. Unlock it to change teams.</div>';
   if (!teams.all.length) return '<div class="empty">No confirmed players yet. Teams are built from the confirmed list.</div>';
-  const seen = d.teamsSent ? '<p class="msg msg--ok">Players can see the teams.</p>'
-    : '<p class="msg adm-msg">Players don\'t see teams yet. They show once their team email goes out with the reminder.</p>';
+  const final = d.teamsFinal;
+  const seen = final ? '<p class="msg msg--ok">Teams are final. Players can see them.</p>'
+    : `<p class="msg adm-msg">Players don't see teams until they're final. That happens by itself ${esc(d.teamsAuto)}, or when you finalize.</p>`;
   if (!teams.built) {
     return `${seen}<div class="empty">Teams aren't built yet. They're balanced by position and height; guests are placed randomly.</div>
       <div class="adm-actions">${postBtn('Build teams', `/admin/papawis/${run.id}/teams`, { cls: 'btn', method: 'GET', done: 'Teams built',
-        ask: 'Build the teams now? Each confirmed player gets a bell with their team.' })}</div>`;
+        ask: 'Build the teams now? Players aren\'t told yet. They hear once the teams are final.' })}</div>`;
   }
-  const item = r => `<div class="cell adm-row" data-id="${esc(r.id)}">
-      <button type="button" class="adm-grip" aria-label="Drag ${esc(r.name)} to the other side">${grip}</button>
+  const item = r => `<div class="cell adm-row${final ? ' adm-row--plain' : ''}" data-id="${esc(r.id)}">
+      ${final ? '' : `<button type="button" class="adm-grip" aria-label="Drag ${esc(r.name)} to the other side">${grip}</button>`}
       <span class="cell__t">${esc(r.name)}${r.guest ? ' <span class="muted">guest</span>' : ''}<small>${esc(r.meta || ' ')}</small></span>
     </div>`;
   const col = (key, label) => {
     const rows = teams.all.filter(r => r.team === key);
     return `<div class="adm-team"><div class="adm-team__h"><span class="pw-shirt pw-shirt--${key}" aria-hidden="true"></span>${label}<b class="num">${rows.length}</b></div>
-      <div class="group adm-list" data-adm-team="${key}" data-adm-dnd>${rows.map(item).join('') || '<div class="cell adm-empty">Drop players here</div>'}</div></div>`;
+      <div class="group adm-list"${final ? '' : ` data-adm-team="${key}" data-adm-dnd`}>${rows.map(item).join('') || `<div class="cell adm-empty">${final ? 'Nobody yet' : 'Drop players here'}</div>`}</div></div>`;
   };
   const none = teams.all.filter(r => r.team !== 'light' && r.team !== 'dark');
   return `${seen}
-    ${none.length ? `<p class="msg msg--warn">${plural(none.length, 'player')} not on a side yet. Drag them into Light or Dark.</p>` : ''}
+    ${none.length && !final ? `<p class="msg msg--warn">${plural(none.length, 'player')} not on a side yet. Drag them across, or finalize to place them on the smaller side.</p>` : ''}
     <div class="adm-teams">${col('light', 'Light')}${col('dark', 'Dark')}</div>
-    ${none.length ? `<div class="sec adm-sec">No side yet</div><div class="group adm-list" data-adm-team="" data-adm-dnd>${none.map(item).join('')}</div>` : ''}
-    <p class="foot-note">Drag the grip across to swap sides. Saves as you drop.</p>
+    ${none.length ? `<div class="sec adm-sec">No side yet</div><div class="group adm-list"${final ? '' : ' data-adm-team="" data-adm-dnd'}>${none.map(item).join('')}</div>` : ''}
+    ${final ? `<p class="foot-note">Locked.${d.superAdmin ? '' : ' Only a super admin can reopen them.'}</p>
     <div class="adm-actions">
-      ${d.catchUp ? postBtn(`Email their teams · ${d.catchUp}`, `/admin/papawis/${run.id}/notify-teams`, { cls: 'btn', done: 'Team emails sent',
-        ask: `Email ${plural(d.catchUp, 'player')} their team? Each gets their side and teammates, plus a bell. Anyone already emailed their team is skipped.` }) : ''}
+      ${d.catchUp ? postBtn(`Place and notify · ${d.catchUp}`, `/admin/papawis/${run.id}/teams/finalize`, { cls: 'btn', done: 'Done',
+        ask: `Place and notify ${plural(d.catchUp, 'player')}? Anyone with no side goes on the smaller side, and each gets their team by email and bell. Nobody else moves or hears again.` }) : ''}
+      ${d.superAdmin ? postBtn('Reopen teams', `/admin/papawis/${run.id}/teams/reopen`, { cls: 'btn btn--outline', done: 'Teams reopened', ask: 'Reopen the teams? Admins can move players again. They go final again by themselves in 6 hours, and only players who moved are told.' }) : ''}
+    </div>` : `<p class="foot-note">Drag the grip across to swap sides. Saves as you drop.</p>
+    <div class="adm-actions">
+      ${postBtn('Finalize and notify', `/admin/papawis/${run.id}/teams/finalize`, { cls: 'btn', done: 'Teams are final',
+        ask: 'Finalize these teams? The sides lock, and every player gets their team by email and bell and can see the teams.' })}
       ${postBtn('Reshuffle', `/admin/papawis/${run.id}/teams/reshuffle`, { cls: 'btn btn--outline', done: 'Teams reshuffled', ask: 'Reshuffle both sides from scratch? Any swaps you made by hand are lost.' })}
-    </div>`;
+    </div>`}`;
 }
 
 // Before close-out: the amounts, as the site's Money tab (views/admin/papawis-run.js). The
@@ -291,7 +297,7 @@ export function appAdminPapawisPage({ missing = false, run = null, tab = 'roster
     run.open && run.locked ? '<p class="msg msg--warn">The roster is locked: sign-ups and team changes are frozen.</p>' : '',
     run.open && run.scheduled ? `<p class="msg adm-msg">Sign-ups open ${esc(run.opensLabel)}. Until then players see the run as Scheduled.</p>` : '',
     d.canAnnounce && !run.scheduled && current !== 'messages' ? `<p class="msg msg--warn adm-msg-act"><span>Not announced yet. Regulars haven't heard about this run.</span><a class="adm-pill" href="/app/admin/papawis/${esc(run.id)}?tab=messages">Announce</a></p>` : '',
-    d.catchUp && current === 'roster' ? `<p class="msg msg--warn adm-msg-act"><span>${plural(d.catchUp, 'player')} got their reminder before teams were set.</span><a class="adm-pill" href="/app/admin/papawis/${esc(run.id)}?tab=teams">Teams</a></p>` : '',
+    d.catchUp && current === 'roster' ? `<p class="msg msg--warn adm-msg-act"><span>${plural(d.catchUp, 'player')} new since the teams went final.</span><a class="adm-pill" href="/app/admin/papawis/${esc(run.id)}?tab=teams">Teams</a></p>` : '',
   ].join('');
   const body = { roster: () => rosterTab(run, d), teams: () => teamsTab(run, d), money: () => moneyTab(run, d), messages: () => messagesTab(run, d), activity: () => activityTab(d) }[current]();
   // The cover: Change cover opens the photo picker; on a computer or iPad, drop a photo on it.

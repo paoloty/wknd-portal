@@ -1316,6 +1316,7 @@ html.tk-lock { overflow: hidden; }
 .adm-team__h { display: flex; align-items: center; gap: 8px; padding: 0 4px 8px; font-size: 15px; font-weight: 600; }
 .adm-team__h b { margin-left: auto; color: var(--muted); font-size: 15px; }
 .adm-teams .adm-row { padding-left: 0; padding-right: 10px; }
+.adm-teams .adm-row--plain { padding-left: 14px; }
 
 .cell__t small.adm-due { color: var(--danger); }
 .cell__t small.adm-amber { color: var(--amber-text); }

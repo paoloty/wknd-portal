@@ -55,7 +55,7 @@ import { registerPage } from './views/register.js';
 import { frontOfficePage } from './views/front-office.js';
 import { teamsBody } from './views/teams.js';
 import { teamDetailPage } from './views/team-detail.js';
-import { teamColor, displayPlayerName, manilaTodayStr, manilaFormat, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs, papawisTeamsSent, gameTipLabel } from './views/utils.js';
+import { teamColor, displayPlayerName, manilaTodayStr, manilaFormat, manilaHourNow, initials, signupDisplayName, PAYMENT_CATEGORIES, MARKETPLACE_CATEGORY, formatTimeRange, setPhotoVersionResolver, playerPhotoUrl, playerJerseySvg, isPapawisSignupOpenNow, papawisSignupOpensAtMs, papawisTeamsSent, papawisTeamsToNotify, PAPAWIS_TEAMS_FINAL_DAYS, gameTipLabel } from './views/utils.js';
 import {
   upsertShare, getShare, getSlugForEntity, getEntityForSlug, saveSlug,
   getAllFinancials, getAllTransactions, getAllTransactionsBySeason,
@@ -139,7 +139,7 @@ import {
   logShareCardAction, getAllShareCardLog,
   getPapawisGamesForPlayer, getPapawisHistoryForPlayer, getPapawisTotalsForPlayer,
   getPapawisScored, getPapawisScoredList, getPapawisRunLines, getPapawisStatLines, savePapawisScored, getPapawisPotdCount, getPapawisScoredTotals,
-  getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
+  getPapawisConfirmedForTeams, setPapawisSignupTeam, setPapawisTeams, reopenPapawisTeams, reorderPapawisTeam, getPapawisConfirmedCount,
   lockPapawisSignups, unlockPapawisSignups, setPapawisOpenDelay,
   addPapawisCourt, updatePapawisCourt, setPapawisCourtActive, getAllPapawisCourts, getActivePapawisCourts, getPapawisCourtByName,
   getPapawisCourtById, updatePapawisCourtImage, reorderPapawisCourts,
@@ -276,7 +276,7 @@ import { adminPapawisCourtsBody } from './views/admin/papawis-courts.js';
 import { adminPapawisCourtBody } from './views/admin/papawis-court.js';
 import { adminAnalyticsBody } from './views/admin/analytics.js';
 import { buildBalancedTeams, parseHeightCm } from './lib/papawis-teams.js';
-import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, sendPapawisTeamAssignedEmails, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
+import { sendPapawisReminders, sendPapawisCancellationEmails, sendPapawisCompletionEmails, sendPapawisTeamAssignedEmail, finalizePapawisTeams, sendPapawisUpdateEmails } from './lib/papawis-notify.js';
 import {
   announcePapawisGame, queuePapawisSlotAlert, runPapawisBroadcasts, papawisBroadcastState, papawisAnnouncementPreview,
   verifyPapawisUnsubscribe, REGULAR_WINDOW, REGULAR_MIN_GAMES,
@@ -10132,7 +10132,7 @@ function papawisAdminTodo(g, signups = getPapawisSignups(g.id)) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
   const pending = open ? signups.filter(s => s.status === 'pending').length : 0;
   const canAnnounce = open && !locked && !g.announced_at && !(g.announce_send_at && g.announce_send_at > Date.now()) && confirmed.length < g.max_slots;
-  const catchUp = open ? confirmed.filter(s => !s.guest_name && s.team && s.reminder_sent_at && !s.team_notified_at).length : 0;
+  const catchUp = open ? papawisTeamsToNotify(g, confirmed) : 0;
   const unpaid = g.status === 'completed' ? confirmed.filter(s => !s.paid_at).length : 0;
   const closeOut = open && pwDaysUntil(g.date) < 0;
   return { pending, canAnnounce, catchUp, unpaid, closeOut };
@@ -10144,7 +10144,7 @@ function papawisRunTodos(games) {
     const t = papawisAdminTodo(g), name = g.title || 'Papawis', href = tab => `/admin/papawis/${g.id}${tab ? `?tab=${tab}` : ''}`;
     if (t.closeOut) out.push({ title: `${name}: set the final price`, sub: 'It’s been played. Players are charged when you close it out.', href: href('money'), label: 'Close out', hot: true });
     if (t.pending) out.push({ title: `${name}: ${t.pending} deposit${t.pending === 1 ? '' : 's'} to confirm`, sub: 'Their slots are held until you do.', href: href(''), label: 'Review' });
-    if (t.catchUp) out.push({ title: `${name}: ${t.catchUp} team email${t.catchUp === 1 ? '' : 's'} to send`, sub: 'They got their reminder before teams were set.', href: href('teams'), label: 'Open teams' });
+    if (t.catchUp) out.push({ title: `${name}: ${t.catchUp} team email${t.catchUp === 1 ? '' : 's'} to send`, sub: 'New since the teams went final. This also happens on its own within the hour.', href: href('teams'), label: 'Open teams' });
     if (t.canAnnounce && isPapawisSignupOpenNow(g)) out.push({ title: `${name}: not announced yet`, sub: 'Sign-ups are open, but nobody has been told.', href: href('messages'), label: 'Announce' });
   }
   return out;
@@ -10200,7 +10200,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
   const row = s => ({
     id: s.id, status: s.status, name: pwSignupName(s), guest: !!s.guest_name, sponsor: displayPlayerName(s.player_name), playerId: s.player_id,
     team: s.team === 'light' || s.team === 'dark' ? s.team : '', teamName: s.guest_name ? '' : (s.team_name || ''), paid: !!s.paid_at,
-    reminded: !!s.reminder_sent_at, teamNotified: !!s.team_notified_at, face: pwFace(s, teams, ''),
+    final: !!g.teams_final_at, teamNotified: !!s.team_notified_at, face: pwFace(s, teams, ''),
     att: s.status === 'confirmed' ? s.attendance || '' : '', canMark: s.status === 'confirmed' && pwCanMark(g),
     late: s.status === 'confirmed' && pwInLateWindow(g),
   });
@@ -10218,6 +10218,8 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
     confirmedCount: confirmed.length, waitCount: waitlist.length, paidCount: confirmed.filter(s => s.paid).length,
     count: confirmed.length + waitlist.length + pending.length,
     canAnnounce: todo.canAnnounce, catchUp: todo.catchUp, teamsSent: papawisTeamsSent(signups.filter(s => s.status === 'confirmed')), fmt,
+    teamsFinal: !!g.teams_final_at, superAdmin: isSuperAdminReq(req),
+    teamsAuto: pwDaysUntil(g.date) <= PAPAWIS_TEAMS_FINAL_DAYS ? 'within a few hours' : `on ${pwDay(addDaysYmd(g.date, -PAPAWIS_TEAMS_FINAL_DAYS))}, 9 AM`,
     lateDrops: getPapawisLateDrops(g.id).map(d => ({ name: pwSignupName(d), outcome: d.late_outcome, at: d.late_drop_at })),
     players: [], teams: { built: false, all: [] }, activity: [], broadcast: null, messenger: '', calc: null,
   };
@@ -26674,6 +26676,12 @@ function papawisLockCheck(gameId, res) {
   if (game.signups_locked_at) { res.status(400).json({ error: 'Roster is locked. Unlock it first.' }); return null; }
   return game;
 }
+// The same for moving people between sides, which also stops once teams are final.
+function papawisTeamsCheck(gameId, res) {
+  const game = papawisLockCheck(gameId, res);
+  if (game?.teams_final_at) { res.status(400).json({ error: 'Teams are final. A super admin can reopen them.' }); return null; }
+  return game;
+}
 
 app.post('/admin/papawis/:id/lock', requireAuth, (req, res) => {
   const game = getPapawisGame(req.params.id);
@@ -26760,7 +26768,7 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
     currentPath: '/admin/papawis',
     body: adminPapawisRunBody({
       game, signups, players: playersWithTeam, activity, daysLeft, unlinkedByPlayer, reusableByPlayer, courtRate, minDeposit, unconfirmedDepositByPlayer, courts: getActivePapawisCourts(),
-      tab: String(req.query.tab || 'roster'), ver: CSS_VER, lateDrops: getPapawisLateDrops(game.id),
+      tab: String(req.query.tab || 'roster'), ver: CSS_VER, lateDrops: getPapawisLateDrops(game.id), superAdmin: isSuperAdminReq(req),
       teamRoster: req.query.tab === 'teams' ? getPapawisConfirmedForTeams(game.id) : [],
       colorByTeam, colorById: adminTeamColorByPlayer(),
       broadcast: {
@@ -26781,49 +26789,31 @@ app.get('/admin/papawis/:id', requireAuth, (req, res) => {
 app.get('/admin/papawis/:id/teams', requireAuth, (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).send('Not found');
-  if (game.signups_locked_at) return res.redirect(`/admin/papawis/${game.id}`);
-  let roster = getPapawisConfirmedForTeams(req.params.id);
-  if (roster.length && roster.every(r => !r.team)) {
-    setPapawisTeams(buildBalancedTeams(roster));
-    roster = getPapawisConfirmedForTeams(req.params.id);
-    // Only on this first-ever build, not on later manual reshuffles/drag-assigns — those
-    // are the admin still fine-tuning, not the "here's your final team" moment. This is
-    // exactly the parked "confirmed-no-team-yet reminder, then team assigned later, no
-    // follow-up" gap noted in the Papawis notifications memory.
-    roster.forEach(r => {
-      if (!r.player_id || r.guest_name) return;
-      createNotification({
-        playerId: r.player_id,
-        type: 'papawis_team_assigned',
-        title: `Your team is set for ${game.title || 'Papawis'}`,
-        body: `You're on Team ${r.team === 'dark' ? 'Dark' : 'Light'}.`,
-        link: `/papawis#pw-game-${game.id}`,
-      });
-    });
-  }
+  if (game.signups_locked_at || game.teams_final_at) return res.redirect(`/admin/papawis/${game.id}?tab=teams`);
+  const roster = getPapawisConfirmedForTeams(req.params.id);
+  // Building tells nobody: players hear once the teams are final (finalizePapawisTeams).
+  if (roster.length && roster.every(r => !r.team)) setPapawisTeams(buildBalancedTeams(roster));
   // The teams themselves are shown on the run page's Teams tab (admin redesign); this
   // address is now just the deliberate "build teams" step that tab's button links to.
   res.redirect(`/admin/papawis/${game.id}?tab=teams`);
 });
 
 app.post('/admin/papawis/:id/teams/reshuffle', requireAuth, (req, res) => {
-  if (!papawisLockCheck(req.params.id, res)) return;
+  if (!papawisTeamsCheck(req.params.id, res)) return;
   const roster = getPapawisConfirmedForTeams(req.params.id);
   setPapawisTeams(buildBalancedTeams(roster));
   res.json({ ok: true });
 });
 
 app.post('/admin/papawis/:id/teams/assign', requireAuth, express.json(), (req, res) => {
-  if (!papawisLockCheck(req.params.id, res)) return;
+  if (!papawisTeamsCheck(req.params.id, res)) return;
   const { signup_id, team } = req.body;
   const result = setPapawisSignupTeam(signup_id, team);
   if (result.error) return res.status(400).json({ error: 'Could not move.' });
   res.json({ ok: true });
 });
 
-// Manual, exactly-once catch-up email — see sendPapawisTeamAssignedEmail's comment in
-// lib/papawis-notify.js for the gap this covers (reminder already sent with no team,
-// team arranged afterward, nothing re-scans an already-reminded signup automatically).
+// One player's exactly-once team email, if they somehow missed it once teams are final.
 app.post('/admin/papawis/:id/signups/:signupId/notify-team', requireAuth, async (req, res) => {
   const result = await sendPapawisTeamAssignedEmail(req.params.signupId);
   if (result.error === 'not_eligible') return res.status(400).json({ error: 'This signup is not eligible for a team-assigned email (no team, not confirmed, or already sent).' });
@@ -26831,22 +26821,35 @@ app.post('/admin/papawis/:id/signups/:signupId/notify-team', requireAuth, async 
   res.json({ ok: true });
 });
 
-// The bulk version: everyone on the run who's due that catch-up email.
-app.post('/admin/papawis/:id/notify-teams', requireAuth, async (req, res) => {
+// Finalize and notify: locks the sides and tells everyone (lib/papawis-notify.js). Pressing it
+// again after that only places and tells whoever is new.
+app.post('/admin/papawis/:id/teams/finalize', requireAuth, async (req, res) => {
   const game = getPapawisGame(req.params.id);
   if (!game) return res.status(404).json({ error: 'Not found.' });
-  if (game.status !== 'open') return res.status(400).json({ error: 'This run is over.' });
   try {
-    const { sent, errors } = await sendPapawisTeamAssignedEmails(game.id);
-    if (errors.length) console.error(`[papawis] team emails: ${sent} sent, ${errors.length} failed`, errors);
-    res.json({ ok: true, sent, errors, message: `Team emails sent to ${sent} ${sent === 1 ? 'player' : 'players'}${errors.length ? ` (${errors.length} failed)` : ''}.` });
+    const result = await finalizePapawisTeams(game.id, { by: currentAdminActor(req).name });
+    if (result.error) return res.status(400).json({ error: { not_open: 'This run is over.', too_few: 'Teams need at least 2 confirmed players.', locked_no_teams: 'The roster is locked. Unlock it to build teams.' }[result.error] });
+    if (result.errors.length) console.error(`[papawis] team emails: ${result.sent} sent, ${result.errors.length} failed`, result.errors);
+    res.json({ ok: true, sent: result.sent, errors: result.errors, message: `Teams are final. ${result.sent} ${result.sent === 1 ? 'player' : 'players'} told${result.errors.length ? ` (${result.errors.length} email${result.errors.length === 1 ? '' : 's'} failed)` : ''}.` });
   } catch (e) {
-    res.status(500).json({ error: 'Failed to send.' });
+    console.error('[papawis] finalize failed:', e.message);
+    res.status(500).json({ error: 'Failed to finalize.' });
   }
 });
 
+// Only a super admin can undo it. Teams stay visible; anyone then moved is told again when
+// they go final, and nobody else is.
+app.post('/admin/papawis/:id/teams/reopen', requireAuth, (req, res) => {
+  if (!isSuperAdminReq(req)) return res.status(403).json({ error: 'Only a super admin can reopen teams.' });
+  const game = papawisLockCheck(req.params.id, res);
+  if (!game) return;
+  reopenPapawisTeams(game.id);
+  logPapawisActivity({ gameId: game.id, eventType: 'teams_reopened', notes: currentAdminActor(req).name });
+  res.json({ ok: true, message: 'Teams reopened. They go final again by themselves in 6 hours, or when you finalize.' });
+});
+
 app.post('/admin/papawis/:id/teams/reorder', requireAuth, express.json(), (req, res) => {
-  if (!papawisLockCheck(req.params.id, res)) return;
+  if (!papawisTeamsCheck(req.params.id, res)) return;
   const team = req.body.team === 'dark' ? 'dark' : 'light';
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string') : [];
   reorderPapawisTeam(req.params.id, team, ids);
@@ -28447,7 +28450,22 @@ function runPapawisReminders() {
   if (!isPapawisSendWindowOpen()) return;
   sendPapawisReminders(PAPAWIS_CUTOFF_DAYS).then(({ sent, errors }) => {
     if (sent || errors.length) console.log(`[papawis] reminders: ${sent} sent, ${errors.length} failed`);
-  }).catch(e => console.error('[papawis] reminder scan failed:', e.message));
+  }).catch(e => console.error('[papawis] reminder scan failed:', e.message))
+    .then(finalizeDuePapawisTeams);
+}
+// Inside the last days before a run: teams go final on their own, and on a run that's already
+// final anyone new is placed and told. A reopened run gets some hours to be rearranged first.
+const PAPAWIS_REOPEN_HOLD_MS = 6 * 3600e3;
+async function finalizeDuePapawisTeams() {
+  for (const g of getPapawisGames()) {
+    const days = pwDaysUntil(g.date);
+    if (g.status !== 'open' || days < 0 || days > PAPAWIS_TEAMS_FINAL_DAYS) continue;
+    if (g.teams_reopened_at && Date.now() - g.teams_reopened_at < PAPAWIS_REOPEN_HOLD_MS) continue;
+    try {
+      const r = await finalizePapawisTeams(g.id);
+      if (r.sent || r.errors?.length) console.log(`[papawis] teams: ${r.sent} told, ${r.errors.length} failed`);
+    } catch (e) { console.error('[papawis] finalize failed:', e.message); }
+  }
 }
 runPapawisReminders();
 setInterval(runPapawisReminders, PAPAWIS_REMINDER_CHECK_MS);

@@ -4,7 +4,7 @@
 // Settings. Browser behaviour (drag to reorder, the price calculator, copy for Messenger,
 // cover upload): public/admin-papawis.js. Every POST goes to the same routes as before.
 import { escHtml } from '../layout.js';
-import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow, depositPresets, manilaTodayStr } from '../utils.js';
+import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow, depositPresets, manilaTodayStr, papawisTeamsToNotify, PAPAWIS_TEAMS_FINAL_DAYS } from '../utils.js';
 import { CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from '../papawis.js';
 import { parseHeightCm } from '../../lib/papawis-teams.js';
 import {
@@ -80,7 +80,7 @@ const LATE_LABEL = { open: ['Slot open', 'amber'], replaced: ['Slot taken', 'gre
 function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPaid, unlinkedByPlayer, reusableByPlayer }) {
   const name = signupName(s);
   const late = inLateWindow(game, s);
-  const canNotify = canManage && !s.guest_name && s.status === 'confirmed' && s.team && s.reminder_sent_at && !s.team_notified_at;
+  const canNotify = canManage && game.teams_final_at && !s.guest_name && s.status === 'confirmed' && s.team && !s.team_notified_at;
   const att = s.status === 'confirmed' ? { noshow: 'No-show', dnp: 'DNP' }[s.attendance] || '' : '';
   const sub = s.guest_name ? `Guest of ${displayPlayerName(s.player_name)}` : (s.team_name || '');
   const canMark = game.status !== 'cancelled' && String(game.date) <= manilaTodayStr();
@@ -92,7 +92,7 @@ function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPa
   }
   const menuItems = [
     canNotify ? { label: `Email their team (${teamLabel(s.team)})`, post: `/admin/papawis/${game.id}/signups/${s.id}/notify-team`, done: `${name} emailed their team.`,
-      confirm: { title: `Email ${name} that they’re on Team ${teamLabel(s.team)}?`, body: 'Their reminder went out before teams were set. This is a one-time catch-up email.', send: 'Send email' } } : null,
+      confirm: { title: `Email ${name} that they’re on Team ${teamLabel(s.team)}?`, body: 'One time only, with a bell.', send: 'Send email' } } : null,
     canManage && s.status === 'confirmed' ? { label: 'Move to the waitlist', post: `/admin/papawis/${game.id}/signups/${s.id}/status`, body: { status: 'waitlist' }, done: `${name} moved to the waitlist.` } : null,
     // No-show / DNP, on the day or after (also closed out): both still charged.
     ...(canMark && s.status === 'confirmed' ? [
@@ -185,38 +185,45 @@ function addPlayerPanel(game, players, colorById) {
   });
 }
 
-function teamsTab(game, roster, { isOpen, isLocked, teamsVisible, confirmedCount }) {
+function teamsTab(game, roster, { isOpen, isLocked, daysLeft, superAdmin }) {
   if (!isOpen) return emptyState({ title: 'Teams are only for upcoming runs', sub: 'This run is over.' });
   if (isLocked) return emptyState({ title: 'The roster is locked', sub: 'Unlock it from the top of the page to change teams.' });
   if (!roster.length) return emptyState({ title: 'No confirmed players yet', sub: 'Teams are built from the confirmed list.' });
   const hasTeams = roster.some(r => r.team);
-  const visibility = teamsVisible ? banner('ok', 'Players can see the teams now.')
-    : banner('info', `Players can’t see the teams yet: the run needs to be full (${confirmedCount}/${game.max_slots}) and within ${PAPAWIS_CUTOFF_DAYS} days.`);
+  const final = !!game.teams_final_at;
+  const auto = daysLeft <= PAPAWIS_TEAMS_FINAL_DAYS ? 'within a few hours' : `on ${fmtDate(new Date(Date.parse(`${game.date}T00:00:00Z`) - PAPAWIS_TEAMS_FINAL_DAYS * 86400000).toISOString().slice(0, 10))}, 9 AM`;
+  const visibility = final ? banner('ok', 'Teams are final. Players can see them.')
+    : banner('info', `Players can’t see the teams until they’re final. That happens by itself ${auto}, or when you finalize.`);
   if (!hasTeams) {
     return `${visibility}${emptyState({ title: 'Teams aren’t built yet', sub: 'Balanced by position and height; guests are placed randomly.' })}
-      <form method="get" action="/admin/papawis/${attr(game.id)}/teams" data-confirm data-confirm-title="Build the teams now?" data-confirm-body="Each confirmed player gets a bell notification with their team." data-confirm-send="Build teams" style="display:flex;justify-content:center">${button('Build teams', { kind: 'primary', type: 'submit' })}</form>`;
+      <form method="get" action="/admin/papawis/${attr(game.id)}/teams" data-confirm data-confirm-title="Build the teams now?" data-confirm-body="Players aren’t told yet. They hear once the teams are final." data-confirm-send="Build teams" style="display:flex;justify-content:center">${button('Build teams', { kind: 'primary', type: 'submit' })}</form>`;
   }
   const item = r => {
     let pos = []; try { pos = JSON.parse(r.positions || '[]'); } catch { /* none */ }
     const h = parseHeightCm(r.height);
     const name = r.guest_name || displayPlayerName(r.player_name);
-    return `<li class="pw-team__row" draggable="true" data-id="${attr(r.id)}" data-team="${attr(r.team || '')}">
-      <span class="pw-handle" aria-hidden="true">⠿</span>
+    return `<li class="pw-team__row"${final ? '' : ` draggable="true" data-id="${attr(r.id)}" data-team="${attr(r.team || '')}"`}>
+      ${final ? '' : '<span class="pw-handle" aria-hidden="true">⠿</span>'}
       <span class="aui-cell__stack"><span class="aui-cell__title">${escHtml(name)}${r.guest_name ? ' <span class="aui-muted">guest</span>' : ''}</span><span class="aui-cell__sub">${escHtml([pos.join('/'), h ? `${Math.round(h)} cm` : ''].filter(Boolean).join(' · ') || '—')}</span></span>
     </li>`;
   };
   const col = (team, label) => {
     const rows = roster.filter(r => r.team === team);
     return `<section class="pw-team pw-team--${team}"><header class="pw-team__head"><span class="pw-side pw-side--${team}">${label}</span><span class="aui-num">${rows.length}</span></header>
-      <ul class="pw-team__list" data-team-list="${team}">${rows.map(item).join('') || '<li class="pw-team__empty">Drop players here</li>'}</ul></section>`;
+      <ul class="pw-team__list"${final ? '' : ` data-team-list="${team}"`}>${rows.map(item).join('') || `<li class="pw-team__empty">${final ? 'Nobody yet' : 'Drop players here'}</li>`}</ul></section>`;
   };
   const unassigned = roster.filter(r => r.team !== 'light' && r.team !== 'dark');
+  const actions = final
+    ? `<span class="aui-muted">${superAdmin ? 'Locked. Reopen only if something has to change.' : 'Locked. Only a super admin can reopen them.'}</span>
+      ${superAdmin ? postBtn('Reopen teams', `/admin/papawis/${game.id}/teams/reopen`, { done: 'Teams reopened.', confirm: { title: 'Reopen the teams?', body: 'Admins can move players again. They go final again by themselves in 6 hours, and only players who moved are told.', send: 'Reopen' } }) : ''}`
+    : `<span class="aui-muted">Drag a player across to swap sides. Saves as you drop.</span>
+      <span class="aui-row-end">${postBtn('Reshuffle', `/admin/papawis/${game.id}/teams/reshuffle`, { done: 'Teams reshuffled.', confirm: { title: 'Reshuffle both sides from scratch?', body: 'Any swaps you made by hand are lost.', send: 'Reshuffle' } })}
+      ${postBtn('Finalize and notify', `/admin/papawis/${game.id}/teams/finalize`, { kind: 'primary', done: 'Teams are final.', confirm: { title: 'Finalize these teams?', body: 'The sides lock, and every player gets their team by email and bell and can see the teams.', send: 'Finalize and notify' } })}</span>`;
   return `${visibility}
-    <div class="aui-row-between"><span class="aui-muted">Drag a player across to swap sides. Saves as you drop.</span>
-      ${postBtn('Reshuffle', `/admin/papawis/${game.id}/teams/reshuffle`, { done: 'Teams reshuffled.', confirm: { title: 'Reshuffle both sides from scratch?', body: 'Any swaps you made by hand are lost.', send: 'Reshuffle' } })}</div>
-    ${unassigned.length ? banner('warn', `${plural(unassigned.length, 'player')} not on a side yet. Drag them into Light or Dark.`) : ''}
+    <div class="aui-row-between">${actions}</div>
+    ${unassigned.length && !final ? banner('warn', `${plural(unassigned.length, 'player')} not on a side yet. Drag them into Light or Dark, or finalize to place them on the smaller side.`) : ''}
     <div class="pw-teams">${col('light', 'Light')}${col('dark', 'Dark')}</div>
-    ${unassigned.length ? `<section class="pw-team"><header class="pw-team__head"><span>Unassigned</span></header><ul class="pw-team__list" data-team-list="">${unassigned.map(item).join('')}</ul></section>` : ''}`;
+    ${unassigned.length ? `<section class="pw-team"><header class="pw-team__head"><span>${final ? 'New, no side yet' : 'Unassigned'}</span></header><ul class="pw-team__list"${final ? '' : ' data-team-list=""'}>${unassigned.map(item).join('')}</ul></section>` : ''}`;
 }
 
 function moneyTab(game, { confirmed, isOpen, isCompleted, courtRate, unlinkedByPlayer, reusableByPlayer, colorByTeam }) {
@@ -358,7 +365,7 @@ function settingsTab(game, courts, { isOpen }) {
 
 export function adminPapawisRunBody({
   game, signups = [], players = [], activity = [], daysLeft = Infinity, unlinkedByPlayer = {}, reusableByPlayer = {}, courtRate = null,
-  minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [], broadcast = null, tab = 'roster', teamRoster = [], colorByTeam = {}, colorById = {}, ver = '',
+  minDeposit = null, unconfirmedDepositByPlayer = {}, courts = [], broadcast = null, superAdmin = false, tab = 'roster', teamRoster = [], colorByTeam = {}, colorById = {}, ver = '',
   lateDrops = [],
 }) {
   const confirmed = signups.filter(s => s.status === 'confirmed');
@@ -373,9 +380,9 @@ export function adminPapawisRunBody({
   const time = formatTimeRange(game.start_time, game.end_time) || game.time_label || '';
   const sub = [fmtDate(game.date), time, game.location || 'No court set', isCompleted ? `${peso(game.price_per_player)} per player` : ''].filter(Boolean).join(' · ');
 
-  // Confirmed players whose reminder went out before teams were set (same rule as the row's
-  // "Email their team"). Works while locked too: emailing doesn't change the roster.
-  const teamCatchUp = isOpen ? confirmed.filter(s => !s.guest_name && s.team && s.reminder_sent_at && !s.team_notified_at).length : 0;
+  // Teams are final and someone new still has to be placed or told. Works while locked too,
+  // where it only tells: nothing on a locked roster moves.
+  const teamCatchUp = isOpen ? papawisTeamsToNotify(game, confirmed) : 0;
   const canAnnounce =isOpen && !isLocked && !game.announced_at && !(game.announce_send_at && game.announce_send_at > Date.now()) && !isConfirmedFull;
   const actions = [
     button('View on site ↗', { kind: 'ghost', href: `/papawis#pw-game-${game.id}`, attrs: 'target="_blank" rel="noopener"' }),
@@ -387,9 +394,9 @@ export function adminPapawisRunBody({
     isOpen && isLocked ? banner('warn', 'The roster is locked: sign-ups and team changes are frozen.') : '',
     scheduled ? banner('info', `Sign-ups open ${fmtDay(addDays(game.date, -game.open_days_before))}, 8:00 AM. Until then the run shows as Scheduled.`) : '',
     canAnnounce && !scheduled && tab !== 'messages' ? banner('warn', 'Not announced yet: regulars haven’t heard about this run.', `<a class="aui-link" href="/admin/papawis/${attr(game.id)}?tab=messages">Open messages</a>`) : '',
-    teamCatchUp && (tab === 'roster' || tab === 'teams') ? banner('info', `${plural(teamCatchUp, 'player')} got their reminder before teams were set.`,
-      postBtn(`Email their teams (${teamCatchUp})`, `/admin/papawis/${game.id}/notify-teams`, { kind: 'primary', done: 'Team emails sent.',
-        confirm: { title: `Email ${plural(teamCatchUp, 'player')} their team?`, body: 'Each gets their side (Light or Dark) and teammates, plus a bell. One-time: anyone already emailed their team is skipped.', send: 'Send emails' } })) : '',
+    teamCatchUp && (tab === 'roster' || tab === 'teams') ? banner('info', `${plural(teamCatchUp, 'player')} new since the teams went final. This happens on its own within the hour.`,
+      postBtn(`Place and notify (${teamCatchUp})`, `/admin/papawis/${game.id}/teams/finalize`, { kind: 'primary', done: 'Done.',
+        confirm: { title: `Place and notify ${plural(teamCatchUp, 'player')}?`, body: 'Anyone with no side goes on the smaller side, and each gets their team by email and bell. Nobody else moves or hears again.', send: 'Place and notify' } })) : '',
     isOpen && pending.length && tab !== 'roster' ? banner('warn', `${plural(pending.length, 'player')} waiting on a deposit.`, `<a class="aui-link" href="/admin/papawis/${attr(game.id)}">Open roster</a>`) : '',
   ].join('');
 
@@ -424,7 +431,7 @@ export function adminPapawisRunBody({
       lateList(lateDrops),
       canManage ? addPlayerPanel(game, players, colorById) : '',
     ].join(''),
-    teams: () => teamsTab(game, teamRoster, { isOpen, isLocked, confirmedCount: confirmed.length, teamsVisible: isConfirmedFull && daysLeft <= PAPAWIS_CUTOFF_DAYS }),
+    teams: () => teamsTab(game, teamRoster, { isOpen, isLocked, daysLeft, superAdmin }),
     // Late drops no one took were charged at close-out: on the bill with everyone who played.
     money: () => moneyTab(game, { confirmed: isCompleted ? [...confirmed, ...lateDrops.filter(d => d.late_outcome === 'charged')] : confirmed, isOpen, isCompleted, courtRate, unlinkedByPlayer, reusableByPlayer, colorByTeam }),
     messages: () => messagesTab(game, broadcast, { isOpen, isLocked, isCompleted }),

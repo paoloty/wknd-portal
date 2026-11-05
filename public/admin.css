@@ -3428,3 +3428,5 @@ select.aui-input { padding-left: 9px; }
 .afn-paid { padding-top: 12px; border-top: 1px solid var(--aui-line); }
 .afn-desc { white-space: normal; max-width: 48ch; }
 .afn-examples { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: var(--text); }
+/* Papawis teams */
+.aui-row-end { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

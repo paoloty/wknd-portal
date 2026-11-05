@@ -116,6 +116,18 @@ export function papawisTeamsSent(signups) {
   return signups.some(s => s.status === 'confirmed' && s.team_notified_at && (s.team === 'light' || s.team === 'dark'));
 }
 
+// Teams go final by themselves this many days before the run (server.js runPapawisReminders,
+// lib/papawis-notify.js finalizePapawisTeams): built if nobody has, then locked and sent.
+export const PAPAWIS_TEAMS_FINAL_DAYS = 2;
+
+// After teams are final: confirmed players with no side yet (a late join or a replacement)
+// plus anyone on a side who hasn't been told. Finalizing again places and tells them.
+export function papawisTeamsToNotify(game, confirmed) {
+  if (!game.teams_final_at) return 0;
+  const onSide = s => s.team === 'light' || s.team === 'dark';
+  return confirmed.filter(s => (onSide(s) ? !s.guest_name && !s.team_notified_at : !game.signups_locked_at)).length;
+}
+
 export function isPapawisSignupOpenNow(game) {
   const opensAt = papawisSignupOpensAtMs(game);
   return opensAt === null || Date.now() >= opensAt;
