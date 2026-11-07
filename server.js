@@ -5856,7 +5856,14 @@ async function loadPhotoVariant(url, w) {
   }
   if (!src) { photoCacheSet(key, { failedAt: Date.now() }); return { failedAt: Date.now(), ver }; }
   let out = { buf: src, type };
-  if (w) {
+  if (w === 'tile') {
+    // The scorer's player cards: a grey, levelled portrait crop, so every face sits at the
+    // same shade under the card's opacity and the phone needs no image filters.
+    try {
+      const buf = await sharp(src).rotate().resize(128, 160, { fit: 'cover', position: 'north' }).grayscale().normalise().webp({ quality: 70 }).toBuffer();
+      out = { buf, type: 'image/webp' };
+    } catch {}
+  } else if (w) {
     try {
       const buf = await sharp(src).rotate().resize(w, w, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 80 }).toBuffer();
       out = { buf, type: 'image/webp' };
@@ -5869,9 +5876,9 @@ async function loadPhotoVariant(url, w) {
 
 // widths: the ?w= values this route accepts (anything else gets the original).
 // maxAge: browser cache seconds for un-versioned URLs before revalidating via ETag.
-async function sendPlayerPhoto(req, res, url, { widths = PHOTO_WIDTHS, maxAge = 300, onFail = null } = {}) {
+async function sendPlayerPhoto(req, res, url, { widths = PHOTO_WIDTHS, maxAge = 300, onFail = null, tile = false } = {}) {
   if (!url) return res.status(404).end();
-  const w = widths.has(Number(req.query.w)) ? Number(req.query.w) : 0;
+  const w = tile && req.query.tile === '1' ? 'tile' : widths.has(Number(req.query.w)) ? Number(req.query.w) : 0;
   const photo = await loadPhotoVariant(url, w);
   if (photo.failedAt) return onFail ? onFail() : res.status(502).end();
   const etag = `"${photo.ver}-${w}"`;
@@ -5907,6 +5914,8 @@ function playerPhotoVersion(id) {
   return _photoVers.map.get(String(id)) || '';
 }
 setPhotoVersionResolver(playerPhotoVersion);
+// The scorer card's faded face (sendPlayerPhoto tile), only for players with a real photo.
+const playerFaceUrl = id => { const v = playerPhotoVersion(id); return v ? `/api/player/${encodeURIComponent(String(id))}/photo?tile=1&v=${v}` : ''; };
 
 // No photo yet: their team's jersey with their number (views/utils.js playerJerseySvg).
 // Also stands in, briefly cached, when a stored photo can't be loaded (e.g. the admin app
@@ -5937,6 +5946,10 @@ app.get('/api/player/:id/cover', async (req, res) => {
 app.get('/api/player/:id/photo', async (req, res) => {
   const row = getPlayerPhoto(req.params.id);
   if (!row) return res.status(404).end();
+  // ?tile=1: the scorer card's faded face; no photo (or a failed one) is a 404, not the jersey.
+  // The 404 is cached a while: the scorer redraws its cards on every tap.
+  const noFace = () => res.set('Cache-Control', 'public, max-age=600').status(404).end();
+  if (req.query.tile === '1') return row.picture_url ? sendPlayerPhoto(req, res, row.picture_url, { tile: true, onFail: noFace }) : noFace();
   if (row.picture_url) return sendPlayerPhoto(req, res, row.picture_url, { onFail: () => sendPlayerJersey(req, res, { failed: true }) });
   sendPlayerJersey(req, res);
 });
@@ -7305,7 +7318,7 @@ function scoreBundle(game, pass = 'live') {
     id: tid, name, color: teamColorById(teams, tid),
     players: all.filter(p => p.team_id === tid && p.status !== 'inactive')
       // short: the whole surname ("DEL ROSARIO", not "ROSARIO") for the scorer's tiles
-      .map(p => { const n = displayPlayerName(p.name || ''); const raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), photo: playerPhotoUrl(p.id, 160), number: String(p.number ?? ''), pos: Array.isArray(p.positions) ? p.positions : [] }; })
+      .map(p => { const n = displayPlayerName(p.name || ''); const raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), photo: playerPhotoUrl(p.id, 160), face: playerFaceUrl(p.id), number: String(p.number ?? ''), pos: Array.isArray(p.positions) ? p.positions : [] }; })
       .sort((x, y) => (String(x.number ?? '') === '' ? 999 : Number(x.number)) - (String(y.number ?? '') === '' ? 999 : Number(y.number)) || x.name.localeCompare(y.name)),
   });
   return {
@@ -8433,7 +8446,7 @@ const PW_SCORE_TYPES = new Set([...SCORE_TYPES, 'move', 'setup']);
 const PW_LINE_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk', 'turnover', 'pf', 'fg2m', 'fg2m_miss', 'fg3m', 'fg3m_miss', 'fg4m', 'fg4m_miss', 'ftm', 'ft_miss'];
 // A guest added at the court: 'x' + an id made on the phone, declared in the game's setup play.
 const PW_GUEST_ID = /^x[A-Za-z0-9_-]{4,40}$/;
-const pwPerson = p => { const n = displayPlayerName(p.name || ''), raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), photo: playerPhotoUrl(p.id, 160), number: String(p.number ?? '') }; };
+const pwPerson = p => { const n = displayPlayerName(p.name || ''), raw = String(p.name || ''); return { id: p.id, name: n, short: raw.includes(',') ? raw.split(',')[0].trim().toUpperCase() : (n.split(' ').slice(-1)[0] || n), photo: playerPhotoUrl(p.id, 160), face: playerFaceUrl(p.id), number: String(p.number ?? '') }; };
 const pwGuest = (id, name) => { const n = String(name || '').trim().slice(0, 40) || 'Guest'; return { id, name: n, short: (n.split(/\s+/)[0] || n).toUpperCase(), number: '', guest: true }; };
 // Everyone confirmed for the run, guests too ('g<signupId>'), on their side: a = Light, b = Dark.
 // Nobody on a side yet: onto the smaller one.
@@ -8454,6 +8467,23 @@ function pwScoreRoster(run) {
   for (const p of people) if (p.side !== 'light' && p.side !== 'dark') (sides.a.length <= sides.b.length ? sides.a : sides.b).push(p);
   for (const t of ['a', 'b']) sides[t] = sides[t].map(({ side, ...p }) => p);
   return sides;
+}
+// Two people in a run with the same surname (Troy and Jean Paul BRINGAS, Paolo 2026-11-07): the
+// scorer's tiles say T. BRINGAS and JP BRINGAS, or the whole first name if the initials match too.
+function pwUniqueShorts(people) {
+  const by = {};
+  for (const p of people) if (!p.guest) (by[p.short] ||= []).push(p);
+  for (const [last, group] of Object.entries(by)) {
+    if (group.length < 2) continue;
+    const first = p => String(p.name || '').replace(new RegExp(`\\s*${last.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), '').trim();
+    const ini = p => first(p).split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase()).join('');
+    const inis = group.map(ini);
+    for (const [i, p] of group.entries()) {
+      const mine = inis[i];
+      p.short = mine && inis.filter(x => x === mine).length === 1 ? `${mine.length === 1 ? `${mine}.` : mine} ${last}` : `${first(p).toUpperCase() || last} ${first(p) ? last : ''}`.trim();
+    }
+  }
+  return people;
 }
 // The run's waitlist, in order, as the scorer shows people (guests of waitlisted players left out:
 // they have no profile to score to).
@@ -8541,6 +8571,7 @@ function pwScoreBundle(run) {
   // The waitlist, for a no-show's place (Paolo, 2026-11-07): offered at setup and in the team
   // menu, until a game names them. Finishing the run confirms whoever played (pwConfirmWaitlisted).
   const waitlist = pwWaitlisted(run).filter(p => !people[p.id]);
+  pwUniqueShorts([...sides.a, ...sides.b, ...extra, ...waitlist]);
   return {
     game: { id, date: run.date, tip: run.start_time || '', type: 'papawis' },
     fourPoint: four, status: sg.status, rules: PW_SCORE_RULES, opensAt: sg.status === 'live' ? 0 : pwScoreOpensAt(run),

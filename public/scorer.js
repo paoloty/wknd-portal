@@ -152,7 +152,7 @@ export async function mount(el) {
     everyone.push(p); homeSides[id] = t; byId[id] = { ...p, team: t };
     return p;
   };
-  const guestPerson = (id, name) => { const n = String(name || '').trim().slice(0, 40) || 'Guest'; return { id, name: n, short: (n.split(/s+/)[0] || n).toUpperCase(), number: '', guest: true }; };
+  const guestPerson = (id, name) => { const n = String(name || '').trim().slice(0, 40) || 'Guest'; return { id, name: n, short: (n.split(/\s+/)[0] || n).toUpperCase(), number: '', guest: true }; };
   const learn = e => {
     // Someone from the waitlist a setup or a move brought in (the phone's copy of the run may be
     // from before they joined): back among everyone, so their tile and name show.
@@ -336,7 +336,7 @@ export async function mount(el) {
     { t: 'A rebound: tap a player, then REB.', done: e => e.type === 'reb' },
     { t: 'An assist: tap who passed, then AST.', done: e => e.type === 'ast' },
     { t: 'Made a mistake? Tap Undo on the last play.', done: e => e.type === 'void' },
-    { t: () => { const id = switcher(); return `⇄ ${id ? short(id) : 'A player'} just switched to Dark. It happens every run. Tap ⇄, then ${id ? short(id) : 'them'} (or hold their tile, then Move to Dark). Their points so far stay with Light.`; }, done: e => e.type === 'move' },
+    { t: () => { const id = switcher(); return `⇄ ${id ? short(id) : 'A player'} just switched to Dark. It happens every run. Tap ⇄, then ${id ? short(id) : 'them'} (or hold their card, then Move to Dark). Their points so far stay with Light.`; }, done: e => e.type === 'move' },
     { t: '⇄ Check the move: they’re under Dark now (on the bench if Dark already has five: tap them there). Tap them, then 2PT. It counts for Dark.', done: e => (e.type === 'shot' || e.type === 'ft') && e.made && movedNow().has(e.player) },
     { t: 'End the game: let the clock run out or tap ••• → End, then Game over.', done: e => e.type === 'period_end' && !!e.final },
     { t: '⇄ Start Game 2. Its setup starts with the sides as they finished: ⇄ beside a name switches someone before the tip.', done: e => e.type === 'setup' && Number(e.game) >= 2 },
@@ -773,7 +773,7 @@ export async function mount(el) {
   const menu = (q, opts, act, def) => {
     const one = ([id, label]) => ({ id, label, def: id === def });
     const groups = opts.some(o => o.group) ? opts.map(g => ({ group: g.group, opts: g.items.map(one) })) : null;
-    ui.ask = { kind: 'menu', q, groups, opts: groups ? groups.flatMap(g => g.opts) : opts.map(one), act }; ui.peek = null; paint();
+    ui.ask = { kind: 'menu', q, groups, opts: groups ? groups.flatMap(g => g.opts) : opts.map(one), act, opened: Date.now() }; ui.peek = null; paint();
   };
 
   // What each button does on a tap, and on a hold.
@@ -799,13 +799,14 @@ export async function mount(el) {
   // Timeout first (it lived beside the tiles until a mis-tap cost one: Paolo, 2026-10-26).
   // Papawis: no timeouts or coaches; Basic has no turnovers either. Players: move one over, or
   // bring in a late arrival.
-  const teamMenu = t => menu(team[t].name, [
-    ...(G.timeouts.allowance ? [{ group: 'Timeout', items: [[G.timeouts.left[t] > 0 ? 'timeout' : 'wait:timeout', G.timeouts.left[t] > 0 ? `Call timeout · ${G.timeouts.left[t]} left` : 'No timeouts left']] }] : []),
-    ...(basic() ? [] : [{ group: 'Turnover', items: [['to', 'Team'], ['shot clock', 'Shot clock'], ['3 seconds', '3s'], ['5 seconds', '5s'], ['8 seconds', '8s']] }]),
-    ...(pw ? [] : [{ group: 'Technical', items: [['coach T', 'Coach'], ['bench T', 'Bench']] }]),
-    ...(pw ? [{ group: 'Players', items: [['pw-in', `Move someone to ${team[t].name}…`], ...(lateFor().length ? [['pw-late', 'A late arrival…']] : []), ...(waitlistLeft().length ? [['pw-wl', 'From the waitlist…']] : [])] }] : []),
-    { group: 'Lineup', items: [['dnp', 'DNP…']] }],
-  k => (k === 'timeout' ? timeout(t) : k === 'dnp' ? dnpMenu(t) : k === 'pw-in' ? moveInMenu(t) : k === 'pw-late' ? lateMenu(t) : k === 'pw-wl' ? waitlistMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
+  // Drawn as its own panel (teamMenuPanel, mockup claude.ai/artifact/WKKACWBCvUedbpkhXJmZ2k):
+  // Timeout as a wide amber-outlined button, the team turnovers as tiles, technicals red-outlined,
+  // Papawis's player moves as icon rows. Sub sits in the panel's header.
+  const teamMenu = t => {
+    ui.ask = { kind: 'menu', tm: t, q: team[t].name, opts: [], opened: Date.now(),
+      act: k => (k === 'timeout' ? timeout(t) : k === 'subq' ? subMenu(t) : k === 'dnp' ? dnpMenu(t) : k === 'pw-in' ? moveInMenu(t) : k === 'pw-late' ? lateMenu(t) : k === 'pw-wl' ? waitlistMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })) };
+    ui.peek = null; paint();
+  };
   // Papawis: a player switches sides (a `move` play; his points so far stay with the old side).
   function movePlayer(id, to) {
     if (!byId[id] || (to !== 'a' && to !== 'b')) return;
@@ -1107,14 +1108,25 @@ export async function mount(el) {
       <div class="sc-tm__r"><button type="button" class="sc-tm__s" data-hold="score" aria-label="${esc(team[t].name)} ${G.score[t]}. Hold for the score by quarter"><span class="dot" style="--c:${esc(team[t].color)}"></span><span class="num">${G.score[t]}</span></button>${dots(t)}</div>
       ${pips(t)}
     </div>`;
-  // Name size: long names shrink a little, then wrap; shared numbers get a bigger name. No
-  // number on file: a dash holds the number's place and the name stays at the bottom, like
-  // everyone else's (Paolo, 2026-10-26).
-  const nameSize = p => {
-    const L = (p.short || '').length || 1;
-    if (p.number && shared.has(p.id)) return 13;
-    return Math.max(L >= 8 ? 9.5 : 10, Math.min(11, Math.round((58 / (L * 0.62)) * 2) / 2));
+  // The name strip's size: long surnames a step smaller; fitNames() shrinks any that still
+  // don't fit.
+  const nameSize = p => { const L = (p.short || '').length || 1; return L > 9 ? 12 : L > 7 ? 13.5 : 15; };
+  // Face cards (Paolo, 2026-11-07, mockup claude.ai/artifact/WKKACWBCvUedbpkhXJmZ2k): the side's
+  // colour frames the card (2px border) and fills the name strip. Papawis: the Light / Dark
+  // shirts; a league game: the team colour (the app's token, so the light theme gets its darker
+  // White), the strip's text dark or white by how light the colour is.
+  const TEAM_TOKENS = ['white', 'blue', 'maroon', 'black'];
+  const inkOn = c => {
+    const m = /^#([0-9a-f]{6})$/i.exec(String(c || '').trim()); if (!m) return '#0a0e16';
+    const n = parseInt(m[1], 16), L = (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+    return L > 0.45 ? '#0a0e16' : '#fff';
   };
+  const sideLook = t => {
+    if (pw) return team[t].id === 'dark' ? '--c:var(--shirt-edge);--sb:var(--shirt-dark);--si:#e7eaf0' : '--c:var(--sc-light-edge);--sb:var(--shirt-light);--si:#0a0e16';
+    const c = String(team[t].color || ''), key = String(team[t].name || '').toLowerCase(), v = TEAM_TOKENS.includes(key) ? `var(--team-${key}, ${c})` : c;
+    return `--c:${v};--sb:${v};--si:${inkOn(c)}`;
+  };
+  const initialsOf = p => String(p.name || p.short || '').split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
   // The players an open follow-up is waiting on (set at the top of every paint).
   let ansIds = null;
   const tile = id => {
@@ -1123,10 +1135,14 @@ export async function mount(el) {
     const p = byId[id], L = G.players[id] || {}, pf = L.pf || 0, tr = trouble(pf), hit = ui.flash && ui.flash.pid === id && Date.now() - ui.flash.at < 900;
     const benchSel = ui.sel && byId[ui.sel] && byId[ui.sel].team === p.team && !onCourt(p.team, ui.sel);
     const ans = ansIds ? (ansIds.has(id) ? 'is-ans' : 'is-dim') : '';
-    const cls = ['sc-p', ui.sel === id ? 'on' : '', ans, tr === 'd' ? 'is-d' : tr === 'w' ? 'is-w' : '', shared.has(id) ? 'is-dup' : '', benchSel ? 'swap' : '',
+    const cls = ['sc-p', pw ? 'sc-p--pw' : '', p.guest ? 'is-guest' : '', p.face ? 'has-face' : '', team[p.team].id === 'dark' && pw ? 'sc-p--dk' : '', ui.sel === id ? 'on' : '', ans, shared.has(id) ? 'is-dup' : '', benchSel ? 'swap' : '',
       hit ? `ring ${ui.flash.tone} b${ui.flashN % 2} r${ui.flashN % 2}` : ''].filter(Boolean).join(' ');
-    return `<button type="button" class="${cls}" style="--c:${esc(team[p.team].color)};--fs:${nameSize(p)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(short(id))}, ${pf} foul${pf === 1 ? '' : 's'}${ans === 'is-ans' ? `. Tap to answer ${esc(ui.ask.q)}` : benchSel ? `. Tap to sub ${esc(short(ui.sel))} on for them` : ''}. Hold for their line">
-      <b class="sc-p__no num${p.number ? '' : ' is-none'}" aria-hidden="true">${p.number ? esc(p.number) : '–'}</b>${pf ? `<em class="sc-p__pf num${tr ? ' ' + tr : ''}" aria-hidden="true">${pf}F</em>` : ''}<span class="sc-p__nm">${esc(p.short)}</span><i class="sc-p__sw" aria-hidden="true">${SWAP}</i>${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
+    // The face and strip sit in their own clipped layer, so the ring and the floating +2 can
+    // still reach outside the card. Papawis: no numbers or fouls (initials stand in for a missing
+    // photo); a league game: the number over a fainter photo, the fouls in the corner.
+    const mid = pw ? `<b class="sc-p__ini num" aria-hidden="true">${esc(initialsOf(p))}</b>` : `<b class="sc-p__no num${p.number ? '' : ' is-none'}" aria-hidden="true">${p.number ? esc(p.number) : '–'}</b>`;
+    return `<button type="button" class="${cls}" style="${sideLook(p.team)};--fs:${nameSize(p)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(short(id))}${p.guest ? ', guest' : ''}${pw ? '' : `, ${pf} foul${pf === 1 ? '' : 's'}`}${ans === 'is-ans' ? `. Tap to answer ${esc(ui.ask.q)}` : benchSel ? `. Tap to sub ${esc(short(ui.sel))} on for them` : ''}. Hold for their line">
+      <span class="sc-p__ph" aria-hidden="true">${p.face ? `<img class="sc-p__img" src="${esc(p.face)}" alt="" decoding="async" onerror="this.parentNode.parentNode.classList.remove('has-face');this.remove()">` : ''}${mid}<span class="sc-p__nm">${esc(p.short)}</span></span>${pf && !pw ? `<em class="sc-p__pf num${tr ? ' ' + tr : ''}" aria-hidden="true">${pf}F</em>` : ''}<i class="sc-p__sw" aria-hidden="true">${SWAP}</i>${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
   };
   // The latest play by a team (for the folded side with two scorers)
   const lastOf = t => { for (let i = G.rows.length - 1; i >= 0; i--) if (G.rows[i].team === t) return G.rows[i]; return null; };
@@ -1185,6 +1201,33 @@ export async function mount(el) {
     const p = byId[id];
     return `<button type="button" class="sc-opt${on ? ' on' : ''}${teamTop ? ' sc-opt--team' : ''}"${teamTop ? ` style="--c:${esc(team[p.team].color)}"` : ''} ${attrs}="${esc(id)}" aria-pressed="${on}">${p.number ? `<b class="num">${esc(p.number)}</b>` : ''}<span>${esc(p.short)}</span></button>`;
   };
+  // The team menu (teamMenu): every choice is a data-ask, so answer() runs it like any menu.
+  const TM_ICON = {
+    move: '<path d="M7 4l-4 4 4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
+    late: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+    wait: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+    dnp: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.2-3.4 3.8-5 7-5s5.8 1.6 7 5M4 4l16 16"/>',
+    timeout: '<path d="M8 4v16M16 4v16"/>',
+  };
+  const CHEV_R = '<svg class="sc-tmn__go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+  const tmIcon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TM_ICON[k]}</svg>`;
+  const TM_TOS = [['to', 'TO', 'OTHER', 'Team turnover'], ['shot clock', '24', 'SHOT CLOCK', 'Shot clock violation'], ['3 seconds', '3s', 'LANE', '3 seconds'], ['5 seconds', '5s', 'INBOUND', '5 seconds'], ['8 seconds', '8s', 'BACKCOURT', '8 seconds']];
+  function teamMenuPanel(t) {
+    const nm = team[t].name, left = G.timeouts.left[t], n = G.timeouts.allowance, wl = waitlistLeft().length;
+    const label = s => `<span class="sc-tmn__l">${s}</span>`;
+    const timeoutBtn = n ? `<button type="button" class="sc-tmn__to" data-ask="${left > 0 ? 'timeout' : 'wait:timeout'}"${left > 0 ? '' : ' disabled'}>${tmIcon('timeout')}<span class="sc-tmn__tt"><b>${left > 0 ? 'Call timeout' : 'No timeouts left'}</b><small>${left > 0 ? `${left} left · stops the clock` : 'All used'}</small></span><span class="sc-dots sc-tmn__dots" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<i class="${i < left ? 'on' : ''}"></i>`).join('')}</span></button>` : '';
+    const tos = basic() ? '' : `<div class="sc-tmn__g">${label('Team turnover')}<div class="sc-tmn__tos">${TM_TOS.map(([k, big, small, aria]) => `<button type="button" data-ask="${esc(k)}" aria-label="${esc(aria)}"><b class="num">${big}</b><small class="num">${small}</small></button>`).join('')}</div></div>`;
+    const row = (k, icon, title, sub, count = 0) => `<button type="button" class="sc-tmn__row" data-ask="${k}"><span class="sc-tmn__ic">${tmIcon(icon)}</span><span class="sc-tmn__tt"><b>${esc(title)}</b><small>${esc(sub)}</small></span><span class="sc-q__sp"></span>${count ? `<span class="sc-tmn__n num">${count}</span>` : ''}${CHEV_R}</button>`;
+    const players = pw ? `<div class="sc-tmn__g">${label('Players')}${row('pw-in', 'move', `Move someone to ${nm}`, `From ${team[other(t)].name}. Their points so far stay there.`)}${lateFor().length ? row('pw-late', 'late', 'A late arrival', 'Someone marked not here who came') : ''}${wl ? row('pw-wl', 'wait', 'From the waitlist', 'For a no-show’s place', wl) : ''}</div>` : '';
+    const dnp = `<button type="button" class="sc-tmn__dnp" data-ask="dnp">${tmIcon('dnp')}Didn’t play…</button>`;
+    const tech = pw ? '' : `<div class="sc-tmn__g">${label('Technical')}<div class="sc-tmn__two"><button type="button" class="sc-tmn__tech" data-ask="coach T">Coach</button><button type="button" class="sc-tmn__tech" data-ask="bench T">Bench</button></div></div>`;
+    const noSub = !subBench(t).length;
+    return `<div class="sc-q sc-q--menu sc-tmn" role="group" aria-label="${esc(nm)} team menu">
+      <div class="sc-tmn__h"><span class="sc-tmn__dot" style="${sideLook(t)}"></span><b class="sc-tmn__name">${esc(nm)}</b><span class="sc-q__sp"></span><button type="button" class="sc-tmn__sub" data-ask="subq"${noSub ? ' disabled' : ''}>Sub</button><button type="button" class="sc-tmn__x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
+      ${timeoutBtn}${tos}${players}
+      ${tech ? `<div class="sc-tmn__split">${tech}<div class="sc-tmn__g">${label('Lineup')}${dnp}</div></div>` : `<div class="sc-tmn__g">${label('Lineup')}${dnp}</div>`}
+    </div>`;
+  }
   // A follow-up is one amber line (Paolo, 2026-10-27, mockup claude.ai/artifact/JKT8xX8edkcizKXiio3Vip):
   // the players who can answer light up on the court (tile() / the bench, `ansIds`) and a tap
   // there answers. Only players with no tile on this phone (the other side folded away with two
@@ -1226,6 +1269,7 @@ export async function mount(el) {
       const pts = a.kind === 'blocked' ? [2, 3].map(n => `<button type="button" class="sc-q__chip num${a.pts === n ? ' on' : ''}" data-blkpts="${n}" aria-pressed="${a.pts === n}">${n}PT</button>`).join('') : '';
       return followUp(a, pts);
     }
+    if (a && a.kind === 'menu' && a.tm) return teamMenuPanel(a.tm);
     if (a && a.kind === 'menu') {
       const chips = opts => `<div class="sc-menu">${opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}"${String(o.id).startsWith('wait:') ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>`;
       return `<div class="sc-q sc-q--menu" role="group" aria-label="${esc(a.q)}"><div class="sc-q__h"><b>${esc(a.q)}</b><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
@@ -1457,12 +1501,12 @@ export async function mount(el) {
     a.loose = [...(a.loose || []), ...add];
     paintNow(); fitNames(); tidyAnswers(pass + 1);
   }
-  // A one-word name too wide for its tile (CONTIGNO with a shared number, at the bigger size)
-  // can't wrap: it shrinks until it fits, down to 8px (Paolo, 2026-10-26).
+  // A name too wide for its card's strip shrinks until it fits, down to 8px (Paolo, 2026-10-26).
   function fitNames() {
     for (const el of root.querySelectorAll('.sc-p__nm')) {
       let px = parseFloat(getComputedStyle(el).fontSize);
-      while (el.scrollWidth > el.clientWidth + 1 && px > 8) { px -= 0.5; el.style.fontSize = px + 'px'; }
+      // No slack: the strip is one line, so even a pixel over shows an ellipsis.
+      while (el.scrollWidth > el.clientWidth && px > 8) { px -= 0.5; el.style.fontSize = px + 'px'; }
     }
   }
   root.addEventListener('input', e => {
@@ -1473,7 +1517,10 @@ export async function mount(el) {
   root.addEventListener('change', e => { if (e.target.closest && e.target.closest('[data-fin-score]')) paint(); });
   root.addEventListener('input', e => { if (e.target.matches && e.target.matches('[data-su-guest]') && ui.draft) ui.draft.guestName = e.target.value; });
   // Turning the phone resizes the tiles: fit again from the usual size.
-  window.addEventListener('resize', () => { for (const el of root.querySelectorAll('.sc-p__nm')) el.style.fontSize = ''; fitNames(); });
+  const refit = () => { for (const el of root.querySelectorAll('.sc-p__nm')) el.style.fontSize = ''; fitNames(); };
+  window.addEventListener('resize', refit);
+  // Saira arrives after the first paint and runs wider than the fallback: measure again.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit).catch(() => {});
   // Game over: in the stat buttons' place, what happens next (Paolo, 2026-10-26: nothing did).
   // Every play has to reach the server first. A review: Publish (the site's publish route, the
   // track on this screen) and Back to the game. A scorer at the court: an admin publishes it.
@@ -2060,7 +2107,8 @@ export async function mount(el) {
     const readOnly = /^(sheet|sheet-close|peek-close|fouls|dock-hide|dock-show)$/.test(b.getAttribute('data-act') || '') || b.hasAttribute('data-tab') || b.hasAttribute('data-dtab') || b.hasAttribute('data-steam') || b.hasAttribute('data-filter') || b.hasAttribute('data-ask');
     if (ui.locked && !readOnly) return;
     if (b.hasAttribute('data-pick')) return pickPlayer(b.getAttribute('data-pick'));
-    if (b.hasAttribute('data-ask')) return answer(b.getAttribute('data-ask'));
+    // A menu just opened (a hold, the team's name): the lifting finger's tap isn't a choice.
+    if (b.hasAttribute('data-ask')) return ui.ask && ui.ask.kind === 'menu' && Date.now() - (ui.ask.opened || 0) < 300 ? undefined : answer(b.getAttribute('data-ask'));
     if (b.hasAttribute('data-fix')) return fixMenu(b.getAttribute('data-fix'));
     if (b.hasAttribute('data-tab')) { ui.tab = b.getAttribute('data-tab'); pref.set('wknd-sc-tab', ui.tab); return paint(); }
     if (b.hasAttribute('data-dtab')) { ui.dockTab = b.getAttribute('data-dtab'); pref.set('wknd-sc-dock', ui.dockTab); return paint(); }
@@ -2316,9 +2364,9 @@ export async function mount(el) {
   // Ask the phone to keep this app's saved data (a full or idle phone may otherwise clear it,
   // unsent plays and all).
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
-  // The players' photos (the hold card) come from the app's image cache at the court: fetch
-  // them once now, while there's signal.
-  if (navigator.onLine) setTimeout(() => { for (const p of pw ? everyone : [...team.a.players, ...team.b.players]) if (p.photo) fetch(p.photo, { credentials: 'same-origin' }).catch(() => {}); }, 1500);
+  // The players' photos (the hold card) and faded faces (the cards) come from the app's image
+  // cache at the court: fetch them once now, while there's signal.
+  if (navigator.onLine) setTimeout(() => { for (const p of pw ? [...everyone, ...waitlist] : [...team.a.players, ...team.b.players]) for (const u of [p.photo, p.face]) if (u) fetch(u, { credentials: 'same-origin' }).catch(() => {}); }, 1500);
   if (multi) { listen(); if (ui.lane) lanes(); else lanes({ action: 'claim', want: 'both' }); }
 }
 

@@ -35,6 +35,7 @@
   --team-white: #d7dce5; --team-blue: #4a90e2; --team-maroon: #b0455a; --team-black: #6b7486;
   --pick-white: #d7dce5; --pick-black: #8a94a6; /* pick bar edges: Black runs lighter so it shows on the row */
   --shirt-light: #e7eaf0; --shirt-dark: #262d3b; --shirt-edge: rgba(255,255,255,0.32); /* Papawis Light / Dark swatches */
+  --sc-card: #26304a; --sc-light-edge: var(--shirt-light); --sc-num: #fff; --sc-num-shadow: 0 1px 0 rgba(4,6,10,.7); /* scorer face cards */
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -44,6 +45,7 @@
   --tabbar: rgba(255,255,255,0.86); --field: #ffffff; --field-border: rgba(10,14,22,0.14); --toast-bg: rgba(255,255,255,0.94);
   --win: #047857; --loss: #dc2626; --danger: #dc2626;
   --team-white: #8d97a8; --team-black: #4a5263; --pick-white: #79839a; --pick-black: #4a5263; --shirt-light: #ffffff; --shirt-dark: #2a3140; --shirt-edge: #8a93a4;
+  --sc-card: #dde1e9; --sc-light-edge: #8a93a4; --sc-num: #111827; --sc-num-shadow: 0 1px 0 rgba(255,255,255,.6);
   color-scheme: light;
 }
 @media (prefers-color-scheme: light) {
@@ -54,6 +56,7 @@
     --tabbar: rgba(255,255,255,0.86); --field: #ffffff; --field-border: rgba(10,14,22,0.14); --toast-bg: rgba(255,255,255,0.94);
     --win: #047857; --loss: #dc2626; --danger: #dc2626;
     --team-white: #8d97a8; --team-black: #4a5263; --pick-white: #79839a; --pick-black: #4a5263; --shirt-light: #ffffff; --shirt-dark: #2a3140; --shirt-edge: #8a93a4;
+    --sc-card: #dde1e9; --sc-light-edge: #8a93a4; --sc-num: #111827; --sc-num-shadow: 0 1px 0 rgba(255,255,255,.6);
     color-scheme: light;
   }
 }
@@ -1662,26 +1665,39 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-tb { position: relative; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair); color: var(--text); font-size: 13px; font-weight: 600; line-height: 1; }
 .sc-tb:disabled { opacity: .35; }
 .sc-th__n::before, .sc-tb::before { content: ''; position: absolute; inset: -2px 0; }
-/* Tiles: the jersey number big behind the name (the player cards' look), the foul count in the
-   corner. Foul trouble follows the quarter: watch = brighter number + white count, danger = red. */
+/* Face cards (public/scorer.js tile, CLAUDE.md "Scorer player cards"): flat, a 2px border in the
+   side's colour (--c), the name strip filled with it (--sb, text --si). The face is a grey,
+   levelled picture the server makes (?tile=1), faint so the number and name stay readable:
+   50% in Papawis, 32% under a league number. A guest's border is dashed. Picked: amber border
+   and a light amber wash. The face and strip are clipped in .sc-p__ph, so the ring and the
+   floating +2 still reach outside the card. Foul trouble follows the quarter: watch = white
+   badge text, danger = a red badge. */
 .sc-five { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
-.sc-p { --k: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 54px; padding: 0 0 6px; box-sizing: border-box; border-radius: var(--r-in); background: var(--surface-2); border: 1.5px solid transparent; box-shadow: inset 0 3px 0 var(--c); color: var(--text); container-type: size; touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.sc-p__no { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-bottom: 12%; font: 700 80cqh/1 var(--font-num); letter-spacing: -.02em; color: color-mix(in srgb, var(--text) 38%, transparent); pointer-events: none; }
-.sc-p__nm { position: relative; max-width: calc(100% - 6px); box-sizing: border-box; padding: 2px 4px; border-radius: 5px; background: color-mix(in srgb, var(--bg) 60%, transparent); font-size: calc(var(--fs) * 1px * var(--k)); font-weight: 600; line-height: 1.05; text-align: center; overflow: hidden; }
-.sc-p.is-dup .sc-p__nm { font-weight: 700; }
-.sc-p__no.is-none { color: color-mix(in srgb, var(--text) 18%, transparent); }
-.sc-p__pf { position: absolute; top: 4px; left: 5px; font: 700 12px/1 var(--font-num); font-style: normal; color: var(--muted); }
-.sc-p__pf.w { color: var(--text); }
-.sc-p__pf.d { color: var(--loss); }
-.sc-p.is-w .sc-p__no { color: color-mix(in srgb, var(--text) 70%, transparent); }
-.sc-p.is-d .sc-p__no { color: var(--loss); }
-.sc-p.on { border: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 12%, var(--surface-2)); }
+.sc-p { --k: 1; --rad: var(--r-in); position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 72px; padding: 0; box-sizing: border-box; border-radius: var(--rad); background: var(--sc-card); border: 2px solid var(--c); color: var(--text); container-type: size; touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.sc-p.is-guest { border-style: dashed; }
+.sc-p__ph { position: absolute; inset: 0; overflow: hidden; border-radius: max(0px, calc(var(--rad) - 2px)); pointer-events: none; }
+.sc-p__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 20%; opacity: .32; }
+.sc-p--pw .sc-p__img { opacity: .5; }
+.sc-p.on .sc-p__img { opacity: .47; }
+.sc-p--pw.on .sc-p__img { opacity: .65; }
+.sc-p__no, .sc-p__ini { position: absolute; left: 0; right: 0; top: 0; bottom: var(--strip); display: flex; align-items: center; justify-content: center; font: 800 clamp(16px, 40cqh, 44px)/1 var(--font-num); letter-spacing: -.01em; }
+.sc-p__no { color: var(--sc-num); text-shadow: var(--sc-num-shadow); }
+.sc-p__no.is-none { opacity: .45; }
+.sc-p__ini { color: var(--muted); }
+.sc-p.has-face .sc-p__ini { display: none; }
+.sc-p { --strip: clamp(18px, 30cqh, 26px); }
+.sc-p__nm { position: absolute; left: 0; right: 0; bottom: 0; height: var(--strip); box-sizing: border-box; padding: 0 4px; display: block; background: var(--sb); color: var(--si); font: 700 calc(var(--fs) * 1px * var(--k))/var(--strip) var(--font-num); letter-spacing: .02em; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-p--dk .sc-p__nm { box-shadow: inset 0 1px 0 var(--shirt-edge); }
+.sc-p__pf { position: absolute; top: 5px; left: 5px; display: flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 6px; background: rgba(10,14,22,.75); font: 800 11px/1 var(--font-num); font-style: normal; color: #b4bccb; }
+.sc-p__pf.w { color: #fff; }
+.sc-p__pf.d { background: var(--loss); color: #0a0e16; }
+.sc-p.on { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); background: color-mix(in srgb, var(--amber) 12%, var(--sc-card)); }
 .sc-p__sw { display: none; }
 /* An open spot on a short court (public/scorer.js fillSpot): dashed, "+ Open" in the middle. */
 .sc-p--open { justify-content: center; padding: 0; background: transparent; border: 1.5px dashed var(--line, rgba(128,128,128,.45)); box-shadow: none; color: var(--muted); }
 .sc-p__open { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; line-height: 1; }
 .sc-p__open b { color: var(--amber-text); font-size: 18px; line-height: 1; }
-.sc-p.swap .sc-p__sw { display: flex; position: absolute; top: 4px; right: 4px; color: var(--amber-text); }
+.sc-p.swap .sc-p__sw { display: flex; position: absolute; top: 4px; right: 4px; padding: 2px; border-radius: 6px; background: rgba(10,14,22,.75); color: #f59332; }
 .sc-p__sw svg { width: 14px; height: 14px; }
 /* The whole bench, on the court's 5 columns, number first */
 .sc-bench { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px 5px; }
@@ -1834,6 +1850,45 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-menu button { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--hair); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; }
 .sc-menu button.def { border-color: var(--amber); }
 .sc-menu button:disabled { opacity: .5; }
+/* The team menu (public/scorer.js teamMenuPanel, mockup claude.ai/artifact/WKKACWBCvUedbpkhXJmZ2k):
+   Timeout an amber outline (it stops the clock, so it stands out without shouting), the team
+   turnovers as tiles with a small Saira label, technicals red-outlined like a missed shot,
+   Papawis's player moves as icon rows. */
+.sc-tmn { gap: 12px; padding: 12px; }
+.sc-tmn__h { display: flex; align-items: center; gap: 10px; margin: -2px -2px 0 0; }
+.sc-tmn__dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--sb); box-shadow: inset 0 0 0 1px var(--shirt-edge); }
+.sc-tmn__name { font: 800 20px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; }
+.sc-tmn__sub { display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--hair); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; }
+.sc-tmn__sub:disabled { opacity: .4; }
+.sc-tmn__x { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); color: var(--muted); }
+.sc-tmn__x svg { width: 18px; height: 18px; }
+.sc-tmn__g { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sc-tmn__l { font: 700 11px/1 var(--font-num); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.sc-tmn__tt { display: flex; flex-direction: column; gap: 4px; min-width: 0; text-align: left; }
+.sc-tmn__tt b { font-size: 15px; font-weight: 600; line-height: 1.1; }
+.sc-tmn__tt small { font-size: 12px; line-height: 1.2; color: var(--muted); }
+.sc-tmn__to { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 14px; border-radius: 14px; border: 1.5px solid var(--amber); background: transparent; color: var(--amber-text); }
+.sc-tmn__to > svg { width: 24px; height: 24px; flex: none; }
+.sc-tmn__to .sc-tmn__tt { flex: 1; }
+.sc-tmn__to:disabled { border-color: var(--hair); color: var(--muted); }
+.sc-tmn__dots i { width: 10px; height: 10px; border-color: var(--amber); }
+.sc-tmn__dots i.on { background: var(--amber); }
+.sc-tmn__tos { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.sc-tmn__tos button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 58px; padding: 0 2px; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--text); }
+.sc-tmn__tos b { font: 800 20px/1 var(--font-num); }
+.sc-tmn__tos small { font: 600 11px/1 var(--font-num); letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+/* 320px: BACKCOURT can't fit a fifth of the row, so three then two */
+@media (max-width: 359px) { .sc-tmn__tos { grid-template-columns: repeat(6, minmax(0, 1fr)); } .sc-tmn__tos button { grid-column: span 2; } .sc-tmn__tos button:nth-child(4) { grid-column: 2 / span 2; } }
+.sc-tmn__split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.sc-tmn__two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.sc-tmn__tech { height: 50px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--loss) 45%, transparent); background: transparent; color: var(--loss); font-size: 14px; font-weight: 600; line-height: 1; }
+.sc-tmn__dnp { display: flex; align-items: center; justify-content: center; gap: 8px; height: 50px; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; }
+.sc-tmn__dnp svg { width: 18px; height: 18px; }
+.sc-tmn__row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 12px; border-radius: 14px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--text); }
+.sc-tmn__ic { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: none; border-radius: 10px; background: color-mix(in srgb, var(--text) 7%, var(--surface-2)); }
+.sc-tmn__ic svg { width: 20px; height: 20px; }
+.sc-tmn__n { display: flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 7px; box-sizing: border-box; border-radius: 999px; background: var(--amber); color: #0a0e16; font: 800 14px/1 var(--font-num); }
+.sc-tmn__go { width: 18px; height: 18px; flex: none; color: var(--muted); }
 /* A grouped menu (team menu): a small label per row; beside the chips when there's room */
 .sc-mg { display: grid; gap: 6px; }
 .sc-mg + .sc-mg { margin-top: 4px; }
@@ -1986,6 +2041,9 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 /* Small phones (iPhone SE/8): both fives fit without scrolling. Scoresheet moves to ⋯. */
 @media (max-height: 700px) and (max-width: 899px) {
   .sc-p { height: 46px; }
+  /* Too small for a face to read: the name (and number) only (Fable audit, 2026-11-07). */
+  .sc-p__img { display: none; }
+  .sc-p.has-face .sc-p__ini { display: flex; }
   .sc-bn { height: 36px; }
   .sc-th__n, .sc-tb { min-height: 34px; }
   .sc-st { min-height: 44px; }
@@ -2009,7 +2067,7 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
   .sc-teams { overflow-y: auto; }
   .sc-team { flex: 1 0 auto; }
   .sc-five { flex: 1 0 auto; min-height: 56px; }
-  .sc-p { --k: 1.25; height: auto; min-height: 56px; border-radius: 16px; }
+  .sc-p { --k: 1.25; --rad: 16px; height: auto; min-height: 56px; }
   .sc-p__pf { top: 7px; left: 9px; font-size: 14px; }
   /* The whole bench on one row (8 fit), so the tiles get the height */
   .sc-bench { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
@@ -2286,8 +2344,7 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .sc-q--line > :not(.sc-q__timer) { position: relative; z-index: 1; }
 .sc-q--line .sc-q__opts { padding-right: 10px; }
 .sc-q--line .sc-opt { min-height: 44px; border-color: rgba(26, 18, 5, .25); background: rgba(26, 18, 5, .1); color: #1a1205; }
-.sc-p.is-ans { border: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--surface-2)); }
-.sc-p.is-ans .sc-p__no { color: var(--text); }
+.sc-p.is-ans { border: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--sc-card)); }
 .sc-p.is-dim, .sc-bn.is-dim { opacity: .55; }
 .sc-bn.is-ans { color: var(--amber-text); border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .sc-th__ans { font-size: 12px; font-weight: 600; line-height: 1; color: var(--muted); }
@@ -2886,6 +2943,8 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .is-thumb .sc-up { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 6px 12px 4px; }
 .is-thumb .sc-up > :first-child { margin-top: auto; }
 .is-thumb .sc-teams { flex: none; overflow: visible; gap: 6px; padding: 6px 12px 4px; border-top: 1px solid var(--hair); }
+/* Thumb mode keeps its dock short: the cards stay at their old height there. */
+@media (min-height: 701px) { .is-thumb .sc-p { height: 54px; } }
 .is-thumb.is-roomy .sc-p { height: 62px; }
 .is-thumb .sc-board { padding: 4px 10px; }
 .sc-clkbar { justify-content: space-between; gap: 6px; }

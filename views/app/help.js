@@ -16,7 +16,7 @@ export const SCORER_GUIDE = [
       ['steps', [
         '<b>Open the game</b> a few minutes before tip-off. Scoring opens 2 hours before tip-off (Papawis runs too), or at the start of the day when there’s no time set; until then the game shows greyed in Games to score with when it opens, so nobody starts it by accident. Open it once with signal: it then opens by itself on time, even with no signal.',
         '<b>Pick your side</b> if someone else is scoring too: White, Blue, or Both. With one phone, choose Both.',
-        '<b>Check who’s there.</b> Tap a team’s name → <i>DNP…</i> to mark players who didn’t come, so they don’t show on court.',
+        '<b>Check who’s there.</b> Tap a team’s name → <i>Didn’t play…</i> to mark players who didn’t come, so they don’t show on court.',
         '<b>Start the clock</b> with ▶ at tip-off. If you forget, it starts by itself with the first play.',
       ]],
       ['tip', 'Good to know', 'Every play is saved on your phone first, then sent. The pill at the top right says <i>Saved</i>, <i>Sending</i> or <i>Offline · 3 saved</i>. You can lose signal for a whole quarter and nothing is lost.'],
@@ -27,6 +27,7 @@ export const SCORER_GUIDE = [
     slug: 'play', title: 'Recording a play', blocks: [
       ['p', 'Every play is a player and what they did. Tap the player, then the stat. The other way round works too: tap the stat first (it lights up), then the player.'],
       ['img', 'play.jpg', 'Each team’s five on court on top, the bench below, and the stat buttons at the bottom.'],
+      ['p', 'Each player on court is a card in their team’s colour: their jersey number big over a faint photo, their surname in the strip at the bottom. The card you picked turns amber.'],
       ['dl', [
         ['Green FT · 2PT · 3PT', 'A made free throw or basket. 4PT shows only at courts with a 4-point line.'],
         ['Red FT · 2PT · 3PT', 'A missed one.'],
@@ -34,12 +35,12 @@ export const SCORER_GUIDE = [
         ['TO · FOUL', 'Turnover and foul. Hold them for the other kinds.'],
       ]],
       ['steps', [
-        'The tile flashes what you recorded (<i>+2</i>, <i>MISS</i>, <i>REB</i>) and the play shows in the last-play line.',
+        'The card flashes what you recorded (<i>+2</i>, <i>MISS</i>, <i>REB</i>) and the play shows in the last-play line.',
         'A bench player’s stat brings them on court and asks who went off.',
-        'Hold a player’s tile to see their line so far. Hold a team’s score for the score by quarter.',
+        'Hold a player’s card to see their line so far. Hold a team’s score for the score by quarter.',
         '<b>Scoresheet</b> at the bottom has the box score, every play and the fouls.',
       ]],
-      ['tip', 'Good to know', 'Players with foul trouble show it on their tile: a small foul count, white when it’s worth watching, red when they’re one away.'],
+      ['tip', 'Good to know', 'A player’s fouls show in the top corner of their card (<i>2F</i>): white when it’s worth watching, red when they’re one away. On a small phone the cards drop the photos, so the numbers and names stay big.'],
     ],
   },
   {
@@ -96,6 +97,7 @@ export const SCORER_GUIDE = [
         '<b>Swipe a question down</b> (the amber line, or a menu) to close it.',
         '<b>Tap a team’s name</b> for team plays: timeouts, shot-clock and 3-, 5- and 8-second violations, a coach or bench technical, and DNP.',
       ]],
+      ['img', 'team.jpg', 'A team’s menu: Call timeout (it stops the clock), the team turnovers, a coach or bench technical, Didn’t play… and Sub.'],
     ],
   },
   {
@@ -121,7 +123,7 @@ export const SCORER_GUIDE = [
         '<b>Forgot to sub?</b> Just record the bench player’s play. They come on and the scorer asks who went off.',
         '<b>An open spot:</b> if a team is down to 4 on court (someone fouled out and everyone on the bench had already sat), the court shows <i>Open</i>. Tap a bench player and they go straight on, nobody comes off.',
       ]],
-      ['tip', 'Good to know', 'DNP (didn’t play) is under the team’s name → <i>DNP…</i>. A DNP player’s first play takes them off the DNP list.'],
+      ['tip', 'Good to know', 'DNP (didn’t play) is under the team’s name → <i>Didn’t play…</i>. A DNP player’s first play takes them off the DNP list.'],
     ],
   },
   {
@@ -172,7 +174,7 @@ export const SCORER_GUIDE = [
         '<b>Subs:</b> the benches are up top, one row per team; swipe a row for more. Tap a bench player, then who comes off, as always. Sub beside the team name works too.',
         '<b>An older play:</b> tap it in the list at the top to fix it. The last play is in the dock with Undo and Fix.',
       ]],
-      ['tip', 'Good to know', 'Everything works the same: every button, hold, swipe and question. Only the order on the screen changes. The Scoresheet is in the game menu (•••). With two scorers each phone docks only its own five, so the tiles are taller.'],
+      ['tip', 'Good to know', 'Everything works the same: every button, hold, swipe and question. Only the order on the screen changes. The Scoresheet is in the game menu (•••). With two scorers each phone docks only its own five, so the cards are taller.'],
     ],
   },
   {
@@ -259,6 +261,11 @@ export const PW_SCORER_GUIDE = [
         '<b>A rebound or an assist:</b> the player, then <b>REB</b> or <b>AST</b>.',
         '<b>Made a mistake?</b> <b>Undo</b> on the last play takes it back.',
       ]],
+      ['dl', [
+        ['The cards', 'Each player is a card with their photo and surname, framed in their side’s shirt: Light or Dark. No photo yet: their initials.'],
+        ['A guest', 'The card’s border is dashed.'],
+        ['Two with one surname', 'Their first initials tell them apart: <i>T. BRINGAS</i>, <i>JP BRINGAS</i>.'],
+      ]],
       ['tip', 'Good to know', 'Full stats work like a league game: misses, the Rebound? and Assisted? questions, steals, blocks, turnovers and fouls. How to score (the league guide) explains each.'],
     ],
   },
@@ -269,8 +276,8 @@ export const PW_SCORER_GUIDE = [
       ['h', 'During a game'],
       ['steps', [
         '<b>Tap ⇄, then the player</b> who switched. They move to the other side.',
-        'Or <b>hold their tile</b>, then <i>Move to Dark</i> (or Light).',
-        'Or tap the side’s name → <i>Move someone to Light…</i>.',
+        'Or <b>hold their card</b>, then <i>Move to Dark</i> (or Light).',
+        'Or tap the side’s name → <i>Move someone to Light</i>.',
       ]],
       ['h', 'Between games'],
       ['steps', [
@@ -280,8 +287,8 @@ export const PW_SCORER_GUIDE = [
         ['Where the points go', 'Before the move they stay with the old side; from the move on they count for the new one. Their own line keeps everything.'],
         ['A side down to 4', 'Moving someone off the court leaves an <i>Open</i> spot when nobody on the bench is fresh. Tap a bench player and they go straight on. The player who moved starts on the new side’s bench.'],
         ['Moved the wrong player?', 'Undo the move, or move them back.'],
-        ['Someone came late', 'The side’s name → <i>A late arrival…</i> for someone you marked not here.'],
-        ['Someone from the waitlist', 'The side’s name → <i>From the waitlist…</i>, then their name. They join that side’s bench.'],
+        ['Someone came late', 'The side’s name → <i>A late arrival</i> for someone you marked not here.'],
+        ['Someone from the waitlist', 'The side’s name → <i>From the waitlist</i> (the number says how many are waiting), then their name. They join that side’s bench.'],
       ]],
       ['tip', 'Good to know', 'The practice run plays this out: halfway through a game it tells you someone “just switched to Dark”, and its Finish the run shows where their points went.'],
     ],
