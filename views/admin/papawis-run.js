@@ -176,9 +176,9 @@ function addPlayerPanel(game, players, colorById) {
     asideHtml: postBtn('Autofill regulars', `/admin/papawis/${game.id}/autofill-regulars`, { kind: 'secondary', done: 'Regulars added.',
       confirm: { title: 'Add the regulars who aren’t listed yet?', body: 'Skips anyone already listed, on probation, with an unpaid balance or without an active account. Fills Confirmed first, then the waitlist.', send: 'Autofill' } }),
     bodyHtml: `<form class="aui-panel" data-json-action="/admin/papawis/${attr(game.id)}/add" data-done="Added.">
-      ${fieldGrid(`${playerPicker({ name: 'player_id', label: 'Player', multiple: false, placeholder: 'Type a name',
+      ${fieldGrid(`${playerPicker({ name: 'player_ids[]', label: 'Players', placeholder: 'Type a name',
           options: players.map(p => ({ id: p.id, name: displayPlayerName(p.name), color: colorById[p.id] || '', meta: p.team_name || '' })) })}
-        ${field({ label: 'Guests of this player (optional)', name: 'guest_names', placeholder: 'e.g. Bryan, Mark', help: 'Comma-separated. Filled in = adds their guests, billed to them.' })}
+        ${field({ label: 'Guests of this player (optional)', name: 'guest_names', placeholder: 'e.g. Bryan, Mark', help: 'Comma-separated, with one player picked. Adds their guests, billed to them.' })}
         ${field({ label: 'Add to', name: 'status', type: 'select', options: [['confirmed', 'Confirmed'], ['waitlist', 'Waitlist']] })}`)}
       <div class="aui-row" style="margin-top:14px">${button('Add', { kind: 'primary', size: 'sm', type: 'submit' })}</div>
     </form>`,

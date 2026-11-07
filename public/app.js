@@ -1413,34 +1413,42 @@
     document.addEventListener('pointermove', move, { passive: false }); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
   }
 
-  // Add player: search, pick one, optional guests, Confirmed or Waitlist.
+  // Add players: search, pick one or more, optional guests (one player only), Confirmed or Waitlist.
   function admAdd(tpl) {
-    var el = admSheet('Add a player', tpl.innerHTML);
+    var el = admSheet('Add players', tpl.innerHTML);
     var form = $('[data-adm-add-form]', el), q = $('[data-adm-q]', el), go = $('[data-adm-add-go]', el), msg = $('[data-adm-add-msg]', el);
-    var rows = $$('.adm-pick__row', el), picked = null;
+    var guests = $('[data-adm-guests]', el), guestsHelp = $('[data-adm-guests-help]', el);
+    var rows = $$('.adm-pick__row', el), picked = [];
     var filter = function () {
       var v = q.value.trim().toLowerCase(), shown = 0;
-      rows.forEach(function (r) { var on = !!v && r.getAttribute('data-q').indexOf(v) >= 0 && shown < 30; if (on) shown++; r.hidden = !on && r !== picked; });
+      rows.forEach(function (r) { var on = !!v && r.getAttribute('data-q').indexOf(v) >= 0 && shown < 30; if (on) shown++; r.hidden = !on && picked.indexOf(r) < 0; });
     };
     q.addEventListener('input', filter);
     rows.forEach(function (r) {
       r.addEventListener('click', function () {
-        if (picked) { picked.classList.remove('is-on'); picked.setAttribute('aria-pressed', 'false'); }
-        picked = picked === r ? null : r;
-        if (picked) { r.classList.add('is-on'); r.setAttribute('aria-pressed', 'true'); }
-        go.disabled = !picked; msg.hidden = true; filter();
+        var i = picked.indexOf(r);
+        if (i >= 0) picked.splice(i, 1); else picked.push(r);
+        r.classList.toggle('is-on', i < 0); r.setAttribute('aria-pressed', String(i < 0));
+        // Guests are billed to the one player who brings them.
+        guests.disabled = picked.length > 1;
+        guestsHelp.textContent = picked.length > 1 ? 'Guests go with one player at a time.' : 'Comma-separated. Guests are billed to this player.';
+        go.disabled = !picked.length; go.textContent = picked.length > 1 ? 'Add ' + picked.length : 'Add';
+        msg.hidden = true;
+        // Picked, so clear the search for the next name.
+        if (i < 0 && q.value) { q.value = ''; q.focus(); }
+        filter();
       });
       r.setAttribute('aria-pressed', 'false');
     });
     go.addEventListener('click', function () {
-      if (!picked || admBusy) return;
+      if (!picked.length || admBusy) return;
       if (!navigator.onLine) { msg.textContent = 'You\'re offline. Nothing was sent.'; msg.hidden = false; return; }
       admBusy = true; go.disabled = true; go.classList.add('is-busy');
       var to = ($('input[name="adm-to"]:checked', el) || {}).value || 'confirmed';
-      admSend(form.getAttribute('data-url'), { player_id: picked.getAttribute('data-id'), guest_names: $('[data-adm-guests]', el).value, status: to })
+      admSend(form.getAttribute('data-url'), { player_ids: picked.map(function (r) { return r.getAttribute('data-id'); }), guest_names: guests.disabled ? '' : guests.value, status: to })
         .then(function (j) {
           admBusy = false; closeSheet();
-          toast((j.added > 1 ? j.added + ' added' : 'Added') + (to === 'waitlist' ? ' to the waitlist' : ''));
+          toast(j.message || ((j.added > 1 ? j.added + ' added' : 'Added') + (to === 'waitlist' ? ' to the waitlist' : '')));
           refreshScreen(true);
         }, function (e) { admBusy = false; go.disabled = false; go.classList.remove('is-busy'); msg.textContent = e.message; msg.hidden = false; });
     });

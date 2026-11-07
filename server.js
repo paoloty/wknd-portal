@@ -26980,26 +26980,37 @@ app.post('/admin/papawis/:id/teams/reorder', requireAuth, express.json(), (req, 
 
 app.post('/admin/papawis/:id/add', requireAuth, express.json(), (req, res) => {
   if (!papawisLockCheck(req.params.id, res)) return;
-  const { player_id, status, guest_names } = req.body;
-  if (!player_id) return res.status(400).json({ error: 'Select a player.' });
-  if (getPlayerById(String(player_id))?.banned_at) return res.status(400).json({ error: 'That player is banned. Lift the ban from the ledger or their player page first.' });
+  // player_ids: several at once (site picker, app sheet); player_id still works for one.
+  const { player_ids, player_id, status, guest_names } = req.body;
+  const ids = [...new Set([].concat(player_ids || player_id || []).map(String).filter(Boolean))];
+  if (!ids.length) return res.status(400).json({ error: 'Select a player.' });
   const st = status === 'waitlist' ? 'waitlist' : 'confirmed';
   const names = String(guest_names || '').split(/[,\n]/).map(s => s.trim()).filter(Boolean);
-
-  if (!names.length) {
-    const id = randomBytes(6).toString('hex');
-    const result = adminAddPapawisSignup({ id, gameId: req.params.id, playerId: player_id, status: st });
-    if (result.error) return res.status(400).json({ error: 'That player is already listed.' });
-    return res.json({ ok: true, added: 1 });
+  // Guests are billed to the player who brings them, so they go with one player at a time.
+  if (names.length && ids.length > 1) return res.status(400).json({ error: 'Add guests with one player at a time.' });
+  const banned = ids.filter(id => getPlayerById(id)?.banned_at);
+  if (banned.length) {
+    const who = ids.length === 1 ? 'That player is' : `${banned.map(id => displayPlayerName(getPlayerById(id)?.name || '')).join(', ')} ${banned.length === 1 ? 'is' : 'are'}`;
+    return res.status(400).json({ error: `${who} banned. Lift the ban from the ledger or their player page first.` });
   }
 
+  if (names.length) {
+    let added = 0;
+    for (const guestName of names) {
+      const result = adminAddPapawisSignup({ id: randomBytes(6).toString('hex'), gameId: req.params.id, playerId: ids[0], status: st, guestName });
+      if (!result.error) added++;
+    }
+    return res.json({ ok: true, added });
+  }
+
+  const listed = [];
   let added = 0;
-  for (const guestName of names) {
-    const id = randomBytes(6).toString('hex');
-    const result = adminAddPapawisSignup({ id, gameId: req.params.id, playerId: player_id, status: st, guestName });
-    if (!result.error) added++;
+  for (const pid of ids) {
+    const result = adminAddPapawisSignup({ id: randomBytes(6).toString('hex'), gameId: req.params.id, playerId: pid, status: st });
+    if (result.error) listed.push(displayPlayerName(getPlayerById(pid)?.name || '')); else added++;
   }
-  res.json({ ok: true, added });
+  if (!added) return res.status(400).json({ error: ids.length === 1 ? 'That player is already listed.' : 'They’re all already listed.' });
+  res.json({ ok: true, added, ...(listed.length ? { message: `Added ${added}. Already listed: ${listed.join(', ')}.` } : {}) });
 });
 
 // Bulk-adds known regulars (same definition as the Papawis Activity page) who aren't

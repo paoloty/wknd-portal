@@ -107,12 +107,12 @@ function rosterTab(run, d) {
 function addSheet(run, players) {
   return `<template data-adm-add-tpl>
     <div class="adm-add" data-adm-add-form data-url="/admin/papawis/${esc(run.id)}/add">
-      <label class="adm-lbl" for="adm-q">Player</label>
+      <label class="adm-lbl" for="adm-q">Players</label>
       <input class="adm-input" id="adm-q" type="search" placeholder="Type a name" autocomplete="off" autocapitalize="words" enterkeyhint="search" data-adm-q>
       <div class="group adm-pick" data-adm-pick>${players.map(p => `<button type="button" class="cell adm-pick__row" data-id="${esc(p.id)}" data-q="${esc(p.name.toLowerCase())}" hidden>${appAvatar({ playerId: p.id, initials: p.ini, ring: p.color, photoUrl: p.photoUrl })}<span class="cell__t">${esc(p.name)}<small>${esc(p.team || ' ')}</small></span><span class="adm-pick__on">${icons.check}</span></button>`).join('')}</div>
       <label class="adm-lbl" for="adm-guests">Their guests (optional)</label>
       <input class="adm-input" id="adm-guests" type="text" placeholder="e.g. Bryan, Mark" autocomplete="off" autocapitalize="words" data-adm-guests>
-      <p class="adm-help">Comma-separated. Guests are billed to this player.</p>
+      <p class="adm-help" data-adm-guests-help>Comma-separated. Guests are billed to this player.</p>
       <div class="seg adm-seg" role="radiogroup" aria-label="Add to">
         <label><input type="radio" name="adm-to" value="confirmed" checked><span>Confirmed</span></label>
         <label><input type="radio" name="adm-to" value="waitlist"><span>Waitlist</span></label>
