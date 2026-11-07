@@ -8455,14 +8455,37 @@ function pwScoreRoster(run) {
   for (const t of ['a', 'b']) sides[t] = sides[t].map(({ side, ...p }) => p);
   return sides;
 }
+// The run's waitlist, in order, as the scorer shows people (guests of waitlisted players left out:
+// they have no profile to score to).
+function pwWaitlisted(run) {
+  const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const seen = new Set();
+  return getPapawisSignups(run.id).filter(s => s.status === 'waitlist' && !s.guest_name && byId[s.player_id] && !seen.has(s.player_id) && seen.add(s.player_id))
+    .map(s => pwPerson(byId[s.player_id]));
+}
+// Finishing the run: a waitlisted player on a side in the kept games played, so they move to
+// Confirmed (past the cap if need be) and the close-out charges them like everyone else.
+function pwConfirmWaitlisted(run, playedIds) {
+  const moved = [];
+  for (const s of getPapawisSignups(run.id)) {
+    if (s.status !== 'waitlist' || s.guest_name || !playedIds.has(s.player_id)) continue;
+    if (setPapawisSignupStatus(s.id, 'confirmed', { overCap: true, notes: 'played from the waitlist' }).error) continue;
+    moved.push(s.player_id);
+    createNotification({ playerId: s.player_id, type: 'papawis_promoted', title: `You played ${run.title || 'Papawis'} from the waitlist`,
+      body: 'You’re on the confirmed list now, and you pay for the run like everyone who played.', link: `/papawis#pw-game-${run.id}` });
+  }
+  return moved;
+}
 // Everyone the run's games know about, by id: today's list, plus anyone a game's setup named
 // (someone an admin took off the list during the day still counts in the games they played:
-// Fable audit 2026-10-30) and the guests added at the court.
+// Fable audit 2026-10-30), the guests added at the court, and anyone moved in during a game
+// (a late arrival from the waitlist).
 function pwPeople(run, events = getScoreEvents(pwScoreId(run.id), 'live')) {
   const byId = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   const sides = pwScoreRoster(run);
   const who = Object.fromEntries([...sides.a, ...sides.b].map(p => [p.id, p]));
   for (const e of events) {
+    if (e.type === 'move' && e.player && !who[e.player] && byId[e.player]) who[e.player] = pwPerson(byId[e.player]);
     if (e.type !== 'setup') continue;
     for (const g of Array.isArray(e.guests) ? e.guests : []) if (g && PW_GUEST_ID.test(String(g.id)) && !who[g.id]) who[g.id] = pwGuest(g.id, g.name);
     for (const id of [...((e.sides || {}).a || []), ...((e.sides || {}).b || []), ...(e.absent || [])]) if (!who[id] && byId[id]) who[id] = pwPerson(byId[id]);
@@ -8513,14 +8536,18 @@ function pwScoreBundle(run) {
   const sides = pwScoreRoster(run);
   // People the games named who aren't on today's list any more (taken off during the day).
   const listed = new Set([...sides.a, ...sides.b].map(p => p.id));
-  const extra = Object.values(pwPeople(run)).filter(p => !listed.has(p.id) && !p.guest);
+  const people = pwPeople(run);
+  const extra = Object.values(people).filter(p => !listed.has(p.id) && !p.guest);
+  // The waitlist, for a no-show's place (Paolo, 2026-11-07): offered at setup and in the team
+  // menu, until a game names them. Finishing the run confirms whoever played (pwConfirmWaitlisted).
+  const waitlist = pwWaitlisted(run).filter(p => !people[p.id]);
   return {
     game: { id, date: run.date, tip: run.start_time || '', type: 'papawis' },
     fourPoint: four, status: sg.status, rules: PW_SCORE_RULES, opensAt: sg.status === 'live' ? 0 : pwScoreOpensAt(run),
     a: { id: 'light', name: 'Light', color: 'var(--team-white, #d7dce5)', players: sides.a },
     b: { id: 'dark', name: 'Dark', color: 'var(--team-black, #6b7486)', players: sides.b },
     events: scoreEventsWithBy(id, 'live'), pass: 'live', video: '',
-    papawis: { runId: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '', extra,
+    papawis: { runId: run.id, title: run.title || 'Papawis', day: pwDay(run.date), place: run.location || '', extra, waitlist,
       finish: `/app/papawis/${encodeURIComponent(run.id)}/finish`, hold: `/api/score/${encodeURIComponent(id)}/hold`, done: !!getPapawisScored(run.id),
       defaults: { stats: 'basic', periodMin: PW_SCORE_RULES.periodMin, periods: PW_SCORE_RULES.periods } },
     over: { back: '/app/papawis' },
@@ -8566,7 +8593,7 @@ function pwScoreEventsPost(req, res) {
   const raw = Array.isArray(req.body?.events) ? req.body.events.slice(0, 2000) : [];
   // Who a play may name: anyone the run's games know (today's list, earlier setups, their
   // guests), plus anyone this batch's own setups name: a real player, or a guest it declares.
-  const known = new Set(Object.keys(pwPeople(run)));
+  const known = new Set([...Object.keys(pwPeople(run)), ...pwWaitlisted(run).map(p => p.id)]);
   const allPlayers = new Set(getAllPlayers().map(p => p.id));
   for (const e of raw) {
     if (!e || e.type !== 'setup') continue;
@@ -8759,7 +8786,9 @@ app.post('/app/papawis/:id/finish', requireApp, express.urlencoded({ extended: f
   savePapawisScored(run.id, { potdKey: potd ? potd.key : null, by, games: kept.map(g => ({ n: g.n, a: g.G.score.a, b: g.G.score.b, stats: g.stats, periodMin: g.rules.periodMin, periods: g.rules.periods })) }, lines);
   const sgId = pwScoreId(run.id);
   saveScoreGame(sgId, { status: 'published', publishedAt: Date.now(), settings: { ...(getScoreGame(sgId)?.settings || {}), discarded: [...discard] } });
-  console.log(`[papawis scorer] ${by} finished run=${run.id}: ${kept.length} game(s), potd=${potd?.key || '-'}`);
+  // Played = on a side in a kept game, with or without a stat (someone brought in who never scored).
+  const fromWaitlist = pwConfirmWaitlisted(run, new Set(kept.flatMap(g => Object.keys(g.sides))));
+  console.log(`[papawis scorer] ${by} finished run=${run.id}: ${kept.length} game(s), potd=${potd?.key || '-'}${fromWaitlist.length ? `, confirmed from the waitlist: ${fromWaitlist.length}` : ''}`);
   pwRunSummaryStart(run);
   // The Player of the Day hears it once (and again only if a later save picks someone else).
   if (potd && potd.playerId && potd.key !== before?.potd_key && potd.playerId !== req.session?.playerPlayerId) {

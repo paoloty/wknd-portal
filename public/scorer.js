@@ -141,8 +141,28 @@ export async function mount(el) {
   const everyone = [...B.a.players, ...B.b.players, ...((B.papawis && B.papawis.extra) || [])];
   const homeSides = Object.fromEntries([...B.a.players.map(p => [p.id, 'a']), ...B.b.players.map(p => [p.id, 'b'])]);
   // A guest added at the court (a setup play's guests) joins everyone, on the side picked.
+  // The run's waitlist (Paolo, 2026-11-07): someone who came for a no-show's place joins a side at
+  // setup or in the team menu, as themselves, so their stats go on their profile. Finishing the
+  // run moves them to Confirmed (server.js pwConfirmWaitlisted).
+  const waitlist = (pw && pw.waitlist) || [];
+  const waitlistLeft = () => waitlist.filter(p => !everyone.some(x => x.id === p.id));
+  const fromWaitlist = (id, t) => {
+    const p = waitlist.find(x => x.id === id);
+    if (!p || everyone.some(x => x.id === id)) return null;
+    everyone.push(p); homeSides[id] = t; byId[id] = { ...p, team: t };
+    return p;
+  };
   const guestPerson = (id, name) => { const n = String(name || '').trim().slice(0, 40) || 'Guest'; return { id, name: n, short: (n.split(/s+/)[0] || n).toUpperCase(), number: '', guest: true }; };
   const learn = e => {
+    // Someone from the waitlist a setup or a move brought in (the phone's copy of the run may be
+    // from before they joined): back among everyone, so their tile and name show.
+    if (e && (e.type === 'setup' || e.type === 'move')) {
+      const ids = e.type === 'move' ? [e.player] : [...((e.sides || {}).a || []), ...((e.sides || {}).b || [])];
+      for (const id of ids) {
+        const p = waitlist.find(x => x.id === id);
+        if (p && !everyone.some(x => x.id === id)) { everyone.push(p); if (!homeSides[id]) homeSides[id] = e.type === 'move' ? e.to : ((e.sides || {}).a || []).includes(id) ? 'a' : 'b'; }
+      }
+    }
     if (!e || e.type !== 'setup') return;
     for (const g of Array.isArray(e.guests) ? e.guests : []) {
       if (!g || !g.id || everyone.some(p => p.id === g.id)) continue;
@@ -783,9 +803,9 @@ export async function mount(el) {
     ...(G.timeouts.allowance ? [{ group: 'Timeout', items: [[G.timeouts.left[t] > 0 ? 'timeout' : 'wait:timeout', G.timeouts.left[t] > 0 ? `Call timeout · ${G.timeouts.left[t]} left` : 'No timeouts left']] }] : []),
     ...(basic() ? [] : [{ group: 'Turnover', items: [['to', 'Team'], ['shot clock', 'Shot clock'], ['3 seconds', '3s'], ['5 seconds', '5s'], ['8 seconds', '8s']] }]),
     ...(pw ? [] : [{ group: 'Technical', items: [['coach T', 'Coach'], ['bench T', 'Bench']] }]),
-    ...(pw ? [{ group: 'Players', items: [['pw-in', `Move someone to ${team[t].name}…`], ...(lateFor().length ? [['pw-late', 'A late arrival…']] : [])] }] : []),
+    ...(pw ? [{ group: 'Players', items: [['pw-in', `Move someone to ${team[t].name}…`], ...(lateFor().length ? [['pw-late', 'A late arrival…']] : []), ...(waitlistLeft().length ? [['pw-wl', 'From the waitlist…']] : [])] }] : []),
     { group: 'Lineup', items: [['dnp', 'DNP…']] }],
-  k => (k === 'timeout' ? timeout(t) : k === 'dnp' ? dnpMenu(t) : k === 'pw-in' ? moveInMenu(t) : k === 'pw-late' ? lateMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
+  k => (k === 'timeout' ? timeout(t) : k === 'dnp' ? dnpMenu(t) : k === 'pw-in' ? moveInMenu(t) : k === 'pw-late' ? lateMenu(t) : k === 'pw-wl' ? waitlistMenu(t) : k === 'to' ? teamPlay(t, 'team_to') : k.endsWith(' T') ? teamPlay(t, 'team_tech', { kind: k.slice(0, -2) }) : teamPlay(t, 'team_to', { kind: k })));
   // Papawis: a player switches sides (a `move` play; his points so far stay with the old side).
   function movePlayer(id, to) {
     if (!byId[id] || (to !== 'a' && to !== 'b')) return;
@@ -801,6 +821,13 @@ export async function mount(el) {
   // Players not in this game (marked not here at setup) who came after all.
   const lateFor = () => { const st = setupFor(ui.game); return st ? everyone.filter(p => (st.absent || []).includes(p.id) && !(G.moved || {})[p.id]) : []; };
   const lateMenu = t => menu(`A late arrival for ${team[t].name}`, lateFor().map(p => [p.id, short(p.id)]), id => movePlayer(id, t));
+  // From the waitlist mid-game: they join this side's bench (a `move` play, like a late arrival).
+  const waitlistMenu = t => menu(`From the waitlist to ${team[t].name}`, waitlistLeft().map(p => [p.id, p.number ? `#${p.number} ${p.short}` : p.short]), id => {
+    if (!fromWaitlist(id, t)) return paint();
+    add({ type: 'move', team: t, player: id, to: t });
+    ui.sel = null; ui.tip = `${short(id)} is in for ${team[t].name}, from the waitlist.`;
+    paint();
+  });
   // Sub from the menu: who comes on, then who goes off (the same as tapping the tiles).
   // The Subs sheet (the Sub button beside Timeout): tap who comes off (court, red ↓) and who
   // goes on (bench, green ↑), as many as you like; they pair up in the order tapped. "All 5"
@@ -1751,10 +1778,13 @@ export async function mount(el) {
         <input id="su-guest" type="text" maxlength="40" autocomplete="off" enterkeyhint="done" placeholder="Their name" value="${esc(d.guestName || '')}" data-su-guest>
         <div class="su-segs su-segs--2"><button type="button" class="su-seg" data-act="su-guest" data-v="a">+ ${esc(team.a.name)}</button><button type="button" class="su-seg" data-act="su-guest" data-v="b">+ ${esc(team.b.name)}</button></div>
         <p class="su-n">Their stats stay with this run under their name. Tell an admin, so they’re added to the run and charged.</p></div>
+      ${waitlistLeft().length ? `<div class="su-card su-wl"><span class="su-l">From the waitlist</span>
+        ${waitlistLeft().map(p => `<div class="su-wl__r"><span class="su-wl__n">${p.number ? `<i class="num">${esc(p.number)}</i>` : ''}${esc(p.name)}</span><div class="su-segs su-segs--2"><button type="button" class="su-seg" data-act="su-wl" data-pid="${esc(p.id)}" data-v="a">+ ${esc(team.a.name)}</button><button type="button" class="su-seg" data-act="su-wl" data-pid="${esc(p.id)}" data-v="b">+ ${esc(team.b.name)}</button></div></div>`).join('')}
+        <p class="su-n">For a no-show’s place. Their stats go on their profile, and finishing the run moves them to Confirmed, so they pay like everyone who played.</p></div>` : ''}
       <div class="su-go">
         <button type="button" class="sc-over__btn" data-act="su-start"${here('a') && here('b') ? '' : ' disabled'}>Start Game ${ui.game} · ${d.stats === 'full' ? 'Full' : 'Basic'} · ${d.periods} × ${d.periodMin} min</button>
         ${any ? `<button type="button" class="sc-over__btn sc-over__btn--ghost" data-act="su-cancel">Not now</button>` : ''}
-        <small>Late arrivals can be added during the game (the team menu).</small>
+        <small>Late arrivals and the waitlist can be added during the game (the team menu).</small>
       </div>
     </div>`;
   }
@@ -1773,6 +1803,10 @@ export async function mount(el) {
       d.guests.push(g); d.guestName = '';
       const p = guestPerson(g.id, g.name); everyone.push(p); homeSides[g.id] = g.side; byId[g.id] = { ...p, team: g.side }; d.side[g.id] = g.side;
       ui.tip = `${nm} added to ${team[g.side].name}.`;
+    }
+    else if (name === 'su-wl' && pid) {
+      const t = v === 'b' ? 'b' : 'a', p = fromWaitlist(pid, t);
+      if (p) { d.side[pid] = t; ui.tip = `${p.name} added to ${team[t].name}, from the waitlist.`; }
     }
     else if (name === 'su-cancel') { const set = games().filter(n => setupFor(n)); ui.draft = null; return goGame(set[set.length - 1] || 1); }
     else if (name === 'su-start') {
