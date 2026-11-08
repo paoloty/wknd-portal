@@ -30,7 +30,9 @@ function payFacts(g, season) {
 }
 
 // data: loadSeasonCandidates() → { target, seasons, candidates }. capacity: season_roster_capacity.
-export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nominations = {} } = {}) {
+// signups: { [playerId]: { plan, gamesMiss, away, risk: { level, triggers }, answers: [[q, a]], volunteer, edited } }
+// for this season's sign-ups (server.js candidateSignupInfo): read-only facts, never a mark.
+export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nominations = {}, signups = {} } = {}) {
   const { target, seasons, candidates, ignorePayment } = data;
   const rows = candidates;
   const eligible = rows.filter(r => r.eligible);
@@ -63,6 +65,8 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nomi
     ignorePayment && r.balance >= RULES.owingToleranceAmt ? badge(`Owes ${peso(r.balance)} · not counted`, 'gray') : '',
     r.blockers.includes('Banned') ? badge('Banned', 'red') : '',
     r.blockers.includes('No account') ? badge('No account', 'gray') : '',
+    r.blockers.includes('Not signed up') ? badge('Not signed up', 'gray') : '',
+    signups[r.id]?.risk.level ? badge('Playing-time risk', signups[r.id].risk.level === 'red' ? 'red' : 'amber') : '',
   ].filter(Boolean).join('');
 
   const why = r => {
@@ -112,6 +116,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nomi
       { key: 'payfirst', label: 'Pay first', test: r => r.payFirst },
       { key: 'nofee', label: 'No fee history', test: r => r.eligible && noFeeHistory(r) },
       { key: 'blocked', label: 'Not eligible yet', test: r => !r.eligible },
+      { key: 'risk', label: 'Playing-time risk', test: r => !!signups[r.id]?.risk.level },
       { key: 'all', label: 'All', test: () => true },
     ],
     search: { placeholder: 'Search player', text: r => r.name },
@@ -123,11 +128,13 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nomi
       ...seasonCols,
       { key: 'runs', label: 'Papawis', num: true, phone: false, cell: r => `<span class="aui-num">${r.papawisRuns}</span>` },
       { key: 'games', label: 'Games', num: true, phone: false, cell: r => `<span class="aui-num">${totalGames(r)}</span>` },
+      { key: 'signup', label: 'Sign-up', phone: false, cell: r => { const x = signups[r.id]; return x ? `<span class="aui-cell__stack"><span>${escHtml(x.plan)}</span><span class="aui-cell__sub">${escHtml(x.gamesMiss)}</span></span>` : '<span class="aui-muted">—</span>'; } },
       { key: 'flags', label: 'Flags', bare: true, cell: r => `<span class="aui-cell__badges">${flags(r)}</span>` },
     ],
     expand: r => facts([
       ['Why this group', escHtml(why(r))],
-      ['Online', `${r.activeWeeks} of the last ${W} weeks${r.active ? '' : ` (needs ${RULES.onlineWeeksNeeded}${r.isNew ? '; new members are exempt' : ''})`}`],
+      ...signupFacts(signups[r.id]),
+      ['Online', `${r.activeWeeks} of the last ${W} weeks${r.active ? '' : ` (needs ${r.onlineNeeded ?? RULES.onlineWeeksNeeded}${r.isNew ? '; new members are exempt' : ''})`}`],
       ['Site and app', `Site ${r.online.site} weeks · App ${r.online.app} weeks · Actions ${r.online.action} weeks · last seen ${escHtml(r.online.lastSeen || `over ${W} weeks ago`)}`],
       ['League games', seasons.map(s => `Season ${s.season}: ${r.games[s.season] || 0}`).join(' · ')],
       ['Papawis runs', `${r.papawisRuns} in the last 12 months`],
@@ -175,4 +182,15 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nomi
     ])}
     ${grid}
   </div>`;
+}
+
+// This season's sign-up, as facts in the expand: plan, availability, the role answers, help offered.
+function signupFacts(x) {
+  if (!x) return [];
+  return [
+    ['Sign-up', escHtml([x.plan, x.gamesMiss, x.away].filter(Boolean).join(' · ')) + (x.edited ? ' · edited after sending' : '')],
+    x.risk.level ? ['Playing-time risk', `${x.risk.level === 'red' ? 'Red' : 'Amber'}: ${escHtml(x.risk.triggers.join(', '))}. For reading only, never a mark.`] : null,
+    ...x.answers.map(([q, a]) => [q, escHtml(a)]),
+    x.volunteer ? ['Offered to help', escHtml(x.volunteer)] : null,
+  ];
 }

@@ -23983,7 +23983,7 @@ app.get('/admin/season', requireAuth, (req, res) => {
     title: 'Season',
     currentPath: '/admin/season',
     settings: seasonNudgesPanel(),
-    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null }),
+    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [] }),
   }));
 });
 
@@ -24072,9 +24072,58 @@ app.get('/admin/season/candidates', requireAuth, (req, res) => {
     body: adminSeasonCandidatesBody({
       data, capacity, query: req.query,
       nominations: seasonNominationsFor(data.target, req),
+      signups: candidateSignupInfo(data.target),
     }),
   }));
 });
+
+// This season's sign-ups for Candidates (Season 5 on): plan, availability, the Your role answers
+// and the Playing-time risk tag (lib/season-signup.js playingTimeRisk), help offered. Admin-only.
+import { playingTimeRisk, GAMES_MISS_LABEL, AWAY_LABEL, ROLE_QS, ROLE_LABEL, SELF_FIELDS, SELF_TIERS, VOLUNTEER_LABEL } from './lib/season-signup.js';
+import { getSeasonVolunteers } from './lib/portal-db.js';
+// The Season page's Volunteers list: [{ label, people: [{ name, note }] }], one group per role
+// (anything typed in "Something else you can do?" shows next to their name under Other).
+function seasonVolunteerGroups(season) {
+  const groups = Object.fromEntries(Object.entries(VOLUNTEER_LABEL).map(([k, l]) => [k, { label: l, people: [] }]));
+  const other = { label: 'Something else', people: [] };
+  for (const v of getSeasonVolunteers(season)) {
+    const name = displayPlayerName(v.full_name);
+    for (const r of v.roles) groups[r]?.people.push({ name });
+    if (v.note) other.people.push({ name, note: v.note });
+  }
+  return [...Object.values(groups), other].filter(g => g.people.length);
+}
+
+function candidateSignupInfo(season) {
+  const assess = Object.fromEntries(getAssessmentsBySeason(season).map(a => [a.reg_id, a]));
+  const vols = Object.fromEntries(getSeasonVolunteers(season).map(v => [v.reg_id, v]));
+  const tier = Object.fromEntries(SELF_TIERS);
+  const out = {};
+  for (const s of getSeasonSignups(season)) {
+    if (!s.player_id || s.status === 'withdrawn' || !s.games_miss) continue;
+    const a = assess[s.reg_id] || {};
+    const rating = getLatestPlayerRating(s.player_id);
+    // A gap: any self-rating two or more bands above how they actually rate (lib/assessment-scoring.js).
+    const selfGap = !!rating && [['self_scoring', rating.scoring_ovr ?? rating.scoring], ['self_defense', rating.defense_ovr ?? rating.defense], ['self_overall', rating.overall_ovr ?? rating.overall]]
+      .some(([k, actual]) => a[k] && actual != null && alignmentFlag(a[k], actual) === 'gap');
+    let plans = {};
+    try { plans = JSON.parse(s.plans || '{}'); } catch {}
+    const v = vols[s.reg_id];
+    out[s.player_id] = {
+      plan: PLAN_LABEL[s.payment_plan] || 'No plan', edited: !!a.updated_at,
+      gamesMiss: s.games_miss === '0' ? 'Misses none' : s.games_miss === 'unsure' ? 'Not sure about games' : `Misses ${GAMES_MISS_LABEL[s.games_miss] || s.games_miss}`,
+      away: [...(plans.away || []).map(k => `${AWAY_LABEL[k] || k}${plans.when?.[k]?.length ? ` (${plans.when[k].join(', ')})` : ''}`), s.away_note].filter(Boolean).join(', '),
+      risk: playingTimeRisk(a, { selfGap }),
+      answers: [
+        ...ROLE_QS.map(q => [q.q, ROLE_LABEL[q.key][a[q.key]] || 'Not answered']),
+        ['What a teammate would say', a.q7_work_on || ''],
+        ['Rates themselves', SELF_FIELDS.map(([k, l]) => `${l}: ${tier[a[k]] || '—'}`).join(' · ')],
+      ],
+      volunteer: v ? [...(v.roles || []).map(r => VOLUNTEER_LABEL[r] || r), v.note].filter(Boolean).join(', ') : '',
+    };
+  }
+  return out;
+}
 // Contribution ticks from the candidates row menu: add one (setup / referee / other) or take
 // back the newest.
 app.post('/admin/season/candidates/:id/contribution', requireAuth, express.json(), (req, res) => {

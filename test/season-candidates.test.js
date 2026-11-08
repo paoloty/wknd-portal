@@ -60,12 +60,12 @@ test('no season fee means no grade', () => {
 const person = (id, f = {}) => ({ id, name: id, hasAccount: true, banned: false, balance: 0, playedLast: false, games: {}, papawisRuns: 0, activeWeeks: 0, isNew: false, pay: [], ...f });
 const G = grade => ({ grade });
 
-test('ranking: eligible first, then group, then active online, then clean payers', () => {
+test('ranking: eligible first, then group, then fewest marks, then games', () => {
   const ranked = rankCandidates([
     person('owes', { playedLast: true, balance: 500, activeWeeks: 12 }),
     person('regular', { papawisRuns: 6, activeWeeks: 12 }),
-    person('quiet', { playedLast: true, activeWeeks: 2 }),
-    person('late', { playedLast: true, activeWeeks: 10, pay: [G('chased'), G('chased')] }),
+    person('quiet', { playedLast: true, activeWeeks: 2, games: { 4: 3 } }),
+    person('late', { playedLast: true, activeWeeks: 10, pay: [G('chased'), G('chased')], games: { 4: 5 } }),
     person('star', { playedLast: true, activeWeeks: 8, pay: [G('ontime'), G('ontime')] }),
     person('newbie', { isNew: true, activeWeeks: 1 }),
     person('gone', { activeWeeks: 0 }),
@@ -97,6 +97,22 @@ test('marks: low attendance, conduct, late cancels; under half of last season le
   assert.equal(by.hothead.discuss, true);
   assert.deepEqual(by.flaky.marks, ['lateCancels']);
   assert.ok(by.clean.rank < by.patchy.rank);
+});
+
+test('ties: the plan they signed up with (full first, not for pay-first), then league games', () => {
+  const ranked = rankCandidates([
+    person('split', { playedLast: true, activeWeeks: 9, plan: 'dp2', games: { 4: 9 } }),
+    person('full', { playedLast: true, activeWeeks: 9, plan: 'full' }),
+    person('half', { playedLast: true, activeWeeks: 9, plan: 'dp1' }),
+    person('forced', { playedLast: true, activeWeeks: 9, plan: 'full', pay: [G('after')], games: { 4: 20 } }),
+  ]);
+  assert.deepEqual(ranked.map(r => r.id), ['full', 'half', 'split', 'forced']);
+});
+
+test('the online mark uses the half-the-weeks count when the loader sets it', () => {
+  const [a, b] = rankCandidates([person('a', { playedLast: true, activeWeeks: 2, onlineNeeded: 2 }), person('b', { playedLast: true, activeWeeks: 2 })]);
+  assert.deepEqual([a, b].find(r => r.id === 'a').marks, []);
+  assert.deepEqual([a, b].find(r => r.id === 'b').marks, ['inactive']);
 });
 
 test('pluses lift a player inside the group: league + Papawis, contributed', () => {

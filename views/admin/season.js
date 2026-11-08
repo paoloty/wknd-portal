@@ -11,7 +11,7 @@ export function adminSeasonBody({
   count = 0, confirmedCount = 0,
   seasonFormat = '', quotaAmount = '', jerseyTopPrice = '', jerseyShortPrice = '', teamCount = '4',
   jerseySurchargeStep = '50', jerseyPocketsPrice = '100', seasonRosterCapacity = '',
-  allSeasons = [], jerseyCutPrice = '50', payments = null,
+  allSeasons = [], jerseyCutPrice = '50', payments = null, volunteers = [],
 } = {}) {
   const started = draftStatus === 'started';
   const known = [...new Set(allSeasons.map(String))].sort((a, b) => Number(b) - Number(a));
@@ -65,9 +65,21 @@ export function adminSeasonBody({
     ${needsYou(needs)}
     ${started ? '' : signupsBlock}
     ${paymentsBlock(payments)}
+    ${volunteersBlock(volunteers)}
     ${section({ id: 'season-details', title: 'Details', note: sigSeason ? `· Season ${sigSeason}` : '', bodyHtml: details })}
     ${nextBlock}
   </div>`;
+}
+
+// Who offered to help on their sign-up (Step 4), by role. Saying yes isn't a plus by itself:
+// the Contributed plus comes from actually helping (Candidates' row menu).
+// volunteers: [{ label, people: [{ name, note }] }]
+function volunteersBlock(groups) {
+  if (!groups.length) return '';
+  return section({
+    id: 'season-volunteers', title: 'Volunteers', note: '· from sign-ups',
+    bodyHtml: `<div class="aui-panel">${groups.map(g => `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__title">${escHtml(g.label)} <span class="aui-muted">${g.people.length}</span></div><div class="aui-cell__sub">${g.people.map(p => escHtml(p.note ? `${p.name} (“${p.note}”)` : p.name)).join(', ')}</div></div></div>`).join('')}</div>`,
+  });
 }
 
 const peso = n => `₱${Math.round(Number(n) || 0).toLocaleString('en-US')}`;
