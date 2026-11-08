@@ -336,11 +336,15 @@ const JOIN_CSS_VER = (() => { try { return Math.floor(statSync(path.join(__dirna
 // restart, which is also the only time the underlying file can change anyway) rather than
 // per-request. null means minification failed for some reason; the route below falls back
 // to serving the original file as-is instead of a broken empty response.
+// The season sign-up's own stylesheet (public/signup.css): linked on the site, and folded into
+// app.css below because the app swaps screens without loading new stylesheets.
+const SIGNUP_VER = (() => { try { return Math.floor(Math.max(...['public/signup.css', 'public/signup.js'].map(f => statSync(path.join(__dirname, f)).mtimeMs))); } catch { return Date.now(); } })();
 const MINIFIED_CSS = (() => {
   const cache = {};
-  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css', 'courts.css', 'join.css', 'app.css']) {
+  for (const file of ['styles.css', 'admin.css', 'auth.css', 'profile.css', 'teams.css', 'players.css', 'papawis.css', 'courts.css', 'join.css', 'app.css', 'signup.css']) {
     try {
-      const raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
+      let raw = readFileSync(path.join(__dirname, 'public', file), 'utf8');
+      if (file === 'app.css') raw += '\n' + readFileSync(path.join(__dirname, 'public', 'signup.css'), 'utf8');
       const out = new CleanCSS({}).minify(raw);
       cache[file] = out.errors.length ? null : out.styles;
     } catch { cache[file] = null; }
@@ -3213,7 +3217,7 @@ app.post('/api/cta/:key', (req, res) => {
 // express.static unchanged. Safe to cache for a full year: the URL is always requested
 // with ?v=CSS_VER (mtime-derived), so any real content change gets a new URL rather than
 // invalidating this one.
-app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css', '/courts.css', '/join.css', '/app.css'], (req, res) => {
+app.get(['/styles.css', '/admin.css', '/auth.css', '/profile.css', '/teams.css', '/players.css', '/papawis.css', '/courts.css', '/join.css', '/app.css', '/signup.css'], (req, res) => {
   const file = req.path.slice(1);
   const minified = MINIFIED_CSS[file];
   if (!minified) return res.sendFile(path.join(__dirname, 'public', file));
@@ -6301,7 +6305,7 @@ import { appSignInCodeEmail } from './lib/mailer.js';
 // resumed app compares against (/app/version): a change reloads every open app.
 const APP_VER = (() => {
   const h = createHash('sha1');
-  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/player-cards.js', 'views/player-cards.js', 'views/app/papawis-score.js', 'views/app/table.js', 'public/table/table.js', 'public/table/index.html', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js', 'views/app/season.js', 'views/feed-admin.js', 'public/feed-admin.js']) {
+  for (const f of ['public/app.css', 'public/app.js', 'public/table-scroll.js', 'public/player-cards.js', 'views/player-cards.js', 'views/app/papawis-score.js', 'views/app/table.js', 'public/table/table.js', 'public/table/index.html', 'public/app-sw.js', 'public/share-cards.js', 'public/scorer.js', 'public/score-engine.js', 'public/live-score.js', 'public/live-chat.js', 'public/barkadahan.js', 'lib/live-score.js', 'views/live-chat.js', 'views/app/score.js', 'views/app/layout.js', 'views/app/auth.js', 'views/app/home.js', 'views/app/setup.js', 'views/app/tabs.js', 'views/app/feed.js', 'views/app/game.js', 'views/app/picks.js', 'views/app/passkeys.js', 'views/app/papawis.js', 'views/app/admin-papawis.js', 'views/app/settle.js', 'views/app/comments.js', 'views/app/share.js', 'views/app/rate.js', 'views/app/poll.js', 'views/app/barkadahan.js', 'views/app/help.js', 'views/app/practice.js', 'views/app/finish.js', 'views/app/season.js', 'views/feed-admin.js', 'public/feed-admin.js', 'public/signup.css', 'public/signup.js', 'views/season-signup-flow.js', 'lib/season-signup.js']) {
     try { h.update(f).update(readFileSync(path.join(__dirname, f))); } catch {}
   }
   return h.digest('hex').slice(0, 10);
@@ -6403,8 +6407,8 @@ function appSeasonState(me) {
   ];
   if (signupOpen || signup) {
     rows.push(signup
-      ? { icon: 'form', title: `Signed up for Season ${season}`, done: true }
-      : { icon: 'form', title: `Season ${season} sign-up`, sub: 'Sign-ups are open', pill: 'Sign up', href: '/season-signup', done: false });
+      ? { icon: 'form', title: `Signed up for Season ${season}`, href: '/app/signup', done: true }
+      : { icon: 'form', title: `Season ${season} sign-up`, sub: 'Sign-ups are open', pill: 'Sign up', href: '/app/signup', done: false });
   }
   if (signup?.jersey_requested_at) {
     rows.push(signup.jersey_submitted_at
@@ -10513,6 +10517,8 @@ function appLinkFor(link = '') {
   if (/^\/me\/conduct\b/.test(path)) return '/app/conduct';
   if (/^\/me\b/.test(path)) return '/app/me';
   if (/^\/settle-balance/.test(path)) return '/app/settle';
+  const ss = /^\/season-signup(\/(how|click|\d))?\/?$/.exec(path);
+  if (ss) return `/app/signup${ss[1] || ''}`;
   return '/app/notifications';
 }
 onNotificationCreated(n => {
@@ -23187,19 +23193,15 @@ app.post('/register', (req, res) => {
 });
 
 // ── Season Signup (member-facing) ─────────────────────────────────────────────
-import { seasonSignupPage } from './views/season-signup.js';
+// The Season 5 sign-up (docs/agents/features/season5-signup-spec.md): a start screen, six
+// steps saved as a draft as you go, Send, and the Sent screen with Edit until close. The same
+// routes serve the site (/season-signup) and the app (/app/signup); only the wrapper differs.
+// The rules live in lib/season-signup.js, the screens in views/season-signup-flow.js.
+import { signupStartScreen, signupStepScreen, signupSentScreen, signupClickScreen, signupNoticeScreen, signupHowScreen, paymentsCard } from './views/season-signup-flow.js';
 import { SIZES as JERSEY_SIZES, SIZE_CHART, sizeSurcharge, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
-
-// Capacity bar shown on the public signup form — still driven by real confirmed-signup
-// counts, just padded so it reads as "filling up" from the start instead of looking dead
-// at low fill. Floors the display at 55% and compresses the real 0-100 range into the
-// remaining 45 points, so it's still monotonic with actual signups and genuinely hits
-// 100% only once the season is actually full.
-const CAPACITY_BAR_FLOOR = 55;
-function padCapacityPct(rawPct) {
-  if (rawPct === null) return null;
-  return Math.round(CAPACITY_BAR_FLOOR + (rawPct / 100) * (100 - CAPACITY_BAR_FLOOR));
-}
+import { STEPS as SIGNUP_STEPS, LAST_STEP as SIGNUP_LAST, EXPECTATIONS_VERSION, PLAN_KEYS, MAX_CLICK_WITH, readStep, checkStep, checkAll, resumeStep, reviewLines, pickPose, poseByKey } from './lib/season-signup.js';
+import { playerRecord } from './lib/season-candidates.js';
+import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit } from './lib/portal-db.js';
 
 // Returning-player team poll: only shown if they actually played the prior season and
 // still have a team on record.
@@ -23210,219 +23212,287 @@ function getReturningTeamInfo(reg, sigSeason) {
   return team ? { prevSeason, team } : null;
 }
 
-app.get('/season-signup', (req, res) => {
-  const regId = req.session?.playerRegId;
-  if (!regId) return res.redirect(loginUrl(req));
+const SIGNUP_BASE = { site: '/season-signup', app: '/app/signup' };
+const signupKindOf = req => (req.path.startsWith('/app/') ? 'app' : 'site');
 
-  const reg = getRegistration(regId);
-  if (!reg || reg.status !== 'approved') {
-    return res.send(renderPage(req, {
-      title: 'Season Signup — WKND Basketball',
-      currentPath: '/season-signup',
-      body: seasonSignupPage({ state: 'not-approved' }),
-    }));
-  }
-  if (reg.player_id && getPlayerById(reg.player_id)?.banned_at) {
-    return res.send(renderPage(req, {
-      title: 'Season Signup — WKND Basketball',
-      currentPath: '/season-signup',
-      body: seasonSignupPage({ state: 'banned' }),
-    }));
-  }
-
-  const sigSeason        = getSetting('signup_target_season', '');
-  const sigOpen          = getSetting('season_signup_open', '0') === '1';
-  const deadline         = getSetting('season_signup_deadline', '');
-  const seasonFormat     = getSetting('season_format', '');
-  const quotaAmount      = getSetting('season_quota_amount', '');
-  const capacity         = Number(getSetting('season_roster_capacity', '0')) || 0;
-  const capacityPct      = (capacity && sigSeason) ? padCapacityPct(Math.min(100, Math.round(countConfirmedSeasonSignups(sigSeason) / capacity * 100))) : null;
-  const existing         = sigSeason ? getSeasonSignup(regId, sigSeason) : null;
-  const returning        = sigSeason ? getReturningTeamInfo(reg, sigSeason) : null;
-  const existingLivenessCapture = getLivenessCaptureByRegId(regId);
-  // Re-rolled on every page load (not once per session) — session-held so the capture POST
-  // below can trust it without the client ever having to send the prompt text itself.
-  req.session.livenessPrompt = randomLivenessPrompt();
-
-  res.send(renderPage(req, {
-    title: 'Season Signup — WKND Basketball',
-    currentPath: '/season-signup',
-    minimalHeader: true,
-    body: seasonSignupPage({
-      state: 'form', sigSeason, sigOpen, deadline, existing, reg, name: reg.full_name,
-      seasonFormat, quotaAmount, capacityPct, returning, existingLivenessCapture,
-      livenessPrompt: req.session.livenessPrompt, avoidOptions: seasonAvoidOptions(reg),
-    }),
+function sendSignup(req, res, kind, body, { title = 'Season sign-up', status = 200 } = {}) {
+  if (kind === 'app') return res.status(status).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(req), ga: buildAppGaSnippet(req), title: `${title} · WKND`, bare: true, body }));
+  res.status(status).send(renderPage(req, {
+    title: `${title} — WKND Basketball`, currentPath: '/season-signup', minimalHeader: true, noindex: true,
+    metaTags: `<link rel="stylesheet" href="/signup.css?v=${SIGNUP_VER}">`,
+    body: `${body}<script src="/signup.js?v=${SIGNUP_VER}" defer></script>`,
   }));
+}
+
+// Who is signing up and what the season looks like. null = not signed in.
+function signupState(req) {
+  const regId = req.session?.playerRegId;
+  if (!regId) return null;
+  const reg = getRegistration(regId);
+  if (!reg) return null;
+  const season = getSetting('signup_target_season', '');
+  return {
+    regId, reg, season, playerId: reg.player_id || '',
+    approved: reg.status === 'approved',
+    open: !!season && getSetting('season_signup_open', '0') === '1',
+    deadline: getSetting('season_signup_deadline', ''),
+    banned: !!(reg.player_id && getPlayerById(reg.player_id)?.banned_at),
+  };
+}
+
+function signupPrices() {
+  const n = (k, d) => { const v = Number(getSetting(k, String(d))); return Number.isFinite(v) ? v : d; };
+  return {
+    fee: n('season_quota_amount', 3750), topPrice: n('jersey_top_price', 550), shortPrice: n('jersey_short_price', 550),
+    pocketsPrice: n('jersey_pockets_price', 100), cutPrice: n('jersey_nba_cut_price', 50), stepPrice: n('jersey_surcharge_step', 50),
+  };
+}
+function signupJersey(d, p = signupPrices()) {
+  const b = computeJerseyBreakdown({
+    topPrice: p.topPrice, shortPrice: p.shortPrice, jerseyTop: d.jersey_top || '', jerseyShorts: d.jersey_shorts || '',
+    pockets: !!d.pockets, pocketsPrice: p.pocketsPrice, surchargeStep: p.stepPrice, jerseyCut: d.jersey_cut, cutPrice: p.cutPrice,
+  });
+  return {
+    top: b.topAmount, shorts: b.shortsAmount, total: b.total,
+    topLabel: d.jersey_top ? `Top ${d.jersey_top}, ${d.jersey_cut === 'nba' ? 'NBA' : 'regular'} cut` : '',
+    shortsLabel: d.jersey_shorts ? `Shorts ${d.jersey_shorts}${d.pockets ? ' + pockets' : ''}` : '',
+  };
+}
+
+// Everything the steps and the validator need about this player. Built once per request.
+function signupCtx(st) {
+  const record = st.playerId ? playerRecord(st.playerId) : null;
+  const owing = st.playerId ? Math.max(0, Math.round(Number(getPlayerFinancials(st.playerId)?.current_balance || 0))) : 0;
+  const payFirst = !!record?.payFirst || owing >= 100;
+  const leagueSeason = Number(st.season) - 1;
+  const since = new Date(Date.now() - 365 * 86400000 + 8 * 3600000).toISOString().slice(0, 10);
+  const teams = Object.fromEntries(getAllTeams().map(t => [t.id, t.color || teamColor(t.name)]));
+  const shared = sharedCourtPlayers(st.playerId, { leagueSeason, sinceDay: since })
+    .filter(p => p.id !== st.playerId)
+    .map(p => {
+      const meta = [p.teammate && `Teammate · ${p.teammate} game${p.teammate === 1 ? '' : 's'} together`, !p.teammate && p.opponent && `Opponent · faced ${p.opponent} time${p.opponent === 1 ? '' : 's'}`, p.papawis && `Papawis · ${p.papawis} run${p.papawis === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+      const rel = [p.teammate && 'team', p.opponent && 'opp', p.papawis && 'papawis'].filter(Boolean).join(' ');
+      return { id: p.id, first_name: p.first_name, last_name: p.last_name, display: displayPlayerName(p.name), meta, rel, color: teams[p.team_id] || '', photoUrl: playerPhotoUrl(p.id, 96) };
+    })
+    .sort((a, b) => a.display.localeCompare(b.display));
+  const plansOffered = payFirst ? ['full'] : PLAN_KEYS;
+  return {
+    record, owing, payFirst, plansOffered, plans: plansOffered, shared, leagueSeason,
+    returning: getReturningTeamInfo(st.reg, st.season),
+    avoidIds: new Set(shared.map(p => p.id)), selfId: st.playerId,
+    sizes: JERSEY_SIZES, hasWaiver: !!st.reg.waiver_agreed_at, ownPhone: st.reg.phone || '', now: new Date(),
+  };
+}
+
+// The draft as the steps show it: what's saved, over what we can fill in from before (last
+// season's sizes, last answer to "what would a teammate say").
+function signupDraft(st) {
+  const saved = getSignupDraft(st.regId, st.season);
+  const seed = {};
+  const last = st.playerId ? getPlayerAssessmentHistory(st.playerId).find(a => String(a.season) !== String(st.season) && a.q7_work_on) : null;
+  if (last) { seed.work_on = last.q7_work_on; seed._workOnPrefilled = '1'; }
+  const prev = lastSignupKit(st.regId, st.season);
+  if (prev) Object.assign(seed, { jersey_top: prev.jersey_top, jersey_shorts: prev.jersey_shorts, pockets: prev.pockets ? '1' : '', _kitPrefilled: '1' });
+  return { draft: saved, d: { ...seed, ...(saved || {}) } };
+}
+
+function signupBlocked(req, res, kind, st) {
+  const base = SIGNUP_BASE[kind];
+  if (!st) { res.redirect(kind === 'app' ? '/app/login' : loginUrl(req)); return true; }
+  if (!st.approved) { sendSignup(req, res, kind, signupNoticeScreen(kind, { title: 'Application pending', body: 'Season sign-ups open to you once an admin approves your account.' })); return true; }
+  if (st.banned) {
+    sendSignup(req, res, kind, signupNoticeScreen(kind, { title: 'Your account is suspended', body: 'You can’t sign up for a season right now. Settle your balance and the suspension lifts, then the sign-up opens.',
+      action: `<a class="sgn-btn" href="${kind === 'app' ? '/app/settle' : '/settle-balance'}">Settle my balance</a>` }));
+    return true;
+  }
+  return false;
+}
+
+// The Sent screen data (status, payments once confirmed, click-with faces).
+function signupSentData(st, kind, signup) {
+  const ids = getClickWith(st.season, st.regId);
+  const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  return {
+    base: SIGNUP_BASE[kind], season: st.season, deadline: st.deadline, signup, open: st.open,
+    canEdit: st.open && signup.status === 'waitlisted',
+    clickWith: ids.map(id => players[id]).filter(Boolean),
+    payments: signup.status === 'confirmed' ? paymentsCard(kind, seasonPaymentsFor(signup)) : '',
+  };
+}
+
+function signupStart(req, res) {
+  const kind = signupKindOf(req), st = signupState(req);
+  if (signupBlocked(req, res, kind, st)) return;
+  const signup = st.season ? getSeasonSignup(st.regId, st.season) : null;
+  const { draft, d } = signupDraft(st);
+  if (signup && !draft) return sendSignup(req, res, kind, signupSentScreen(kind, signupSentData(st, kind, signup)), { title: `Season ${st.season}` });
+  if (!st.open) return sendSignup(req, res, kind, signupNoticeScreen(kind, { title: 'Sign-ups aren’t open', body: 'Season sign-ups aren’t open right now. We’ll tell you here and by email when they are.' }));
+  const ctx = signupCtx(st);
+  const p = signupPrices();
+  sendSignup(req, res, kind, signupStartScreen(kind, {
+    base: SIGNUP_BASE[kind], season: st.season, deadline: st.deadline, spots: Number(getSetting('season_roster_capacity', '48')) || 48,
+    ...p, record: ctx.record, recordSeason: ctx.leagueSeason, owing: ctx.owing, payFirst: ctx.payFirst,
+    draftStep: draft ? resumeStep(d, ctx) : 0,
+  }));
+}
+app.get('/season-signup', signupStart);
+app.get('/app/signup', requireApp, signupStart);
+
+app.get(['/season-signup/how', '/app/signup/how'], (req, res, next) => (signupKindOf(req) === 'app' ? requireApp(req, res, next) : next()), (req, res) => {
+  const kind = signupKindOf(req);
+  const season = getSetting('signup_target_season', '') || String(Number(getPortalCurrentSeason()) + 1);
+  sendSignup(req, res, kind, signupHowScreen(kind, { base: SIGNUP_BASE[kind], season, prevSeason: Number(season) - 1 }), { title: 'How we choose the 48' });
 });
+
+// One step. Only steps up to the first unfinished one open; later ones send you there.
+function signupStepData(st, kind, n, d, ctx, errors = []) {
+  const prices = signupPrices();
+  const jersey = signupJersey(d, prices);
+  const photo = getLivenessCapture(st.regId, st.season);
+  const pose = poseByKey(d.pose);
+  const names = Object.fromEntries(ctx.shared.map(p => [p.id, p.display]));
+  return {
+    n, base: SIGNUP_BASE[kind], d, errors, season: st.season, deadline: st.deadline, prices, now: ctx.now,
+    returning: ctx.returning, payFirst: ctx.payFirst, plansOffered: ctx.plansOffered, shared: ctx.shared, leagueSeason: ctx.leagueSeason,
+    sizes: JERSEY_SIZES, sizeChart: SIZE_CHART, jersey, hasWaiver: ctx.hasWaiver,
+    onFile: { emergency_name: st.reg.emergency_name || '', emergency_phone: st.reg.emergency_phone || '', birthday: st.reg.birthday || '' },
+    workOnPrefilled: !!d._workOnPrefilled, kitPrefilled: !!d._kitPrefilled,
+    photo: photo && photo.via !== 'activation' ? photo : null, photoUrl: '/season-signup/my-photo',
+    poseText: pose?.prompt || 'Your pose shows here', poseLabel: pose?.label || '',
+    reviewLines: reviewLines(d, { teamName: ctx.returning?.team?.name || '', ratherNotNames: (d.avoid || []).map(id => names[id]).filter(Boolean), jerseyTotal: jersey.total }),
+  };
+}
+
+function signupStep(req, res) {
+  const kind = signupKindOf(req), st = signupState(req);
+  if (signupBlocked(req, res, kind, st)) return;
+  const base = SIGNUP_BASE[kind];
+  const n = Number(req.params.n);
+  if (!st.open || n < 1 || n > SIGNUP_LAST) return res.redirect(base);
+  const signup = getSeasonSignup(st.regId, st.season);
+  const { draft, d } = signupDraft(st);
+  if (signup && (!draft || signup.status !== 'waitlisted')) return res.redirect(base);
+  const ctx = signupCtx(st);
+  const reach = resumeStep(d, ctx);
+  if (n > reach) return res.redirect(`${base}/${reach}`);
+  sendSignup(req, res, kind, signupStepScreen(kind, signupStepData(st, kind, n, d, ctx)), { title: SIGNUP_STEPS[n - 1].title });
+}
+app.get('/season-signup/:n(\\d)', signupStep);
+app.get('/app/signup/:n(\\d)', requireApp, signupStep);
+
+// The step's own photo, for the game face card (this season's, only to its owner).
+app.get('/season-signup/my-photo', (req, res) => {
+  const st = signupState(req);
+  const cap = st && st.season ? getLivenessCapture(st.regId, st.season) : null;
+  const m = /^data:(image\/[a-z]+);base64,(.*)$/.exec(cap?.photo_data || '');
+  if (!m) return res.status(404).end();
+  res.set('Cache-Control', 'private, no-store').type(m[1]).send(Buffer.from(m[2], 'base64'));
+});
+
+function signupPostStep(req, res) {
+  const kind = signupKindOf(req), st = signupState(req);
+  if (signupBlocked(req, res, kind, st)) return;
+  const base = SIGNUP_BASE[kind];
+  const n = Number(req.params.n);
+  if (!st.open || n < 1 || n > SIGNUP_LAST) return res.redirect(base);
+  const signup = getSeasonSignup(st.regId, st.season);
+  const { draft, d: before } = signupDraft(st);
+  if (signup && (!draft || signup.status !== 'waitlisted')) return res.redirect(base);
+  const ctx = signupCtx(st);
+  const d = { ...before, ...readStep(n, req.body, ctx) };
+  if (n === 1 && d.agree === '1') d.expectations_version = EXPECTATIONS_VERSION;
+  // The contest pose is handed out once, with the first save, and kept.
+  if (!poseByKey(d.pose)) d.pose = pickPose(contestPoseCounts(st.season));
+  saveSignupDraft(st.regId, st.season, d);
+
+  const go = String(req.body.go || 'next');
+  if (go === 'later') return res.redirect(base);
+  if (go === 'back') return res.redirect(n > 1 ? `${base}/${n - 1}` : base);
+  if (/^[1-5]$/.test(go)) return res.redirect(`${base}/${go}`);
+  const again = (step, errors) => sendSignup(req, res, kind, signupStepScreen(kind, signupStepData(st, kind, step, d, ctx, errors)), { title: SIGNUP_STEPS[step - 1].title, status: 400 });
+
+  if (go === 'send' && n === SIGNUP_LAST) {
+    const first = checkAll(d, ctx);
+    if (first) return again(first.step, checkStep(first.step, d, ctx));
+    const photo = getLivenessCapture(st.regId, st.season);
+    if (!photo || photo.via === 'activation') return again(SIGNUP_LAST, [{ step: SIGNUP_LAST, field: 'photo', message: 'Take your game face first.' }]);
+    const reg = st.reg;
+    // Contact details: saved to the profile; a change from what was on file is flagged for admins.
+    const changes = [];
+    if (reg.emergency_name && reg.emergency_name !== d.emergency_name) changes.push(`Emergency name: "${reg.emergency_name}" -> "${d.emergency_name}"`);
+    if (reg.emergency_phone && reg.emergency_phone !== d.emergency_phone) changes.push(`Emergency phone: "${reg.emergency_phone}" -> "${d.emergency_phone}"`);
+    if (reg.birthday && reg.birthday !== d.birthday) changes.push(`Birthday: "${reg.birthday}" -> "${d.birthday}"`);
+    updateRegistrationContact(st.regId, { emergency_name: d.emergency_name, emergency_phone: d.emergency_phone });
+    updateRegBirthday(st.regId, d.birthday, reg.player_id || null);
+    if (!reg.waiver_agreed_at) setWaiverAgreement(st.regId, d.waiver_signature);
+    saveSeasonSignupFromDraft({
+      regId: st.regId, playerId: st.playerId, season: st.season, d, hasBalance: ctx.owing > 0, balanceAmt: ctx.owing,
+      teamPref: ctx.returning ? d.team_pref : '', contactChangeNote: changes.join('; '), pose: d.pose,
+    });
+    insertAdminLog({ actor: reg.full_name || reg.email, actorType: 'player', method: 'POST', path: '/season-signup', details: { event: 'season_signup', edit: signup ? 1 : 0 } });
+    return res.redirect(base);
+  }
+
+  const errors = checkStep(n, d, ctx);
+  if (errors.length) return again(n, errors);
+  res.redirect(`${base}/${Math.min(n + 1, SIGNUP_LAST)}`);
+}
+app.post('/season-signup/:n(\\d)', express.urlencoded({ extended: false, limit: '200kb' }), signupPostStep);
+app.post('/app/signup/:n(\\d)', requireApp, express.urlencoded({ extended: false, limit: '200kb' }), signupPostStep);
+
+// "Edit my sign-up": copy the sent sign-up into a draft and open Review. Only while it's
+// still waitlisted and sign-ups are open; Send updates it in place.
+function signupEdit(req, res) {
+  const kind = signupKindOf(req), st = signupState(req);
+  if (signupBlocked(req, res, kind, st)) return;
+  const base = SIGNUP_BASE[kind];
+  const signup = st.open ? getSeasonSignup(st.regId, st.season) : null;
+  if (!signup || signup.status !== 'waitlisted') return res.redirect(base);
+  if (!getSignupDraft(st.regId, st.season)) saveSignupDraft(st.regId, st.season, draftFromSignup(st.regId, st.season));
+  res.redirect(`${base}/${SIGNUP_LAST}`);
+}
+app.post('/season-signup/edit', signupEdit);
+app.post('/app/signup/edit', requireApp, signupEdit);
+
+// "Who do you click with?" (Sent screen): up to MAX_CLICK_WITH active players, team building only.
+function clickPeople(st) {
+  return getAllPlayers().filter(p => p.status !== 'inactive' && p.id !== st.playerId)
+    .map(p => ({ id: p.id, first_name: p.first_name, last_name: p.last_name, display: displayPlayerName(p.name), photoUrl: playerPhotoUrl(p.id, 96) }))
+    .sort((a, b) => a.display.localeCompare(b.display));
+}
+function signupClick(req, res) {
+  const kind = signupKindOf(req), st = signupState(req);
+  if (signupBlocked(req, res, kind, st)) return;
+  const base = SIGNUP_BASE[kind];
+  const signup = st.season ? getSeasonSignup(st.regId, st.season) : null;
+  if (!signup || !st.open) return res.redirect(base);
+  if (req.method === 'POST') {
+    const valid = new Set(clickPeople(st).map(p => p.id));
+    const ids = [...new Set([].concat(req.body.click || []).map(String))].filter(id => valid.has(id)).slice(0, MAX_CLICK_WITH);
+    saveClickWith(st.season, st.regId, ids);
+    return res.redirect(base);
+  }
+  sendSignup(req, res, kind, signupClickScreen(kind, { base, season: st.season, people: clickPeople(st), selected: getClickWith(st.season, st.regId) }), { title: 'Who do you click with?' });
+}
+app.get('/season-signup/click', signupClick);
+app.get('/app/signup/click', requireApp, signupClick);
+app.post('/season-signup/click', express.urlencoded({ extended: false }), signupClick);
+app.post('/app/signup/click', requireApp, express.urlencoded({ extended: false }), signupClick);
+
+// A confirmed sign-up's payments: the locked dates (pay_dates) against what's been paid toward
+// this season's jersey + fee. Filled in by the payments build (confirmation writes pay_dates).
+function seasonPaymentsFor(signup) {
+  let rows = [];
+  try { rows = JSON.parse(signup.pay_dates || '[]'); } catch {}
+  if (!rows.length) return null;
+  return { rows: rows.map(r => ({ ...r, paid: false, late: false })), paidSoFar: 0, total: rows.reduce((s, r) => s + r.amount, 0), next: rows[0] };
+}
 
 // "Wouldn't play with again" answers as an admin may see them. An elevated admin is also a player;
 // the shared super-admin login isn't.
 function seasonNominationsFor(season, req) {
   return summarizeNominations(getSeasonNominations(season).map(n => ({ nominee_player_id: n.nominee_player_id, nominator_name: displayPlayerName(n.nominator_full_name) || 'A member' })), { viewerPlayerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' });
 }
-
-// Who a member can name on the sign-up: active players, not themselves.
-function seasonAvoidOptions(reg) {
-  return getAllPlayers().filter(p => p.status !== 'inactive' && p.id !== reg.player_id)
-    .map(p => ({ id: p.id, name: displayPlayerName(p.name) })).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-app.post('/season-signup', express.urlencoded({ extended: false }), (req, res) => {
-  const regId = req.session?.playerRegId;
-  if (!regId) return res.redirect(loginUrl(req));
-
-  const reg = getRegistration(regId);
-  if (!reg || reg.status !== 'approved') return res.redirect('/season-signup');
-  if (reg.player_id && getPlayerById(reg.player_id)?.banned_at) return res.redirect('/season-signup');
-
-  const sigSeason = getSetting('signup_target_season', '');
-  const sigOpen   = getSetting('season_signup_open', '0') === '1';
-  if (!sigSeason || !sigOpen) return res.redirect('/season-signup');
-
-  const existingSignup = getSeasonSignup(regId, sigSeason);
-  if (existingSignup) return res.redirect('/season-signup');
-
-  const deadline         = getSetting('season_signup_deadline', '');
-  const seasonFormat     = getSetting('season_format', '');
-  const quotaAmount      = getSetting('season_quota_amount', '');
-  const capacity         = Number(getSetting('season_roster_capacity', '0')) || 0;
-  const capacityPct      = capacity ? padCapacityPct(Math.min(100, Math.round(countConfirmedSeasonSignups(sigSeason) / capacity * 100))) : null;
-  const returning        = getReturningTeamInfo(reg, sigSeason);
-
-  const rerender = (error) => res.send(renderPage(req, {
-    title: 'Season Signup — WKND Basketball',
-    currentPath: '/season-signup',
-    minimalHeader: true,
-    body: seasonSignupPage({
-      state: 'form', sigSeason, sigOpen: true, deadline, reg, name: reg.full_name,
-      seasonFormat, quotaAmount, capacityPct, returning, error, prefill: req.body,
-      existingLivenessCapture: getLivenessCaptureByRegId(regId), avoidOptions: seasonAvoidOptions(reg),
-    }),
-  }));
-
-  const jerseyTop     = (req.body.jersey_top     || '').trim();
-  const jerseyShorts  = (req.body.jersey_shorts  || '').trim();
-  const pockets       = req.body.pockets === '1' ? 1 : 0;
-  const quotaAck      = req.body.quota_ack === '1' ? 1 : 0;
-  const paymentPlan   = (req.body.payment_plan   || '').trim();
-  const reshuffleVote = (req.body.reshuffle_vote || '').trim();
-  const comments        = (req.body.comments        || '').trim();
-  const emergencyName   = (req.body.emergency_name   || '').trim();
-  const emergencyPhone  = (req.body.emergency_phone  || '').trim();
-  const birthday         = (req.body.birthday         || '').trim();
-  const teamPref       = (req.body.team_pref     || '').trim();
-  const waiverAgree     = req.body.waiver_agree === 'on' || req.body.waiver_agree === '1';
-  const waiverSignature = (req.body.waiver_signature || '').trim();
-  // Group 00 is now required (see the getLivenessCaptureByRegId gate below) — the capture
-  // itself already saved via /season-signup/liveness-capture well before this final submit.
-  // liveness_skip is no longer offered in the UI; this stays only to keep displaying the
-  // "Skipped" badge on pre-existing rows from before the step became mandatory.
-  const livenessSkipped = req.body.liveness_skip === 'on' || req.body.liveness_skip === '1';
-
-  const q1WhyPlaying     = (req.body.q1_why_playing     || '').trim();
-  const q2LosingBadly    = (req.body.q2_losing_badly    || '').trim();
-  const q3BadRefCall     = (req.body.q3_bad_ref_call     || '').trim();
-  const q4HeatedTeammate = (req.body.q4_heated_teammate || '').trim();
-  const q5FeedbackStyle  = (req.body.q5_feedback_style  || '').trim();
-  const q6BenchedComfort = (req.body.q6_benched_comfort || '').trim();
-  const q7WorkOn         = (req.body.q7_work_on         || '').trim();
-  const q8DisagreementStyle    = (req.body.q8_disagreement_style    || '').trim();
-  const q9ReactionToCriticism  = (req.body.q9_reaction_to_criticism || '').trim();
-  const selfScoring      = (req.body.self_scoring       || '').trim();
-  const selfDefense      = (req.body.self_defense       || '').trim();
-  const selfOverall      = (req.body.self_overall       || '').trim();
-
-  if (!getLivenessCaptureByRegId(regId)) return rerender('Take a liveness photo (camera or phone) before continuing.');
-
-  if (!JERSEY_SIZES.includes(jerseyTop)) return rerender('Pick a jersey top size.');
-  if (jerseyShorts && !JERSEY_SIZES.includes(jerseyShorts)) return rerender('Pick a valid shorts size.');
-
-  if (q1WhyPlaying.length < 10) return rerender('Tell us a bit more about why you\'re playing this season.');
-  if (!['stay_engaged', 'go_quiet', 'frustrated_vocal', 'take_over'].includes(q2LosingBadly)) return rerender('Answer how you handle the team losing badly.');
-  if (!['let_it_go', 'voice_briefly', 'argue_it', 'carry_into_plays'].includes(q3BadRefCall)) return rerender('Answer how you react to a bad ref call.');
-  if (!['1','2','3','4','5'].includes(q4HeatedTeammate)) return rerender('Rate how you handle a heated moment with a teammate.');
-  if (!['raise_with_group', 'private_after', 'vent_no_address', 'put_in_writing', 'sit_on_it'].includes(q8DisagreementStyle)) return rerender('Answer how you handle disagreeing with a team decision.');
-  if (!['direct', 'private', 'written'].includes(q5FeedbackStyle)) return rerender('Answer how you prefer to receive feedback.');
-  if (!['welcome_specifics', 'listen_disagree', 'defensive_argue', 'brush_off'].includes(q9ReactionToCriticism)) return rerender('Answer how you\'d react to being told a part of your game needs work.');
-  if (!['1','2','3','4','5'].includes(q6BenchedComfort)) return rerender('Rate your comfort being benched.');
-  if (q7WorkOn.length < 10) return rerender('Tell us a bit more about what a past teammate would say you need to work on.');
-  if (!['below_average','average','above_average','best'].includes(selfScoring)) return rerender('Rate your scoring/shooting vs. the league.');
-  if (!['below_average','average','above_average','best'].includes(selfDefense)) return rerender('Rate your defense vs. the league.');
-  if (!['below_average','average','above_average','best'].includes(selfOverall)) return rerender('Rate your overall game vs. the league.');
-
-  // Returning players get asked whether to stick with their team or reshuffle — required
-  // when applicable, recomputed server-side rather than trusting a hidden form field.
-  if (returning && !['stick', 'reshuffle'].includes(teamPref)) {
-    return rerender("Let us know: stick with your team or open to a shuffle?");
-  }
-
-  if (!['yes', 'no'].includes(reshuffleVote)) return rerender('Vote yes or no on the league shuffle.');
-  if (!quotaAck) return rerender('You need to acknowledge the season fee.');
-  if (!['full', 'installment'].includes(paymentPlan)) return rerender('Pick a payment plan.');
-
-  // Registrants with no waiver on file yet (predates /register's waiver step) get the
-  // full text + a typed signature here instead of the lightweight reconfirm-only
-  // checkbox — see hasWaiverOnFile in views/season-signup.js.
-  if (!waiverAgree) return rerender('Read the fine print and check the waiver box before continuing.');
-  if (!reg.waiver_agreed_at && !waiverSignature) return rerender('Type your full legal name as your signature on the waiver.');
-
-  if (!emergencyName) return rerender('Emergency contact name is required.');
-  const emergencyPhoneDigits = emergencyPhone.replace(/[\s-]/g, '');
-  if (!/^(?:\+63|0)9\d{9}$/.test(emergencyPhoneDigits)) return rerender('Enter a valid PH mobile number for your emergency contact.');
-  if (emergencyPhoneDigits === (reg.phone || '').replace(/[\s-]/g, '')) return rerender("Emergency contact number can't be your own number.");
-  if (!birthday) return rerender('Birthday is required.');
-  {
-    const dob = new Date(birthday);
-    const age18 = new Date(dob.getFullYear() + 18, dob.getMonth(), dob.getDate());
-    if (Number.isNaN(dob.getTime()) || new Date() < age18) return rerender('You must be 18+ to sign up.');
-  }
-
-  // Flag (don't block) if the resubmitted contact details differ from what's on file.
-  const changes = [];
-  if (reg.emergency_name  && reg.emergency_name  !== emergencyName)  changes.push(`Emergency name: "${reg.emergency_name}" -> "${emergencyName}"`);
-  if (reg.emergency_phone && reg.emergency_phone !== emergencyPhone) changes.push(`Emergency phone: "${reg.emergency_phone}" -> "${emergencyPhone}"`);
-  if (reg.birthday        && reg.birthday        !== birthday)       changes.push(`Birthday: "${reg.birthday}" -> "${birthday}"`);
-
-  updateRegistrationContact(regId, { emergency_name: emergencyName, emergency_phone: emergencyPhone });
-  updateRegBirthday(regId, birthday, reg.player_id || null);
-
-  // Legacy registrant (no waiver on file) — this submission's checkbox + typed name IS
-  // their first real agreement, not just a reconfirmation. Someone who already had one
-  // just reconfirms it; setWaiverAgreement is never called again for them.
-  if (!reg.waiver_agreed_at) setWaiverAgreement(regId, waiverSignature);
-
-  let hasBalance = false, balanceAmt = 0;
-  if (reg.player_id) {
-    const fin = getPlayerFinancials(reg.player_id);
-    if ((fin?.current_balance ?? 0) > 0) {
-      hasBalance = true;
-      balanceAmt = fin.current_balance;
-    }
-  }
-
-  insertSeasonSignup(regId, sigSeason, hasBalance, balanceAmt, jerseyTop, jerseyShorts, quotaAck, returning ? teamPref : '', {
-    pockets, reshuffleVote, paymentPlan, comments,
-    contactChangedAt: changes.length ? Date.now() : 0,
-    contactChangeNote: changes.join('; '),
-    waiverReconfirmedAt: Date.now(),
-    livenessSkippedAt: livenessSkipped ? Date.now() : 0,
-  });
-  saveSeasonNominations(sigSeason, regId, cleanNominations([req.body.avoid_1, req.body.avoid_2], { selfId: reg.player_id, validIds: new Set(seasonAvoidOptions(reg).map(p => p.id)) }));
-  insertPlayerAssessment(reg.player_id || '', regId, sigSeason, {
-    q1WhyPlaying, q2LosingBadly, q3BadRefCall, q4HeatedTeammate, q5FeedbackStyle,
-    q6BenchedComfort, q7WorkOn, q8DisagreementStyle, q9ReactionToCriticism,
-    selfScoring, selfDefense, selfOverall,
-  });
-  const created = getSeasonSignup(regId, sigSeason);
-
-  res.send(renderPage(req, {
-    title: 'Season Signup — WKND Basketball',
-    currentPath: '/season-signup',
-    minimalHeader: true,
-    body: seasonSignupPage({ sigSeason, deadline, existing: created, reg, name: reg.full_name, hasBalance, balanceAmt, seasonFormat, quotaAmount, capacityPct }),
-  }));
-});
 
 // ── Season Signup Group 00 — Liveness Check ─────────────────────────────────────
 // Admin-reference-only photo, not identity verification (no matching, no pass/fail — see
@@ -23494,12 +23564,24 @@ function resolveSeasonSignupContext(req) {
   return { regId, reg, sigSeason };
 }
 
+// The game face pose for this sign-up (one of the Game Face contest's four, lib/season-signup.js
+// CONTEST_POSES): the one already given to the draft or the sent sign-up, else a new one,
+// handed out evenly and saved with the draft so it never changes.
+function signupPosePrompt(regId, season) {
+  const draft = getSignupDraft(regId, season);
+  const key = draft?.pose || getSeasonSignup(regId, season)?.contest_pose;
+  if (poseByKey(key)) return poseByKey(key).prompt;
+  const pose = pickPose(contestPoseCounts(season));
+  saveSignupDraft(regId, season, { ...(draft || {}), pose });
+  return poseByKey(pose).prompt;
+}
+
 app.post('/season-signup/liveness-capture', express.json({ limit: '8mb' }), (req, res) => {
   const ctx = resolveSeasonSignupContext(req);
   if (!ctx) return res.status(401).json({ error: 'Not eligible to sign up right now.' });
   const dataUrl = String(req.body?.dataUrl || '');
   if (!/^data:image\/(jpeg|jpg|png);base64,/.test(dataUrl)) return res.status(400).json({ error: 'Invalid image.' });
-  upsertLivenessCapture({ regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, photoData: dataUrl, via: 'inline', prompt: shownPrompt(req, LIVENESS_PROMPTS) });
+  upsertLivenessCapture({ regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, photoData: dataUrl, via: 'inline', prompt: signupPosePrompt(ctx.regId, ctx.sigSeason) });
   res.json({ ok: true });
 });
 
@@ -23525,7 +23607,7 @@ app.post('/season-signup/liveness-token', express.json(), async (req, res) => {
   // different from what the user just read on the desktop screen. Stored on the token
   // (not re-read from session on GET) so a slow-connection reload of the mobile page still
   // shows the same prompt instead of re-rolling mid-attempt.
-  const prompt = shownPrompt(req, LIVENESS_PROMPTS);
+  const prompt = signupPosePrompt(ctx.regId, ctx.sigSeason);
   livenessTokens.set(token, { regId: ctx.regId, playerId: ctx.reg.player_id || '', season: ctx.sigSeason, expiresAt: Date.now() + LIVENESS_TOKEN_TTL_MS, consumed: false, prompt });
   const url = `${getRequestOrigin(req)}/season-signup/liveness/${token}`;
   const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 240 });
@@ -23781,7 +23863,7 @@ function enrichSignup(s, sigSeason) {
     ? alignmentFlag(s.assessment.self_overall, getLatestPlayerRating(s.player_id)?.overall ?? null)
     : null;
   s.reviewSummary = s.assessment ? summarizeReviews(getAssessmentReviews(s.assessment.id)) : null;
-  s.liveness = getLivenessCaptureByRegId(s.reg_id);
+  s.liveness = getLivenessCapture(s.reg_id, s.season);
   return s;
 }
 

@@ -52,9 +52,10 @@ test('answers stay out of the sign-up row, and off the player-facing sign-up sum
   const db = readFileSync(new URL('lib/portal-db.js', root), 'utf8');
   const table = db.slice(db.indexOf('CREATE TABLE IF NOT EXISTS season_signups'));
   assert.ok(!table.slice(0, table.indexOf(');')).includes('nominee'));
-  const form = readFileSync(new URL('views/season-signup.js', root), 'utf8');
-  assert.ok(form.includes('name="avoid_1"'));
-  assert.ok(!form.includes('existing.avoid'));
+  const form = readFileSync(new URL('views/season-signup-flow.js', root), 'utf8');
+  assert.ok(form.includes("field: 'avoid'"));
+  const sent = form.slice(form.indexOf('export function signupSentScreen'), form.indexOf('export function signupClickScreen'));
+  assert.ok(!sent.includes('avoid'));
 });
 
 test('the one line admins read', () => {

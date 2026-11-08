@@ -4,8 +4,8 @@ import { escHtml } from './layout.js';
 // the authorization for this one narrow action). Scanned from a QR code shown on someone
 // else's desktop screen, so this needs to load fast and work with zero context: one camera
 // view, one button, one outcome. Reuses the same inline getUserMedia capture UI as the
-// desktop-with-webcam path in views/season-signup.js, just without the accordion/form
-// around it — see that file's Group 00 for the sibling implementation and shared rationale.
+// desktop-with-webcam path in public/signup.js (the season sign-up), just without the form
+// around it.
 export function livenessMobilePage({ token, expired = false, prompt = '' } = {}) {
   if (expired) {
     return `<!DOCTYPE html>
@@ -135,7 +135,7 @@ export function livenessMobilePage({ token, expired = false, prompt = '' } = {})
   });
 
   captureBtn.addEventListener('click', function () {
-    // See the matching comment in season-signup.js's Group 00 — native-resolution phone
+    // Like public/signup.js (the season sign-up): native-resolution phone
     // camera captures occasionally exceeded the server's upload size limit, which failed
     // silently as a generic "Network error" instead of a clear message. Cap the longest
     // side; this is a casual reference photo, not something needing full resolution.

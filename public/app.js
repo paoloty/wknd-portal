@@ -886,6 +886,7 @@
     initLive(); initChat();
     initGameRecap();
     initPractice(); initPwPractice(); initGuide(); initFbEmbeds(); initBarkadahan(); initOnlineSwitch(); initProfile();
+    if (window.wkndSignupInit) window.wkndSignupInit(); // the season sign-up (public/signup.js)
     if (window.wkndBkSync) window.wkndBkSync();
 
     // Up next countdown: data-countdown = epoch ms; ticks every 30s

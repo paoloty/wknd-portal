@@ -238,6 +238,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   ${tabbar}
   <script src="/table-scroll.js?v=${esc(ver)}" defer></script>
   <script src="/player-cards.js?v=${esc(ver)}" defer></script>
+  <script src="/signup.js?v=${esc(ver)}" defer></script>
   <script src="/app.js?v=${esc(ver)}" defer></script>
 </body>
 </html>`;
