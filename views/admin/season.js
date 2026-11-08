@@ -2,7 +2,7 @@
 // The details for the season being set up, with one Save; opening sign-ups; moving on to the next
 // season. Saves through /admin/season/settings and /admin/season/start.
 import { escHtml } from '../layout.js';
-import { pageHeader, section, field, fieldGrid, button, toggleRow, needsYou } from './ui.js';
+import { pageHeader, section, field, fieldGrid, button, toggleRow, needsYou, badge } from './ui.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
@@ -11,7 +11,7 @@ export function adminSeasonBody({
   count = 0, confirmedCount = 0,
   seasonFormat = '', quotaAmount = '', jerseyTopPrice = '', jerseyShortPrice = '', teamCount = '4',
   jerseySurchargeStep = '50', jerseyPocketsPrice = '100', seasonRosterCapacity = '',
-  allSeasons = [],
+  allSeasons = [], jerseyCutPrice = '50', payments = null,
 } = {}) {
   const started = draftStatus === 'started';
   const known = [...new Set(allSeasons.map(String))].sort((a, b) => Number(b) - Number(a));
@@ -38,6 +38,7 @@ export function adminSeasonBody({
       ${field({ label: 'Jersey top', name: 'jersey_top_price', type: 'money', value: jerseyTopPrice })}
       ${field({ label: 'Jersey shorts', name: 'jersey_short_price', type: 'money', value: jerseyShortPrice })}
       ${field({ label: 'Pockets add-on', name: 'jersey_pockets_price', type: 'money', value: jerseyPocketsPrice })}
+      ${field({ label: 'NBA cut', name: 'jersey_nba_cut_price', type: 'money', value: jerseyCutPrice, help: 'On the top only.' })}
       ${field({ label: 'Size surcharge', name: 'jersey_surcharge_step', type: 'money', value: jerseySurchargeStep, help: 'Per size, from 2XL up.' })}
       ${field({ label: 'Sign-up deadline', name: 'season_signup_deadline', value: deadline, placeholder: 'e.g. February 14, 2027', help: 'Optional.' })}
       ${field({ label: 'Season shown on the site', name: 'portal_season', type: 'select', value: portalSeason, options: [['', `Automatic (Season ${autoSeason})`], ...known.map(s => [s, `Season ${s}`])] })}
@@ -63,7 +64,32 @@ export function adminSeasonBody({
     ${pageHeader({ title: sigSeason ? `Season ${sigSeason}` : 'Season', sub: status })}
     ${needsYou(needs)}
     ${started ? '' : signupsBlock}
+    ${paymentsBlock(payments)}
     ${section({ id: 'season-details', title: 'Details', note: sigSeason ? `· Season ${sigSeason}` : '', bodyHtml: details })}
     ${nextBlock}
   </div>`;
+}
+
+const peso = n => `₱${Math.round(Number(n) || 0).toLocaleString('en-US')}`;
+const fmtDay = d => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '');
+
+// Season 5 payments (lib/season-signup.js): confirmations start everyone's payment clock at once
+// (dates locked, jersey + fee charged, players told); a missed first payment frees the spot, with
+// the top waitlisted player from Candidates suggested; 14+ days late is for an admin.
+// payments: { toConfirm, onPlan, overdue: [{ signupId, name, due, amount, suggest }], late: [{ name, due, amount, daysLate }] }
+function paymentsBlock(p) {
+  if (!p || (!p.toConfirm && !p.onPlan)) return '';
+  const send = p.toConfirm ? `<form class="aui-panel aset-next" data-json-action="/admin/season/confirmations/send" data-confirm data-confirm-title="Send ${p.toConfirm} confirmation${p.toConfirm === 1 ? '' : 's'}?" data-confirm-body="Each confirmed player's payment dates are set from today, their jersey and season fee are charged, and they're told by bell, push and email." data-confirm-send="Send">
+      <div class="aset-next__text"><div class="aui-cell__title">${p.toConfirm} confirmed, not told yet</div><div class="aui-cell__sub">Sends their payment dates and starts the clock: first payment on the first 15th or 30th at least 5 days from today.</div></div>
+      <div class="aset-next__go">${button('Send confirmations', { kind: 'primary', type: 'submit' })}</div>
+    </form>` : '';
+  const row = (title, sub, action = '') => `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__title">${title}</div><div class="aui-cell__sub">${sub}</div></div>${action ? `<div class="aset-next__go">${action}</div>` : ''}</div>`;
+  const overdue = p.overdue.map(o => row(`${escHtml(o.name)} ${badge('Missed first payment', 'red')}`,
+    `${peso(o.amount)} was due ${fmtDay(o.due)}. ${o.suggest ? `Next in line: ${escHtml(o.suggest.name)}.` : 'Nobody is waiting.'}`,
+    o.suggest ? `<form data-json-action="/admin/season/signups/${attr(o.signupId)}/replace" data-confirm data-confirm-title="Give the spot to ${attr(o.suggest.name)}?" data-confirm-body="${attr(o.name)} is withdrawn. ${attr(o.suggest.name)} is confirmed and told their payment dates straight away." data-confirm-send="Give the spot"><input type="hidden" name="to" value="${attr(o.suggest.signupId)}">${button('Give the spot', { kind: 'primary', type: 'submit' })}</form>` : '')).join('');
+  const late = p.late.map(l => row(`${escHtml(l.name)} ${badge(`${l.daysLate} days late`, 'amber')}`, `${peso(l.amount)} was due ${fmtDay(l.due)}. Reminders have gone out; this one needs you.`)).join('');
+  return section({
+    id: 'season-payments', title: 'Payments', note: p.onPlan ? `· ${p.onPlan} on a plan` : '',
+    bodyHtml: `${send}${overdue || late ? `<div class="aui-panel">${overdue}${late}</div>` : (p.onPlan ? '<div class="aui-panel"><div class="aui-cell__sub">Everyone on a plan is up to date.</div></div>' : '')}`,
+  });
 }

@@ -76,3 +76,21 @@ test('poses are balanced: a new player gets one of the least used', () => {
   for (let i = 0; i < 20; i++) assert.ok(['too_small', 'clean'].includes(pickPose(counts)));
   assert.equal(pickPose({}, () => 0), CONTEST_POSES[0].key);
 });
+
+import { paymentStatus, reminderDue } from '../lib/season-signup.js';
+test('payments: paid in order within ₱100, late after the due day, reminders by window', () => {
+  const sched = [{ due: '2027-01-15', amount: 2200 }, { due: '2027-02-15', amount: 2750 }];
+  let s = paymentStatus(sched, 0, '2027-01-12');
+  assert.equal(s.next.due, '2027-01-15');
+  assert.deepEqual(reminderDue(s, '2027-01-12'), { key: '2027-01-15:before', stage: 'before' });
+  assert.equal(reminderDue(s, '2027-01-11'), null);
+  assert.equal(reminderDue(s, '2027-01-15').stage, 'due');
+  s = paymentStatus(sched, 0, '2027-01-19');
+  assert.ok(s.firstLate); assert.equal(s.daysLate, 4);
+  assert.equal(reminderDue(s, '2027-01-19').stage, 'late3');
+  assert.equal(reminderDue(paymentStatus(sched, 0, '2027-01-29'), '2027-01-29').stage, 'admin');
+  s = paymentStatus(sched, 2150, '2027-01-19');
+  assert.ok(s.rows[0].paid); assert.equal(s.next.due, '2027-02-15'); assert.ok(!s.firstLate);
+  s = paymentStatus(sched, 4950, '2027-03-01');
+  assert.equal(s.next, null); assert.equal(reminderDue(s, '2027-03-01'), null);
+});

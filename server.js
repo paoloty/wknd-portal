@@ -6410,6 +6410,11 @@ function appSeasonState(me) {
       ? { icon: 'form', title: `Signed up for Season ${season}`, href: '/app/signup', done: true }
       : { icon: 'form', title: `Season ${season} sign-up`, sub: 'Sign-ups are open', pill: 'Sign up', href: '/app/signup', done: false });
   }
+  // On a payment plan (Season 5 on): the next payment, opening the sign-up screen, where the
+  // full payments card is always fresh from the server. It stands in for the plain balance row.
+  const plan = signup?.status === 'confirmed' ? seasonPaymentsFor(signup) : null;
+  if (plan?.next) rows.push({ icon: 'wallet', title: `${peso(plan.next.amount)} due ${payDayLabel(plan.next.due)}`, amount: peso(plan.next.amount),
+    sub: plan.next.late ? `Season ${season} payment, late` : `Season ${season} payment`, pill: 'Pay', href: '/app/signup', late: plan.next.late, done: false });
   if (signup?.jersey_requested_at) {
     rows.push(signup.jersey_submitted_at
       ? { icon: 'shirt', title: 'Jersey details sent', done: true }
@@ -6417,7 +6422,8 @@ function appSeasonState(me) {
   }
   // Money: the amount leads (views/app/home.js todoCard). Red (late) once it's overdue or a
   // suspension warning went out, with the same rules as the ledger (lib/balance-reminders.js).
-  if (balance > 0) {
+  if (plan?.next && balance <= plan.total - plan.paidSoFar + 100) { /* the plan row above covers it */ }
+  else if (balance > 0) {
     const s = balanceStanding(getPlayerBalanceRow(me.playerId), getLastBalanceReminderFor(me.playerId));
     const sub = s.deadline && !s.deadlinePassed ? `Pay by ${shortDate(s.deadline)} to avoid a suspension`
       : s.overdue ? `Unpaid for ${s.quietDays} days` : 'Settle it with GCash';
@@ -23479,14 +23485,141 @@ app.get('/app/signup/click', requireApp, signupClick);
 app.post('/season-signup/click', express.urlencoded({ extended: false }), signupClick);
 app.post('/app/signup/click', requireApp, express.urlencoded({ extended: false }), signupClick);
 
-// A confirmed sign-up's payments: the locked dates (pay_dates) against what's been paid toward
-// this season's jersey + fee. Filled in by the payments build (confirmation writes pay_dates).
+// ── Season payments (Season 5): confirmation, the plan's dates, reminders ──────────────
+// Confirmations go out in one batch after close (Season → Set up → Payments): each player's
+// dates are worked out from that day and locked (pay_dates), the jersey and the fee are
+// charged, and they're told by bell, push and email. A daily job then sends the reminders
+// (3 days before, on the day, 3 and 7 days late), flags a missed first payment for an admin
+// (the spot goes to the next player with one tap) and anything 14 days late. Paid = paid
+// toward the season since confirmation reaches what's due, within ₱100.
+import { planSchedule, paymentStatus, reminderDue, PLAN_LABEL, peso as signupPeso } from './lib/season-signup.js';
+import { setSignupConfirmation, setSignupChargeIds, addPayReminderKey, setPaymentOverdue, getSignupsOnPlan, paidTowardSeasonSince } from './lib/portal-db.js';
+import { grantVoucher } from './lib/raffle.js';
+
+const signupKit = s => ({ jersey_top: s.jersey_top, jersey_cut: s.jersey_cut, jersey_shorts: s.jersey_shorts, pockets: s.pockets ? '1' : '' });
+const confirmDayOf = s => new Date(Number(s.confirmed_at) + 8 * 3600000).toISOString().slice(0, 10);
+const payDayLabel = d => manilaFormat(Date.parse(`${d}T12:00:00+08:00`), { month: 'short', day: 'numeric' });
+const liveUrl = () => (process.env.LIVE_URL || 'https://wkndbasketball.com').replace(/\/$/, '');
+
+// Where a confirmed sign-up stands (lib/season-signup.js paymentStatus), or null before confirmation.
 function seasonPaymentsFor(signup) {
-  let rows = [];
-  try { rows = JSON.parse(signup.pay_dates || '[]'); } catch {}
-  if (!rows.length) return null;
-  return { rows: rows.map(r => ({ ...r, paid: false, late: false })), paidSoFar: 0, total: rows.reduce((s, r) => s + r.amount, 0), next: rows[0] };
+  let sched = [];
+  try { sched = JSON.parse(signup.pay_dates || '[]'); } catch {}
+  const playerId = signup.player_id || getRegistration(signup.reg_id)?.player_id;
+  if (!sched.length || !playerId || !signup.confirmed_at) return null;
+  return paymentStatus(sched, paidTowardSeasonSince(playerId, confirmDayOf(signup)), manilaTodayStr());
 }
+
+// One confirmation: dates locked, charges posted, the player told. → true if it went out.
+function sendSignupConfirmation(signupId) {
+  const s = getSeasonSignupById(signupId);
+  if (!s || s.status !== 'confirmed' || s.confirmed_at) return false;
+  const reg = getRegistration(s.reg_id);
+  if (!reg?.player_id) return false;
+  const prices = signupPrices();
+  const jersey = signupJersey(signupKit(s), prices);
+  const today = manilaTodayStr();
+  const plan = PLAN_KEYS.includes(s.payment_plan) ? s.payment_plan : 'full';
+  const sched = planSchedule(plan, { confirmDay: today, jersey: jersey.total, fee: prices.fee });
+  if (!setSignupConfirmation(s.id, { confirmedAt: Date.now(), payDates: sched })) return false;
+  const ids = [];
+  const charge = (amount, notes, category) => {
+    const id = randomBytes(6).toString('hex');
+    recordTransaction({ id, player_id: reg.player_id, amount, type: 'charge', payment_method: '', date: today, status: 'confirmed', notes, reference_no: '', season: String(s.season), category });
+    ids.push(id);
+  };
+  if (jersey.total) charge(jersey.total, `Season ${s.season} jersey (${[jersey.topLabel, jersey.shortsLabel].filter(Boolean).join(' + ')})`, 'Equipment');
+  charge(prices.fee, `Season ${s.season} fee`, 'Season Fee');
+  setSignupChargeIds(s.id, ids);
+  setSeasonQuota(String(s.season), prices.fee);
+  const lines = sched.map(p => `${payDayLabel(p.due)}: ${signupPeso(p.amount)}, ${p.what.toLowerCase()}`);
+  createNotification({ playerId: reg.player_id, type: 'signup_confirmed', title: `You’re in for Season ${s.season}`,
+    body: `First payment: ${signupPeso(sched[0].amount)} on ${payDayLabel(sched[0].due)}. Miss it and your spot goes to the next player.`, link: '/season-signup' });
+  if (reg.email) sendMail({ to: reg.email, ref: s.id, ...leagueNudgeEmail({
+    name: reg.full_name, subject: `You’re in for Season ${s.season}`, heading: 'You’re in, {name}', label: `Season ${s.season}`,
+    lines: [`Your plan: ${PLAN_LABEL[plan]}. Your payment dates:`, ...lines, 'Miss the first payment and your spot goes to the next player. There are no extensions, and everything is paid before the semis.'],
+    cta: 'See your payments', url: `${liveUrl()}/season-signup`,
+  }), kind: 'season_confirmed' }).catch(e => console.error('[signup confirm] email failed:', e.message));
+  logSystem('season_confirmed', { signup_id: s.id, player_id: reg.player_id, plan });
+  return true;
+}
+
+app.post('/admin/season/confirmations/send', requireAuth, express.json(), (req, res) => {
+  const season = getSetting('signup_target_season', '');
+  let sent = 0;
+  for (const s of getSeasonSignups(season).filter(s => s.status === 'confirmed' && !s.confirmed_at)) if (sendSignupConfirmation(s.id)) sent++;
+  res.json({ ok: true, message: `${sent} confirmation${sent === 1 ? '' : 's'} sent.` });
+});
+
+// A missed first payment: the spot goes to the waitlisted player an admin picked (Candidates'
+// top one is suggested). The charges posted at confirmation are voided: nothing was paid.
+app.post('/admin/season/signups/:id/replace', requireAuth, express.json(), (req, res) => {
+  const out = getSeasonSignupById(req.params.id);
+  const into = getSeasonSignupById(String(req.body?.to || ''));
+  if (!out || out.status !== 'confirmed' || !into || into.status !== 'waitlisted' || String(into.season) !== String(out.season)) return res.status(400).json({ error: 'That swap isn’t possible any more. Reload the page.' });
+  let ids = [];
+  try { ids = JSON.parse(out.charge_tx_ids || '[]'); } catch {}
+  for (const id of ids) voidTransaction(id);
+  updateSeasonSignupStatus(out.id, 'withdrawn', out.notes);
+  removeFromSeasonRoster(out.id);
+  const outReg = getRegistration(out.reg_id);
+  if (outReg?.player_id) createNotification({ playerId: outReg.player_id, type: 'payment_late', title: `Your Season ${out.season} spot went to the next player`, body: 'Your first payment didn’t come in by its date. Message an admin if you think this is a mistake.', link: '/season-signup' });
+  updateSeasonSignupStatus(into.id, 'confirmed', into.notes);
+  sendSignupConfirmation(into.id);
+  res.json({ ok: true, message: `${displayPlayerName(getRegistration(into.reg_id)?.full_name || '') || 'The next player'} has the spot.` });
+});
+
+// The admin Season page's Payments section.
+function seasonPaymentsAdmin(season) {
+  const signups = season ? getSeasonSignups(season) : [];
+  const toConfirm = signups.filter(s => s.status === 'confirmed' && !s.confirmed_at).length;
+  const onPlan = signups.filter(s => s.status === 'confirmed' && s.confirmed_at);
+  const overdue = [], late = [];
+  for (const s of onPlan) {
+    const st = seasonPaymentsFor(s);
+    if (!st?.next) continue;
+    const name = displayPlayerName(s.full_name);
+    if (st.firstLate) overdue.push({ signupId: s.id, name, due: st.next.due, amount: st.next.amount });
+    else if (st.daysLate >= 14) late.push({ name, due: st.next.due, amount: st.next.amount, daysLate: st.daysLate });
+  }
+  if (overdue.length) {
+    // Candidates' order, best first: the first waitlisted sign-up that isn't blocked.
+    const waiting = new Map(signups.filter(s => s.status === 'waitlisted' && s.player_id).map(s => [s.player_id, s]));
+    const ranked = loadSeasonCandidates().candidates.filter(c => c.eligible && waiting.has(c.id));
+    overdue.forEach((o, i) => { const c = ranked[i]; if (c) o.suggest = { signupId: waiting.get(c.id).id, name: c.name }; });
+  }
+  return { toConfirm, onPlan: onPlan.length, overdue, late };
+}
+
+// Hourly; sends once a day per payment stage, from 9 AM Manila, production only.
+function runSeasonPaymentJobs() {
+  if (process.env.NODE_ENV !== 'production' || manilaHourNow() < 9) return;
+  const season = getSetting('signup_target_season', '');
+  if (!season) return;
+  const today = manilaTodayStr();
+  for (const s of getSignupsOnPlan(season)) {
+    const st = seasonPaymentsFor(s);
+    if (!st) continue;
+    // Pay-in-full perk: a free Papawis run once it's all paid.
+    if (s.payment_plan === 'full' && !st.next) grantVoucher(s.player_id, `Free Papawis run: paid Season ${season} in full`, String(Number(season) + 1), `signup:${season}:${s.id}`);
+    if (st.firstLate && !s.payment_overdue_at) { setPaymentOverdue(s.id, Date.now()); logSystem('season_payment_overdue', { signup_id: s.id, player_id: s.player_id }); }
+    const r = reminderDue(st, today);
+    let sent = [];
+    try { sent = JSON.parse(s.pay_reminders || '[]'); } catch {}
+    if (!r || sent.includes(r.key)) continue;
+    addPayReminderKey(s.id, r.key);
+    if (r.stage === 'admin') { logSystem('season_payment_late14', { signup_id: s.id, player_id: s.player_id, due: st.next.due }); continue; }
+    const amt = signupPeso(st.next.amount), when = payDayLabel(st.next.due);
+    const late = r.stage === 'late3' || r.stage === 'late7';
+    const title = r.stage === 'before' ? `Payment due ${when}: ${amt}` : r.stage === 'due' ? `Payment due today: ${amt}` : `Your ${amt} payment is ${st.daysLate} days late`;
+    const body = st.firstLate ? 'Your first payment holds your spot. Pay now or it goes to the next player.' : late ? 'Pay it now. Everything has to be paid before the semis to play in the playoffs.' : 'Tap to settle it with GCash.';
+    createNotification({ playerId: s.player_id, type: late ? 'payment_late' : 'payment_due', title, body, link: '/settle-balance' });
+    if (s.email) sendMail({ to: s.email, ref: s.id, ...leagueNudgeEmail({ name: s.full_name, subject: title, heading: title, label: `Season ${season}`, lines: [body], cta: 'Settle it', url: `${liveUrl()}/settle-balance` }), kind: late ? 'season_payment_late' : 'season_payment_due' })
+      .catch(e => console.error('[season payments] email failed:', e.message));
+  }
+}
+setTimeout(runSeasonPaymentJobs, 3 * 60 * 1000);
+setInterval(runSeasonPaymentJobs, 60 * 60 * 1000);
 
 // "Wouldn't play with again" answers as an admin may see them. An elevated admin is also a player;
 // the shared super-admin login isn't.
@@ -23732,7 +23865,11 @@ app.post('/settle-balance', express.json({ limit: '20mb' }), async (req, res) =>
   const categoryTrimmed = category.trim();
   // "Season Fee" is the one category tied to a specific season — auto-tag it with
   // whatever season is currently active rather than asking the player to know/pick it.
-  const season = categoryTrimmed === 'Season Fee' ? getPortalCurrentSeason() : '';
+  // Once a player is confirmed for the season being signed up for (Season 5 on), their fee
+  // payments go to that season, not the one still being played.
+  const target = getSetting('signup_target_season', '');
+  const onPlan = target && req.session.playerRegId ? getSeasonSignup(req.session.playerRegId, target) : null;
+  const season = categoryTrimmed === 'Season Fee' ? (onPlan?.status === 'confirmed' && onPlan.confirmed_at ? String(target) : getPortalCurrentSeason()) : '';
 
   let screenshotDataUrl = '';
   try {
@@ -23846,7 +23983,7 @@ app.get('/admin/season', requireAuth, (req, res) => {
     title: 'Season',
     currentPath: '/admin/season',
     settings: seasonNudgesPanel(),
-    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons }),
+    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null }),
   }));
 });
 
@@ -24127,7 +24264,7 @@ app.post('/admin/season/settings', requireAuth, express.json(), (req, res) => {
     'season_signup_open', 'season_signup_deadline', 'portal_season',
     'season_format', 'season_quota_amount', 'season_team_count',
     'jersey_top_price', 'jersey_short_price',
-    'jersey_surcharge_step', 'jersey_pockets_price', 'season_roster_capacity',
+    'jersey_surcharge_step', 'jersey_pockets_price', 'season_roster_capacity', 'jersey_nba_cut_price',
   ];
   for (const key of allowed) {
     if (key in (req.body || {})) setSetting(key, String(req.body[key]));
@@ -24426,7 +24563,7 @@ app.get('/admin/season/teams/charge-preview', requireAuth, (req, res) => {
   const lines = players.map(p => {
     const total = quotaAmount + computeJerseyTotal({
       topPrice, shortPrice, jerseyTop: p.jersey_top, jerseyShorts: p.jersey_shorts,
-      pockets: !!p.pockets, pocketsPrice, surchargeStep,
+      pockets: !!p.pockets, pocketsPrice, surchargeStep, jerseyCut: p.jersey_cut, cutPrice: Number(getSetting('jersey_nba_cut_price', '50')) || 0,
     });
     grandTotal += total;
     return { name: p.full_name || '—', total: `₱${total.toLocaleString()}` };
@@ -24459,13 +24596,14 @@ function buildChargeReviewRows(season) {
   const rows = confirmed.map(p => {
     const breakdown = computeJerseyBreakdown({
       topPrice, shortPrice, jerseyTop: p.jersey_top, jerseyShorts: p.jersey_shorts,
-      pockets: !!p.pockets, pocketsPrice, surchargeStep,
+      pockets: !!p.pockets, pocketsPrice, surchargeStep, jerseyCut: p.jersey_cut, cutPrice: Number(getSetting('jersey_nba_cut_price', '50')) || 0,
     });
     const topAmount    = p.jersey_top_excluded    ? 0 : breakdown.topAmount;
     const shortsAmount = p.jersey_shorts_excluded ? 0 : breakdown.shortsAmount;
     const extraAmount  = Number(p.extra_charge_amount) || 0;
     return {
       signupId:  p.id,
+      chargedAtConfirm: !!p.confirmed_at,
       name:      displayPlayerName(p.full_name),
       email:     p.email || '',
       playerId:  p.player_id || '',
@@ -24602,6 +24740,8 @@ app.post('/admin/season/teams/start', requireAuth, express.json(), async (req, r
   let chargedCount = 0;
   for (const row of chargeRows) {
     if (!row.playerId) continue;
+    // Season 5 on: already charged when their confirmation went out (sendSignupConfirmation).
+    if (row.chargedAtConfirm) { chargedCount++; continue; }
     if (row.total > 0) {
       const txId = randomBytes(6).toString('hex');
       const parts = [];
