@@ -1979,7 +1979,15 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-chip { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--hair); color: var(--text); font-size: 13px; font-weight: 600; line-height: 1; }
 .sc-chip.on { background: var(--amber); border-color: transparent; color: #111; }
 .sc-pbp__h { display: flex; justify-content: space-between; align-items: center; min-height: 32px; font-size: 12px; letter-spacing: .08em; color: var(--muted); border-bottom: 1px solid var(--hair); }
-.sc-pbp__r { display: grid; grid-template-columns: 40px 9px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 48px; border-bottom: 1px solid var(--hair); color: var(--text); text-align: left; }
+.sc-pbp__r { display: grid; grid-template-columns: 40px 9px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; width: 100%; min-height: 48px; border-bottom: 1px solid var(--hair); color: var(--text); text-align: left; }
+.sc-pbp__fx { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--muted); }
+.sc-pbp__fx svg { width: 14px; height: 14px; }
+.sc-pbp__r.is-twice { background: color-mix(in srgb, var(--amber) 9%, transparent); }
+.sc-pbp__r.is-twice .sc-pbp__fx { background: var(--amber); box-shadow: none; color: #0a0e16; }
+.sc-pbp__r.is-fixing { box-shadow: inset 3px 0 0 var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); }
+.sc-chip svg { width: 13px; height: 13px; }
+/* "TWICE?": two of the same from one player inside a few seconds (twiceIds) */
+.sc-twice { display: inline-flex; align-items: center; justify-content: center; height: 18px; padding: 0 6px; margin-left: 6px; border-radius: 6px; background: var(--amber); color: #0a0e16; font: 800 10px/1 var(--font-num); letter-spacing: .1em; vertical-align: 1px; }
 .sc-pbp__t { font-size: 14px; color: var(--muted); }
 .sc-pbp__w { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sc-pbp__w b { font-weight: 600; }
@@ -2346,6 +2354,60 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .sc-q--line .sc-opt { min-height: 44px; border-color: rgba(26, 18, 5, .25); background: rgba(26, 18, 5, .1); color: #1a1205; }
 .sc-p.is-ans { border: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--sc-card)); }
 .sc-p.is-dim, .sc-bn.is-dim { opacity: .55; }
+/* Fix mode (scorer.js fixPanel / fixBar): an amber frame round the screen, an amber bar naming
+   the play, and the panel in the team menu's family. */
+.sc-body.is-fixing::after { content: ""; position: fixed; inset: 0; z-index: 40; border: 3px solid var(--amber); pointer-events: none; }
+.sc-fixbar { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 8px 8px 8px 14px; border-radius: var(--r-in); background: var(--amber); color: #0a0e16; }
+.sc-fixbar > svg { width: 18px; height: 18px; flex: none; }
+.sc-fixbar__t { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.sc-fixbar__t b { font: 800 13px/1 var(--font-num); letter-spacing: .14em; text-transform: uppercase; }
+.sc-fixbar__t span { font-size: 13px; font-weight: 600; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-fixbar button { display: flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; border-radius: 999px; background: rgba(10, 14, 22, .88); color: #fff; font-size: 14px; font-weight: 600; line-height: 1; }
+.sc-p.is-was .sc-p__ph { opacity: .4; }
+.sc-p.is-was::before { content: "NOW"; inset: 4px auto auto 50%; z-index: 2; transform: translateX(-50%); padding: 3px 5px; border: 0; border-radius: 6px; opacity: 1; background: rgba(10, 14, 22, .85); color: #ffb066; font: 800 10px/1 var(--font-num); letter-spacing: .1em; }
+.sc-fx__ic { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; border-radius: 50%; background: var(--amber); color: #0a0e16; }
+.sc-fx__ic svg { width: 17px; height: 17px; }
+.sc-fx__ic--red { background: #dc2626; color: #fff; }
+.sc-fx--red { border-color: var(--loss); }
+.sc-fx__play { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.sc-fx__w { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.sc-fx__what { font-size: 15px; line-height: 1.2; }
+.sc-fx__what b { font-weight: 600; }
+.sc-fx__w small { font-size: 12px; color: var(--muted); }
+.sc-fx__s { font: 800 20px/1 var(--font-num); }
+.sc-fx__play.is-gone .sc-fx__what { text-decoration: line-through; text-decoration-color: var(--loss); text-decoration-thickness: 2px; }
+.sc-tmn__row--red { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--loss) 45%, transparent); color: var(--loss); }
+.sc-tmn__row--red .sc-tmn__ic { background: color-mix(in srgb, var(--loss) 14%, transparent); }
+.sc-tmn__row--red small { color: color-mix(in srgb, var(--loss) 70%, var(--muted)); }
+.sc-fx__tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.sc-fx__tiles button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 54px; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--text); }
+.sc-fx__tiles b { font: 800 18px/1 var(--font-num); }
+.sc-fx__tiles small { font: 600 11px/1 var(--font-num); letter-spacing: .04em; color: var(--muted); }
+.sc-fx__tiles .now { box-shadow: inset 0 0 0 1.5px var(--amber); opacity: 1; }
+.sc-fx__tiles .now::after { content: "NOW"; position: absolute; top: -6px; right: 6px; padding: 2px 4px; border-radius: 5px; background: var(--amber); color: #0a0e16; font: 800 9px/1 var(--font-num); letter-spacing: .1em; }
+.sc-fx__tiles .on { background: var(--amber); box-shadow: none; }
+.sc-fx__tiles .on b, .sc-fx__tiles .on small { color: #0a0e16; }
+.sc-fx__fx { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 12%, transparent); font-size: 13px; }
+.sc-fx__fx--red { background: color-mix(in srgb, var(--loss) 12%, transparent); }
+.sc-fx__fx .num { font-family: var(--font-num); font-size: 15px; font-weight: 700; white-space: nowrap; }
+.sc-fx__fx s { color: var(--muted); }
+.sc-fx__fx b { font-size: 18px; font-weight: 800; }
+.sc-fx__note { margin: 0; font-size: 12px; line-height: 1.35; color: var(--muted); }
+.sc-fx__btns { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+.sc-fx__b { display: flex; align-items: center; justify-content: center; height: 50px; border-radius: 14px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--text); font-size: 15px; font-weight: 600; line-height: 1; }
+.sc-fx__b--go { background: var(--amber); box-shadow: none; color: #0a0e16; }
+.sc-fx__b--red { background: #dc2626; box-shadow: none; color: #fff; }
+.sc-fx__b:disabled { opacity: .4; }
+.sc-lb--fx { display: flex; align-items: center; gap: 6px; }
+.sc-lb--fx svg { width: 15px; height: 15px; }
+.sc-feed__fx { display: flex; margin-left: auto; color: var(--muted); }
+.sc-feed__fx svg { width: 13px; height: 13px; }
+.sc-feed__r.is-twice { background: color-mix(in srgb, var(--amber) 12%, transparent); }
+/* A done fix: a calm line with a green check, and Undo for a few seconds. */
+.sc-done { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 4px 0 12px; border-radius: var(--r-in); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); font-size: 14px; font-weight: 600; }
+.sc-done__ok { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--ok-bg); color: var(--on-ok); }
+.sc-done__ok svg { width: 13px; height: 13px; }
+.sc-done__t { flex: 1; min-width: 0; }
 .sc-bn.is-ans { color: var(--amber-text); border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .sc-th__ans { font-size: 12px; font-weight: 600; line-height: 1; color: var(--muted); }
 
@@ -2757,7 +2819,8 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .su-chip.is-off .su-chip__n span { color: var(--muted); text-decoration: line-through; }
 .su-go { display: flex; flex-direction: column; gap: 8px; }
 .su-go small { text-align: center; font-size: 12px; color: var(--muted); }
-.su-tip { margin: 0 16px 16px; }
+.su-shell { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.su-tip { flex: none; margin: 0; padding: 10px 16px calc(10px + var(--safe-b)); border-top: 1px solid var(--hair); }
 /* The run card on the day: score its games. */
 .pw-scorebar { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px; border-radius: var(--r-in); background: var(--surface-2); color: var(--text); text-decoration: none; }
 .pw-scorebar > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; font-size: 14px; }

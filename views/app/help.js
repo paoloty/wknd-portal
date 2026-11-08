@@ -208,11 +208,15 @@ export const SCORER_GUIDE = [
       ['img', 'fix.jpg', 'The last play, with Undo and Fix.'],
       ['dl', [
         ['Undo', 'Takes back the last play (or swipe it left). <i>Redo</i> brings it back until your next play.'],
-        ['Fix', 'Changes who did it or what they did, adds a missed play right after it, or removes it.'],
-        ['Older plays', 'Scoresheet → Plays: every play has Fix.'],
+        ['Fix', 'Opens <i>Fix a play</i>: <i>Wrong player</i> (tap the right one on the court), <i>Wrong stat</i>, <i>Missed a play</i> or <i>Remove</i>. The new score shows before you save.'],
+        ['Fixing', 'An amber frame and the <i>Fixing</i> bar stay on until you save or tap <i>Cancel</i>. New plays wait until then.'],
+        ['Older plays', 'Scoresheet → Play-by-play: tap any play (each has a pencil). To see one player’s plays, hold their card, then <i>All [name]’s plays</i>.'],
+        ['Twice?', 'The same thing from one player within a few seconds (a double tap, or both phones scoring it) gets a <i>Twice?</i> tag. Tap it, then <i>Remove</i>.'],
+        ['After a fix', 'A line says what changed, with <i>Undo</i> for a few seconds.'],
         ['The clock', 'Tap the time to set it.'],
       ]],
-      ['tip', 'Good to know', 'Missed a play a while back? Fix the play just before it and choose <i>Add a play after this</i>. It goes in at the right spot.'],
+      ['img', 'fix-panel.jpg', 'Fix a play: the play, then what’s wrong.'],
+      ['tip', 'Good to know', 'Missed a play a while back? Fix the play just before it and choose <i>Missed a play</i>. It goes in at the right spot.'],
       ['p', 'Still not right after the game? Tell a games admin: they check every game before the stats are final.'],
     ],
   },
@@ -338,9 +342,11 @@ export const PW_SCORER_GUIDE = [
   },
   {
     slug: 'fix', title: 'Fixing mistakes', blocks: [
+      ['img', 'fix.jpg', 'Fix a play: the play, then what’s wrong.'],
       ['dl', [
         ['Undo', 'Takes back the last play. <i>Redo</i> brings it back until your next play.'],
-        ['Fix', 'On the last play, or tap an older one at the top: change who did it or what, or remove it.'],
+        ['Fix', 'On the last play, or tap an older one at the top (or in Scoresheet → Play-by-play). <i>Fix a play</i> opens: <i>Wrong player</i> (tap the right one on the court), <i>Wrong stat</i>, <i>Missed a play</i> or <i>Remove</i>. An amber frame and the <i>Fixing</i> bar stay on until you save or tap <i>Cancel</i>.'],
+        ['Twice?', 'The same thing from one player within a few seconds gets a <i>Twice?</i> tag. Tap it, then <i>Remove</i>. A line says what changed, with <i>Undo</i> for a few seconds.'],
         ['A player on the wrong side', 'Move them (⇄). Points before the move stay where they were; fix those plays one by one if they were on the wrong side all along.'],
         ['A guest', 'Their stats stay with the run under their name and count in nobody’s career. Tell an admin, so they’re added to the run and charged.'],
         ['After saving', 'Finish the run again from the run’s card, or ask an admin.'],

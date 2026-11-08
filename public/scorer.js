@@ -218,7 +218,7 @@ export async function mount(el) {
   const ui = {
     sel: null, arm: null, ask: null, tip: '', flash: null, flashN: 0, running: !!rec.running && (rec.secs ?? 0) - away > 0, secs: Math.max(0, (rec.secs ?? rules.periodMin * 60) - away),
     sync: 'idle', syncMsg: '', locked: published, after: null, lane: multi ? readLane() : 'both', lanes: null, asked: '',
-    sheet: false, tab: pref.get('wknd-sc-tab', 'box'), dockTab: pref.get('wknd-sc-dock', 'fouls'), hideDock: false, sheetTeam: 'a', filter: 'all',
+    sheet: false, tab: pref.get('wknd-sc-tab', 'box'), dockTab: pref.get('wknd-sc-dock', 'fouls'), hideDock: false, sheetTeam: 'a', filter: 'all', done: null,
     peek: null, redo: null, lastShown: '',
     // Follow-ups waiting their turn (a bench player's basket: Who went off? first, then Assisted?).
     queue: [],
@@ -983,32 +983,76 @@ export async function mount(el) {
     ['reb', 'Rebound', { type: 'reb' }], ['ast', 'Assist', { type: 'ast' }], ['stl', 'Steal', { type: 'stl' }], ['blk', 'Block', { type: 'blk' }],
     ['to', 'Turnover', { type: 'to' }], ['foul', 'Foul', { type: 'foul', kind: 'personal' }]];
   const STAT_PLAYS = new Set(['shot', 'ft', 'reb', 'ast', 'stl', 'blk', 'to', 'foul']);
-  function fix(id, fields, tip) {
+  // Fix mode (Paolo, 2026-11-08, mockup claude.ai/artifact/Vvquh6UfaRjZyH7TqTCMzT): a scorer
+  // removing a duplicate from far back didn't find Fix, and didn't know if they were in it. Fix
+  // opens a panel in the team menu's family, and until Save, Remove or Cancel the screen says so:
+  // an amber frame and an amber "Fixing" bar naming the play (fixBar). ui.ask = { kind: 'fix',
+  // id, step: 'menu' | 'who' | 'what' | 'remove', pick }. Wrong player is picked on the court.
+  const TILE = { shot2m: ['2PT', 'MADE'], shot2x: ['2PT', 'MISS'], shot3m: ['3PT', 'MADE'], shot3x: ['3PT', 'MISS'], shot4m: ['4PT', 'MADE'], shot4x: ['4PT', 'MISS'],
+    ftm: ['FT', 'MADE'], ftx: ['FT', 'MISS'], reb: ['REB', 'REBOUND'], ast: ['AST', 'ASSIST'], stl: ['STL', 'STEAL'], blk: ['BLK', 'BLOCK'], to: ['TO', 'TURNOVER'], foul: ['PF', 'FOUL'] };
+  const statOf = r => (r.type === 'shot' ? `shot${Number(r.pts) || 2}${r.made ? 'm' : 'x'}` : r.type === 'ft' ? (r.made ? 'ftm' : 'ftx') : r.type);
+  const ptsOf = e => (e.type === 'shot' && e.made ? Number(e.pts) || 2 : e.type === 'ft' && e.made ? 1 : 0);
+  const fixWhoIds = a => { const r = G.rows.find(x => x.id === a.id); return r ? [...team.a.players, ...team.b.players].map(p => p.id).filter(id => id !== r.player) : []; };
+  // A done fix: a calm line with its own Undo for a few seconds.
+  function toast(text, undo) {
+    const d = ui.done = { text, undo, at: Date.now() };
+    setTimeout(() => { if (ui.done === d) { ui.done = null; paint(); } }, 6000);
+  }
+  // Undo a fix or a remove: the play that replaced it goes, the old one comes back in its place.
+  function putBack(old, replacedBy) {
+    if (replacedBy) add({ type: 'void', target: replacedBy });
+    const back = copyOf(old); events.set(back.id, back); G = fold(); save().then(sync);
+  }
+  function fix(id, fields, done) {
     const old = events.get(id); if (!old) return;
     const [v, n] = correction(list(), old, { pts: undefined, made: undefined, kind: undefined, from: undefined, ref: undefined, ...fields }, [uid(), uid()]);
     events.set(v.id, v); events.set(n.id, n);
     G = fold(); save().then(sync);
-    ui.ask = null; ui.tip = tip; paint();
+    ui.ask = null; ui.tip = ''; toast(done, () => putBack(old, n.id)); paint();
   }
   function fixMenu(id) {
     const r = G.rows.find(x => x.id === id); if (!r) return;
     if (!wide.matches) ui.sheet = false;
-    const what = playText(r).replace(/<[^>]+>/g, '');
-    const opts = [r.player && STAT_PLAYS.has(r.type) ? ['who', 'Change player'] : null, r.player && STAT_PLAYS.has(r.type) ? ['what', 'Change stat'] : null,
-      ['after', 'Add a missed play after this'], ['remove', 'Remove']].filter(Boolean);
-    menu(`Fix: ${what}`, opts, k => {
-      if (k === 'remove') { add({ type: 'void', target: id }); ui.tip = 'Removed. It stays on record for the review.'; return paint(); }
-      if (k === 'after') { ui.after = id; ui.sel = null; ui.arm = null; ui.tip = ''; return paint(); }
-      if (k === 'who') {
-        const keep = { ...r };
-        return menu(`Change player: ${what}`, [...team.a.players, ...team.b.players].filter(p => p.id !== r.player).map(p => [p.id, `${short(p.id)} · ${team[byId[p.id].team].name.slice(0, 3)}`]),
-          pid => fix(id, { ...pick(keep), player: pid, team: byId[pid].team }, `Fixed: now ${short(pid)}.`));
+    ui.ask = { kind: 'fix', id, step: 'menu', opened: Date.now() }; ui.peek = null; ui.sel = null; ui.arm = null; ui.queue = []; ui.tip = ''; ui.done = null; paint();
+  }
+  function fixAct(k) {
+    const a = ui.ask; if (!a || a.kind !== 'fix') return;
+    const r = G.rows.find(x => x.id === a.id), old = events.get(a.id);
+    ui.tip = '';
+    if (k === 'cancel' || !r || !old) { ui.ask = null; return paint(); }
+    if (k === 'back') { a.step = 'menu'; a.pick = null; return paint(); }
+    if (k === 'who' || k === 'what' || k === 'remove') { a.step = k; a.pick = null; return paint(); }
+    if (k === 'after') { ui.ask = null; ui.after = a.id; ui.sel = null; ui.arm = null; ui.tip = ''; return paint(); }
+    if (k.startsWith('stat:')) { a.pick = k.slice(5); return paint(); }
+    if (k === 'save') {
+      const s = STATS.find(x => x[0] === a.pick); if (!s) return;
+      return fix(a.id, { ...s[2], player: r.player, team: r.team }, `Fixed: ${short(r.player)} · ${s[1]}`);
+    }
+    if (k === 'remove-yes') {
+      add({ type: 'void', target: a.id }); ui.ask = null;
+      const pts = ptsOf(r);
+      toast(pts ? `Removed · ${team[r.team].name} now ${G.score[r.team]}` : 'Removed', () => putBack(old));
+      return paint();
+    }
+  }
+  function fixWho(pid) {
+    const a = ui.ask, r = G.rows.find(x => x.id === a.id); if (!r) return;
+    fix(a.id, { ...pick(r), player: pid, team: byId[pid].team }, `Fixed: now ${short(pid)}`);
+  }
+  // Two of the same from one player inside a few seconds: a double tap, or both phones scoring
+  // the same play. Free throws and missed shots come in pairs for real, so they don't count.
+  const DUP_MS = 10000;
+  const dupKind = r => !!r.player && !r.fixes && ((r.type === 'shot' && r.made) || ['ast', 'stl', 'blk', 'to', 'foul'].includes(r.type));
+  function twiceIds() {
+    const out = new Set(), rows = G.rows;
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i]; if (!dupKind(r)) continue;
+      for (let j = i - 1; j >= Math.max(0, i - 8); j--) {
+        const q = rows[j];
+        if (dupKind(q) && q.player === r.player && q.type === r.type && q.pts === r.pts && Math.abs((r.at || 0) - (q.at || 0)) <= DUP_MS) { out.add(r.id); break; }
       }
-      if (k === 'what') {
-        return menu(`Change stat: ${what}`, STATS.map(([sid, label]) => [sid, label]),
-          sid => { const s = STATS.find(x => x[0] === sid); fix(id, { ...s[2], player: r.player, team: r.team }, `Fixed: now ${s[1]}.`); });
-      }
-    });
+    }
+    return out;
   }
   // The type fields worth keeping when only the player changes.
   const pick = r => ({ type: r.type, pts: r.pts, made: r.made, kind: r.kind, from: r.from, ref: r.ref });
@@ -1129,19 +1173,24 @@ export async function mount(el) {
   const initialsOf = p => String(p.name || p.short || '').split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
   // The players an open follow-up is waiting on (set at the top of every paint).
   let ansIds = null;
+  // Plays that look like the same one scored twice (twiceIds, set at the top of every paint).
+  let twice = new Set();
+  // Fixing who did a play: the player it's on now (faded, with NOW on their card).
+  let fixWas = null;
+  const TWICE = '<span class="sc-twice num">TWICE?</span>';
   const tile = id => {
     // The ring and float play once, right after the tap: a later repaint (a sync, the other
     // scorer's play) mustn't start them again.
     const p = byId[id], L = G.players[id] || {}, pf = L.pf || 0, tr = trouble(pf), hit = ui.flash && ui.flash.pid === id && Date.now() - ui.flash.at < 900;
     const benchSel = ui.sel && byId[ui.sel] && byId[ui.sel].team === p.team && !onCourt(p.team, ui.sel);
-    const ans = ansIds ? (ansIds.has(id) ? 'is-ans' : 'is-dim') : '';
-    const cls = ['sc-p', pw ? 'sc-p--pw' : '', p.guest ? 'is-guest' : '', p.face ? 'has-face' : '', team[p.team].id === 'dark' && pw ? 'sc-p--dk' : '', ui.sel === id ? 'on' : '', ans, shared.has(id) ? 'is-dup' : '', benchSel ? 'swap' : '',
+    const ans = ansIds ? (ansIds.has(id) ? 'is-ans' : id === fixWas ? 'is-was' : 'is-dim') : '';
+    const cls =['sc-p', pw ? 'sc-p--pw' : '', p.guest ? 'is-guest' : '', p.face ? 'has-face' : '', team[p.team].id === 'dark' && pw ? 'sc-p--dk' : '', ui.sel === id ? 'on' : '', ans, shared.has(id) ? 'is-dup' : '', benchSel ? 'swap' : '',
       hit ? `ring ${ui.flash.tone} b${ui.flashN % 2} r${ui.flashN % 2}` : ''].filter(Boolean).join(' ');
     // The face and strip sit in their own clipped layer, so the ring and the floating +2 can
     // still reach outside the card. Papawis: no numbers or fouls (initials stand in for a missing
     // photo); a league game: the number over a fainter photo, the fouls in the corner.
     const mid = pw ? `<b class="sc-p__ini num" aria-hidden="true">${esc(initialsOf(p))}</b>` : `<b class="sc-p__no num${p.number ? '' : ' is-none'}" aria-hidden="true">${p.number ? esc(p.number) : '–'}</b>`;
-    return `<button type="button" class="${cls}" style="${sideLook(p.team)};--fs:${nameSize(p)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(short(id))}${p.guest ? ', guest' : ''}${pw ? '' : `, ${pf} foul${pf === 1 ? '' : 's'}`}${ans === 'is-ans' ? `. Tap to answer ${esc(ui.ask.q)}` : benchSel ? `. Tap to sub ${esc(short(ui.sel))} on for them` : ''}. Hold for their line">
+    return `<button type="button" class="${cls}" style="${sideLook(p.team)};--fs:${nameSize(p)}" data-pick="${esc(id)}" aria-pressed="${ui.sel === id}" aria-label="${esc(short(id))}${p.guest ? ', guest' : ''}${pw ? '' : `, ${pf} foul${pf === 1 ? '' : 's'}`}${ans === 'is-ans' ? (ui.ask.kind === 'fix' ? '. Tap: they did the play being fixed' : `. Tap to answer ${esc(ui.ask.q)}`) : benchSel ? `. Tap to sub ${esc(short(ui.sel))} on for them` : ''}. Hold for their line">
       <span class="sc-p__ph" aria-hidden="true">${p.face ? `<img class="sc-p__img" src="${esc(p.face)}" alt="" decoding="async" onerror="this.parentNode.parentNode.classList.remove('has-face');this.remove()">` : ''}${mid}<span class="sc-p__nm">${esc(p.short)}</span></span>${pf && !pw ? `<em class="sc-p__pf num${tr ? ' ' + tr : ''}" aria-hidden="true">${pf}F</em>` : ''}<i class="sc-p__sw" aria-hidden="true">${SWAP}</i>${hit ? `<i class="sc-fl ${ui.flash.tone} f${ui.flashN % 2}" aria-hidden="true">${esc(ui.flash.text)}</i>` : ''}</button>`;
   };
   // The latest play by a team (for the folded side with two scorers)
@@ -1180,7 +1229,7 @@ export async function mount(el) {
   // newest at the bottom. Tap one to fix it.
   const feedRows = () => {
     const rows = G.rows.filter(r => !r.dev || r.dev === deviceId).slice(-4, -1);
-    return rows.length ? `<div class="sc-feed">${rows.map(r => `<button type="button" class="sc-feed__r" data-fix="${esc(r.id)}" aria-label="Fix: ${esc(playText(r).replace(/<[^>]+>/g, ''))}">${playText(r)}${scores(r) ? ` <span class="num">· ${r.score.a}–${r.score.b}</span>` : ''}</button>`).join('')}</div>` : '';
+    return rows.length ? `<div class="sc-feed">${rows.map(r => `<button type="button" class="sc-feed__r${twice.has(r.id) ? ' is-twice' : ''}" data-fix="${esc(r.id)}" aria-label="Fix: ${esc(playText(r).replace(/<[^>]+>/g, ''))}">${playText(r)}${scores(r) ? ` <span class="num">· ${r.score.a}–${r.score.b}</span>` : ''}${twice.has(r.id) ? TWICE : ''}<i class="sc-feed__fx" aria-hidden="true">${tmIcon('pen')}</i></button>`).join('')}</div>` : '';
   };
   const playText = r => {
     if (r.type === 'period_end') return r.final ? `<b>Final</b> · game over` : `<b>End of ${esc(r.period)}</b>`;
@@ -1208,6 +1257,11 @@ export async function mount(el) {
     wait: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
     dnp: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.2-3.4 3.8-5 7-5s5.8 1.6 7 5M4 4l16 16"/>',
     timeout: '<path d="M8 4v16M16 4v16"/>',
+    pen: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>',
+    who: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6M15 13h6l-2-2M21 17h-6l2 2"/>',
+    stat: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6M9 15h6M12 6v12"/>',
+    plus: '<path d="M12 6v12M6 12h12"/>',
+    trash: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>',
   };
   const CHEV_R = '<svg class="sc-tmn__go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
   const tmIcon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TM_ICON[k]}</svg>`;
@@ -1227,6 +1281,57 @@ export async function mount(el) {
       ${timeoutBtn}${tos}${players}
       ${tech ? `<div class="sc-tmn__split">${tech}<div class="sc-tmn__g">${label('Lineup')}${dnp}</div></div>` : `<div class="sc-tmn__g">${label('Lineup')}${dnp}</div>`}
     </div>`;
+  }
+  // Fix mode's panel (fixMenu): the play, then what's wrong; a step each for the stat and Remove,
+  // and Wrong player as an amber line while the court picks.
+  const plain = r => playText(r).replace(/<[^>]+>/g, '');
+  const whenOf = r => [r.period, r.clock].filter(Boolean).join(' ');
+  function fixCard(r, gone = false) {
+    const i = G.rows.findIndex(x => x.id === r.id), ago = G.rows.length - 1 - i;
+    const meta = [whenOf(r), ago <= 0 ? 'last play' : `${ago} play${ago === 1 ? '' : 's'} ago`, r.by && r.dev !== deviceId ? `by ${r.by}` : ''].filter(Boolean).join(' · ');
+    return `<div class="sc-fx__play${gone ? ' is-gone' : ''}">${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : ''}<span class="sc-fx__w"><span class="sc-fx__what">${playText(r)}</span><small>${esc(meta)}</small></span>${scores(r) && r.made ? `<b class="sc-fx__s num">${r.score.a}–${r.score.b}</b>` : ''}</div>`;
+  }
+  const fxHead = (icon, title, close = 'cancel', tone = '') => `<div class="sc-tmn__h"><span class="sc-fx__ic${tone}">${tmIcon(icon)}</span><b class="sc-tmn__name">${esc(title)}</b><span class="sc-q__sp"></span><button type="button" class="sc-tmn__x" data-fx="${close}" aria-label="${close === 'cancel' ? 'Cancel the fix' : 'Back'}">${CLOSE}</button></div>`;
+  function fixPanel(a) {
+    const r = G.rows.find(x => x.id === a.id); if (!r) return '';
+    if (a.step === 'who') {
+      const loose = fixWhoIds(a).filter(id => !hasTile(id));
+      return `<div class="sc-q sc-q--line sc-fx-line" role="group" aria-label="Wrong player: tap who really did it"><div class="sc-q__h"><b>Wrong player</b><small class="sc-q__hint">Tap who really did it</small><span class="sc-q__sp"></span><button type="button" class="sc-q__skip" data-fx="back">Back</button></div>
+        ${loose.length ? `<div class="sc-q__opts">${loose.map(id => optBtn(id, 'data-fxwho', false, true)).join('')}</div>` : ''}</div>`;
+    }
+    if (a.step === 'what') {
+      const now = statOf(r), keep = basic() ? /^(shot|ft|reb|ast)/ : /./;
+      const tiles = STATS.filter(([sid]) => keep.test(sid) || sid === now).map(([sid, label]) => { const [big, small] = TILE[sid] || [label, '']; return `<button type="button" class="${sid === now ? 'now' : ''}${a.pick === sid ? ' on' : ''}" data-fx="stat:${sid}"${sid === now ? ' disabled' : ''} aria-pressed="${a.pick === sid}" aria-label="${esc(label)}${sid === now ? ', what it is now' : ''}"><b class="num">${big}</b><small class="num">${small}</small></button>`; }).join('');
+      const s = a.pick && STATS.find(x => x[0] === a.pick);
+      const d = s ? ptsOf(s[2]) - ptsOf(r) : 0, sc = G.score[r.team];
+      const effect = s ? `<div class="sc-fx__fx"><span>${esc(short(r.player))} · ${esc(s[1])}</span>${d ? `<span class="num">${esc(team[r.team].name)} <s>${sc}</s> <b>${sc + d}</b></span>` : '<span>Score stays the same</span>'}</div>` : '';
+      return `<div class="sc-q sc-q--menu sc-tmn sc-fx" role="group" aria-label="Wrong stat: what happened?">${fxHead('stat', 'What happened?', 'back')}${fixCard(r)}
+        <div class="sc-fx__tiles">${tiles}</div>${effect}
+        <div class="sc-fx__btns"><button type="button" class="sc-fx__b" data-fx="back">Back</button><button type="button" class="sc-fx__b sc-fx__b--go" data-fx="save"${s ? '' : ' disabled'}>Save fix</button></div></div>`;
+    }
+    if (a.step === 'remove') {
+      const pts = ptsOf(r), sc = G.score[r.team], had = r.player && (G.players[r.player] || {}).pts || 0;
+      const effect = pts ? `<div class="sc-fx__fx sc-fx__fx--red"><span>${esc(team[r.team].name)} now</span><span class="num"><s>${sc}</s> <b>${sc - pts}</b></span></div>` : '';
+      const note = `${pts && r.player ? `${short(r.player)} goes from ${had} to ${had - pts} point${had - pts === 1 ? '' : 's'}. ` : pts ? '' : 'The score doesn’t change. '}It stays on record as removed, so it can be checked later.`;
+      return `<div class="sc-q sc-q--menu sc-tmn sc-fx sc-fx--red" role="group" aria-label="Remove this play?">${fxHead('trash', 'Remove this play?', 'back', ' sc-fx__ic--red')}${fixCard(r, true)}${effect}
+        <p class="sc-fx__note">${esc(note)}</p>
+        <div class="sc-fx__btns"><button type="button" class="sc-fx__b" data-fx="back">Keep it</button><button type="button" class="sc-fx__b sc-fx__b--red" data-fx="remove-yes">Remove play</button></div></div>`;
+    }
+    const stat = r.player && STAT_PLAYS.has(r.type);
+    const row = (k, icon, title, sub, red = '') => `<button type="button" class="sc-tmn__row${red}" data-fx="${k}"><span class="sc-tmn__ic">${tmIcon(icon)}</span><span class="sc-tmn__tt"><b>${esc(title)}</b><small>${esc(sub)}</small></span><span class="sc-q__sp"></span>${CHEV_R}</button>`;
+    return `<div class="sc-q sc-q--menu sc-tmn sc-fx" role="group" aria-label="Fix a play">${fxHead('pen', 'Fix a play')}${fixCard(r)}
+      <div class="sc-tmn__g"><span class="sc-tmn__l">What’s wrong?</span>
+        ${stat ? row('who', 'who', 'Wrong player', 'Give it to someone else') + row('what', 'stat', 'Wrong stat', 'Change what happened') : ''}
+        ${row('after', 'plus', 'Missed a play', 'Add one right after this')}
+        ${row('remove', 'trash', 'Remove', 'It didn’t happen, or it went in twice', ' sc-tmn__row--red')}
+      </div></div>`;
+  }
+  // The amber bar over the board while a play is being fixed.
+  function fixBar() {
+    const a = ui.ask; if (!a || a.kind !== 'fix') return '';
+    const r = G.rows.find(x => x.id === a.id); if (!r) return '';
+    const step = { who: ' · Wrong player', what: ' · Wrong stat', remove: ' · Remove' }[a.step] || '';
+    return `<div class="sc-fixbar" role="status">${tmIcon('pen')}<span class="sc-fixbar__t"><b>Fixing${step}</b><span>${esc([plain(r), whenOf(r)].filter(Boolean).join(' · '))}</span></span><button type="button" data-fx="cancel">Cancel</button></div>`;
   }
   // A follow-up is one amber line (Paolo, 2026-10-27, mockup claude.ai/artifact/JKT8xX8edkcizKXiio3Vip):
   // the players who can answer light up on the court (tile() / the bench, `ansIds`) and a tap
@@ -1269,6 +1374,7 @@ export async function mount(el) {
       const pts = a.kind === 'blocked' ? [2, 3].map(n => `<button type="button" class="sc-q__chip num${a.pts === n ? ' on' : ''}" data-blkpts="${n}" aria-pressed="${a.pts === n}">${n}PT</button>`).join('') : '';
       return followUp(a, pts);
     }
+    if (a && a.kind === 'fix') return fixPanel(a);
     if (a && a.kind === 'menu' && a.tm) return teamMenuPanel(a.tm);
     if (a && a.kind === 'menu') {
       const chips = opts => `<div class="sc-menu">${opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}"${String(o.id).startsWith('wait:') ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>`;
@@ -1358,6 +1464,7 @@ export async function mount(el) {
   };
   // The last play: always there, with Undo (this phone's own plays) and Fix.
   function lastRow() {
+    if (ui.ask && ui.ask.kind === 'fix') return '';
     if (ui.after) {
       const r = G.rows.find(x => x.id === ui.after);
       return `<div class="sc-last is-after" role="status"><span class="sc-last__w">Adding after: ${r ? playText(r) : ''}</span><button type="button" class="sc-lb" data-act="insert-done">Done</button></div>`;
@@ -1370,7 +1477,12 @@ export async function mount(el) {
     }
     if (!r) return `<div class="sc-last is-empty" role="status"><span class="sc-last__w">No plays yet</span></div>`;
     const fresh = r.id !== ui.lastShown; ui.lastShown = r.id;
-    return `<div class="sc-last${fresh ? ' is-fresh' : ''}" role="status"><i class="sc-last__ok" aria-hidden="true">${CHECK}</i><span class="sc-last__w">${playText(r)}${scores(r) ? ` <span class="num sc-last__s">· ${r.score.a}–${r.score.b}</span>` : ''}</span>${ui.locked ? '' : `<button type="button" class="sc-lb sc-lb--amber" data-undo="${esc(r.id)}" aria-label="Undo: ${esc(playText(r).replace(/<[^>]+>/g, ''))}">Undo</button><button type="button" class="sc-lb" data-fix="${esc(r.id)}" aria-label="Fix this play">Fix</button>`}</div>`;
+    return `<div class="sc-last${fresh ? ' is-fresh' : ''}" role="status"><i class="sc-last__ok" aria-hidden="true">${CHECK}</i><span class="sc-last__w">${playText(r)}${scores(r) ? ` <span class="num sc-last__s">· ${r.score.a}–${r.score.b}</span>` : ''}${twice.has(r.id) ? TWICE : ''}</span>${ui.locked ? '' : `<button type="button" class="sc-lb sc-lb--amber" data-undo="${esc(r.id)}" aria-label="Undo: ${esc(playText(r).replace(/<[^>]+>/g, ''))}">Undo</button><button type="button" class="sc-lb sc-lb--fx" data-fix="${esc(r.id)}" aria-label="Fix this play">${tmIcon('pen')}Fix</button>`}</div>`;
+  }
+  // A done fix or remove, with Undo for a few seconds (toast).
+  function doneRow() {
+    const d = ui.done; if (!d || (ui.ask && ui.ask.kind === 'fix')) return '';
+    return `<div class="sc-done" role="status"><i class="sc-done__ok" aria-hidden="true">${CHECK}</i><span class="sc-done__t">${esc(d.text)}</span>${d.undo && !ui.locked ? '<button type="button" class="sc-lb sc-lb--amber" data-act="done-undo">Undo</button>' : ''}</div>`;
   }
 
   // ── The Scoresheet: Box score · Play-by-play · Fouls ──
@@ -1400,14 +1512,16 @@ export async function mount(el) {
     </tbody></table></div>`;
   }
   function playsTab() {
-    const f = ui.filter;
-    const keep = r => f === 'all' || (f === 'a' || f === 'b' ? r.team === f : f === 'scoring' ? scores(r) && r.made : r.type === 'foul' || r.type === 'team_tech');
+    // A player's plays (their card's hold → Their plays): a chip with × back to All.
+    const pid = /^p:/.test(ui.filter) && byId[ui.filter.slice(2)] ? ui.filter.slice(2) : null, f = pid ? 'player' : ui.filter;
+    const keep = r => f === 'all' || (f === 'player' ? [r.player, r.from, r.in, r.out].includes(pid) : f === 'a' || f === 'b' ? r.team === f : f === 'scoring' ? scores(r) && r.made : r.type === 'foul' || r.type === 'team_tech');
     const rows = G.rows.filter(keep).slice().reverse();
-    const chips = [['all', 'All'], ['a', team.a.name], ['b', team.b.name], ['scoring', 'Scoring'], ['fouls', 'Fouls']].map(([k, l]) => `<button type="button" class="sc-chip${f === k ? ' on' : ''}" data-filter="${k}" aria-pressed="${f === k}">${k === 'a' || k === 'b' ? `<span class="dot" style="--c:${esc(team[k].color)}"></span>` : ''}${esc(l)}</button>`).join('');
+    const chips = (pid ? `<button type="button" class="sc-chip on" data-filter="all" aria-label="${esc(short(pid))}'s plays. Show all">${esc(short(pid))}${CLOSE}</button>` : '') + [['all', 'All'], ['a', team.a.name], ['b', team.b.name], ['scoring', 'Scoring'], ['fouls', 'Fouls']].map(([k, l]) => `<button type="button" class="sc-chip${f === k ? ' on' : ''}" data-filter="${k}" aria-pressed="${f === k}">${k === 'a' || k === 'b' ? `<span class="dot" style="--c:${esc(team[k].color)}"></span>` : ''}${esc(l)}</button>`).join('');
     let cur = null;
     const out = rows.map(r => {
       const head = r.period !== cur ? (cur = r.period, `<div class="sc-pbp__h num"><span>${esc(r.period)}</span><span>${(G.byPeriod.find(x => x.period === r.period) || { a: 0, b: 0 }).a}–${(G.byPeriod.find(x => x.period === r.period) || { a: 0, b: 0 }).b} in ${esc(r.period)}</span></div>`) : '';
-      return `${head}<button type="button" class="sc-pbp__r" data-fix="${esc(r.id)}" aria-label="${esc(playText(r).replace(/<[^>]+>/g, ''))}. Fix"><span class="sc-pbp__t num">${esc(r.clock || '')}</span>${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : '<span></span>'}<span class="sc-pbp__w">${playText(r)}${r.fixes ? ` <small class="sc-pbp__by">fixed${r.by ? ` by ${esc(r.by)}` : ''}</small>` : r.by && r.dev !== deviceId && multi ? ` <small class="sc-pbp__by">${esc(r.by)}</small>` : ''}</span><span class="sc-pbp__s num${scores(r) && r.made ? ' on' : ''}">${scores(r) && r.made ? `${r.score.a}–${r.score.b}` : ''}</span></button>`;
+      const fixing = ui.ask && ui.ask.kind === 'fix' && ui.ask.id === r.id;
+      return `${head}<button type="button" class="sc-pbp__r${twice.has(r.id) ? ' is-twice' : ''}${fixing ? ' is-fixing' : ''}" data-fix="${esc(r.id)}" aria-label="${esc(playText(r).replace(/<[^>]+>/g, ''))}${twice.has(r.id) ? ', maybe scored twice' : ''}. Fix"><span class="sc-pbp__t num">${esc(r.clock || '')}</span>${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : '<span></span>'}<span class="sc-pbp__w">${playText(r)}${twice.has(r.id) ? TWICE : ''}${r.fixes ? ` <small class="sc-pbp__by">fixed${r.by ? ` by ${esc(r.by)}` : ''}</small>` : r.by && r.dev !== deviceId && multi ? ` <small class="sc-pbp__by">${esc(r.by)}</small>` : ''}</span><span class="sc-pbp__s num${scores(r) && r.made ? ' on' : ''}">${scores(r) && r.made ? `${r.score.a}–${r.score.b}` : ''}</span>${ui.locked ? '' : `<i class="sc-pbp__fx" aria-hidden="true">${tmIcon('pen')}</i>`}</button>`;
     }).join('');
     return `<div class="sc-chips">${chips}</div><div class="sc-pbp">${out || '<p class="sc-empty">No plays yet.</p>'}</div>`;
   }
@@ -1475,7 +1589,8 @@ export async function mount(el) {
       <div class="sc-pop__line sc-pop__line--3">${[['FG', m, a], ['3PT', z('fg3m'), z('fg3m') + z('fg3m_miss')], ['FT', z('ftm'), z('ftm') + z('ft_miss')]].map(([k, made, att]) => `<span><b class="num">${made}-${att}</b><small class="num">${k}${att ? ` · ${Math.round((made / att) * 100)}%` : ''}</small></span>`).join('')}</div>`}
       ${pw && !ui.locked && !G.final ? `<button type="button" class="sc-move" data-act="move" data-pid="${esc(p.id)}"><span class="dot" style="--c:${esc(team[other(p.team)].color)}"></span>Move to ${esc(team[other(p.team)].name)}</button>
       <p class="sc-move__n">His ${z('pts')} point${z('pts') === 1 ? '' : 's'} so far stay with ${esc(team[p.team].name)}. Undo works like any play.</p>` : ''}
-      ${lastP ? `<div class="sc-pc__last"><span>Last: ${playText(lastP).replace(/<b>[^<]*<\/b>\s*/, '')}${lastP.period ? ` <span class="num">· ${esc(lastP.period)}${lastP.clock ? ' ' + esc(lastP.clock) : ''}</span>` : ''}</span>${ui.locked ? '' : `<button type="button" class="sc-lb" data-fix="${esc(lastP.id)}">Fix</button>`}</div>` : ''}
+      ${lastP ? `<div class="sc-pc__last"><span>Last: ${playText(lastP).replace(/<b>[^<]*<\/b>\s*/, '')}${lastP.period ? ` <span class="num">· ${esc(lastP.period)}${lastP.clock ? ' ' + esc(lastP.clock) : ''}</span>` : ''}</span>${ui.locked ? '' : `<button type="button" class="sc-lb sc-lb--fx" data-fix="${esc(lastP.id)}">${tmIcon('pen')}Fix</button>`}</div>
+      <button type="button" class="sc-move" data-act="their-plays" data-pid="${esc(p.id)}">${SHEET_ICON}All ${esc(short(p.id))}’s plays</button>` : ''}
     </div></div>`;
   }
 
@@ -1746,6 +1861,10 @@ export async function mount(el) {
       if (sig !== hold.sig || action) { hold.sig = sig; paint(); }
     } catch (e) {}
   }
+  // The Papawis setup and someone-else-is-scoring screens, with the message line under them. The
+  // scorer's root lays its children side by side (the docked Scoresheet), so these two get a column
+  // of their own: a loose message beside them squeezed the setup into half the screen.
+  const suShell = html => `<div class="su-shell">${html}${ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''}</div>`;
   function holdView() {
     const h = hold.holder || { name: 'Someone', quiet: 0, unsent: 0, over: false };
     const quiet = h.quiet >= 60 ? `quiet for ${Math.floor(h.quiet / 60)} min` : 'active now';
@@ -1929,16 +2048,22 @@ export async function mount(el) {
     // Papawis: a game with no setup yet shows the setup screen instead.
     const title = el.querySelector('.sc-nav .navbar__title');
     if (pw && title) title.textContent = `Game ${ui.game} · ${pw.title}`;
-    if (pw && !hold.mine) { root.innerHTML = holdView() + (ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''); ui.tip = ''; paintPill(); return; }
-    if (pw && !setupFor(ui.game) && !ui.locked) { root.innerHTML = setupView().replace('<div class="su">', `<div class="su">${practice ? tipBox() : ''}`) + (ui.tip ? `<p class="sc-tip su-tip" role="status">${esc(ui.tip)}</p>` : ''); ui.tip = ''; paintPill(); return; }
+    if (pw && !hold.mine) { root.innerHTML = suShell(holdView()); ui.tip = ''; paintPill(); return; }
+    if (pw && !setupFor(ui.game) && !ui.locked) { root.innerHTML = suShell(setupView().replace('<div class="su">', `<div class="su">${practice ? tipBox() : ''}`)); ui.tip = ''; paintPill(); return; }
     // A practice run's Finish the run: what a real one does, from this phone's plays.
     if (pw && practice && ui.pracFinish) { root.innerHTML = pracFinishView(); paintPill(); return; }
     const quiet = a => !!a && SKIPPABLE.has(a.kind) && !followOn();
     if (quiet(ui.ask)) ui.ask = null;
     while (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) { ui.ask = ui.queue.shift(); if (quiet(ui.ask)) ui.ask = null; }
     clockNow();
-    // The players a follow-up is waiting on light up; the rest dim (tile(), the bench).
-    ansIds = ui.ask && OPTIONAL.has(ui.ask.kind) ? new Set(followOpts(ui.ask)) : null;
+    // A play being fixed that's gone (the other phone undid or fixed it): out of fix mode.
+    if (ui.ask && ui.ask.kind === 'fix' && !G.rows.some(r => r.id === ui.ask.id)) { ui.ask = null; ui.tip = 'That play just changed on the other phone. Tap it again to fix it.'; }
+    const fixing = !!(ui.ask && ui.ask.kind === 'fix');
+    // The players a follow-up is waiting on light up; the rest dim (tile(), the bench). Fixing
+    // who did a play: everyone else lights up.
+    ansIds = ui.ask && OPTIONAL.has(ui.ask.kind) ? new Set(followOpts(ui.ask)) : fixing && ui.ask.step === 'who' ? new Set(fixWhoIds(ui.ask)) : null;
+    twice = twiceIds();
+    fixWas = fixing && ui.ask.step === 'who' ? (G.rows.find(r => r.id === ui.ask.id) || {}).player || null : null;
     const q = question();
     const restarted = ui.restarted; ui.restarted = false;
     const started = ui.started; ui.started = false;
@@ -1952,6 +2077,7 @@ export async function mount(el) {
     const thumb = thumbOn() && !wide.matches;
     root.classList.toggle('is-docked', docked);
     root.classList.toggle('is-thumb', thumb);
+    root.classList.toggle('is-fixing', fixing);
     root.classList.toggle('is-left', thumb && leftHand());
     // Roomy: one side's five in the dock (Papawis, or one of two scorers): taller tiles.
     root.classList.toggle('is-roomy', thumb && (!!pw || ['a', 'b'].filter(mine).length < 2));
@@ -1964,6 +2090,7 @@ export async function mount(el) {
               <button type="button" class="sc-cb" data-act="game" aria-label="Game: refs stopped play, end the period, fix the clock"><svg viewBox="0 0 12 4" fill="currentColor" aria-hidden="true"><circle cx="2" cy="2" r="1.6"/><circle cx="6" cy="2" r="1.6"/><circle cx="10" cy="2" r="1.6"/></svg></button>`;
     root.innerHTML = `
       <div class="sc-left">
+        ${fixBar()}
         ${ui.locked ? `<div class="msg msg--info sc-msg">${practice ? 'Practice finished. Reset at the top to play another one.' : 'The box score is saved. The scorer is read-only now.'}</div>` : ''}
         ${ui.sync === 'error' && ui.syncMsg ? `<div class="msg msg--err sc-msg" role="alert">${esc(ui.syncMsg)}</div>` : ''}
         <div class="sc-board">
@@ -1978,6 +2105,7 @@ export async function mount(el) {
         <div class="sc-bottom">
           ${ui.tip || restarted || started ? `<p class="sc-tip" role="status">${esc(ui.tip || (started ? 'Clock started with the first play. Tap the time to fix it.' : 'Clock restarted. Tap the time to fix it.'))}</p>` : ''}
           ${tipBox()}
+          ${doneRow()}
           ${lastRow()}
           ${optional && !docked ? q : ''}
           ${q && !optional ? q : G.final && !ui.after ? overPanel() : `<div class="sc-padw">${pad()}</div>`}
@@ -2038,6 +2166,12 @@ export async function mount(el) {
     if (name === 'dock-show') { ui.hideDock = false; return paint(); }
     if (name === 'peek-close') { ui.peek = null; return paint(); }
     if (name === 'insert-done') { ui.after = null; ui.tip = ''; return paint(); }
+    if (name === 'done-undo') { const d = ui.done; ui.done = null; if (d && d.undo) { d.undo(); ui.tip = 'Undone: it’s back as it was.'; } return paint(); }
+    if (name === 'their-plays') {
+      ui.filter = `p:${b.getAttribute('data-pid')}`; ui.peek = null;
+      if (wide.matches) { ui.hideDock = false; ui.dockTab = 'plays'; } else { ui.sheet = true; ui.tab = 'plays'; }
+      return paint();
+    }
     if (name === 'redo') return redo();
     if (name === 'timeout') return timeout(t);
     if (name === 'subq') return subMenu(t);
@@ -2051,6 +2185,12 @@ export async function mount(el) {
   // otherwise it picks (or unpicks) them.
   function pickPlayer(id) {
     const p = byId[id];
+    // Fixing a play: the court only answers Wrong player; otherwise a tap does nothing until
+    // the fix is saved or cancelled.
+    if (ui.ask && ui.ask.kind === 'fix') {
+      if (ui.ask.step === 'who' && fixWhoIds(ui.ask).includes(id)) return fixWho(id);
+      ui.tip = ui.ask.step === 'who' ? '' : 'Fixing a play: finish it or tap Cancel first.'; return paint();
+    }
     // ⇄ then a player (Papawis Basic): they switch to the other side.
     if (ui.moveArm && p) { ui.moveArm = false; return movePlayer(id, other(p.team)); }
     const a = ui.ask;
@@ -2104,12 +2244,14 @@ export async function mount(el) {
     // Free throws owed: the stat buttons wait (the panel's × closes it without them).
     if (owed() && STAT_BTN(b)) { ui.tip = `Free throws first: FT${ui.ask.done + 1} of ${ui.ask.n}. × closes without them.`; return paint(); }
     if (b.hasAttribute('data-hold')) { if (e.detail === 0) holdTap(b); return; } // keyboard: Enter = tap
-    const readOnly = /^(sheet|sheet-close|peek-close|fouls|dock-hide|dock-show)$/.test(b.getAttribute('data-act') || '') || b.hasAttribute('data-tab') || b.hasAttribute('data-dtab') || b.hasAttribute('data-steam') || b.hasAttribute('data-filter') || b.hasAttribute('data-ask');
+    const readOnly = /^(sheet|sheet-close|peek-close|fouls|dock-hide|dock-show|their-plays)$/.test(b.getAttribute('data-act') || '') || b.hasAttribute('data-tab') || b.hasAttribute('data-dtab') || b.hasAttribute('data-steam') || b.hasAttribute('data-filter') || b.hasAttribute('data-ask');
     if (ui.locked && !readOnly) return;
     if (b.hasAttribute('data-pick')) return pickPlayer(b.getAttribute('data-pick'));
     // A menu just opened (a hold, the team's name): the lifting finger's tap isn't a choice.
     if (b.hasAttribute('data-ask')) return ui.ask && ui.ask.kind === 'menu' && Date.now() - (ui.ask.opened || 0) < 300 ? undefined : answer(b.getAttribute('data-ask'));
     if (b.hasAttribute('data-fix')) return fixMenu(b.getAttribute('data-fix'));
+    if (b.hasAttribute('data-fx')) return ui.ask && ui.ask.kind === 'fix' && Date.now() - (ui.ask.opened || 0) < 300 ? undefined : fixAct(b.getAttribute('data-fx'));
+    if (b.hasAttribute('data-fxwho')) return ui.ask && ui.ask.kind === 'fix' && ui.ask.step === 'who' ? fixWho(b.getAttribute('data-fxwho')) : undefined;
     if (b.hasAttribute('data-tab')) { ui.tab = b.getAttribute('data-tab'); pref.set('wknd-sc-tab', ui.tab); return paint(); }
     if (b.hasAttribute('data-dtab')) { ui.dockTab = b.getAttribute('data-dtab'); pref.set('wknd-sc-dock', ui.dockTab); return paint(); }
     if (b.hasAttribute('data-steam')) { ui.sheetTeam = b.getAttribute('data-steam'); return paint(); }
