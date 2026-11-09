@@ -23359,11 +23359,14 @@ function signupPromo(req) {
   const reg = regId ? getRegistration(regId) : null;
   if (!reg?.player_id) return null;
   const season = getSetting('signup_target_season', '');
-  if (!season || !signupAccess(reg).open || getSeasonSignup(regId, season)) return null;
-  if (hasAppEvent(regId, `signup_promo_never_${season}`) || !checkActivePlayer(reg.player_id).ok) return null;
+  const access = signupAccess(reg);
+  if (!season || !access.open || getSeasonSignup(regId, season)) return null;
+  // Test mode (Paolo, 2026-11-09): testers get the popup every time, whatever Later or "Not this
+  // season" said and whether or not they count as active, so it can be checked over and over.
+  if (!access.testing && (hasAppEvent(regId, `signup_promo_never_${season}`) || !checkActivePlayer(reg.player_id).ok)) return null;
   return {
     season, deadline: getSetting('season_signup_deadline', ''), spots: Number(getSetting('season_roster_capacity', '48')) || 48, fee: signupPrices().fee, jerseyFrom: signupPrices().topPrice,
-    popup: signupPromoPopupDue(regId, season, getSetting('season_signup_deadline', '')),
+    popup: access.testing || signupPromoPopupDue(regId, season, getSetting('season_signup_deadline', '')), testing: access.testing,
   };
 }
 // What the popup shows (mockup claude.ai/artifact/TezEmy2yyspWF51yKLMViW, A + B): the player's

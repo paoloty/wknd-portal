@@ -925,8 +925,9 @@
     // "Not this season" (the server already knows; the phone remembers too until the copy refreshes).
     try {
       var spEl = $('[data-sp-season]'), spHide = spEl ? JSON.parse(localStorage.getItem('wknd-sp-' + spEl.getAttribute('data-sp-season')) || '{}') : {};
-      if (spHide.until > Date.now() || spHide.never) { var spBox = $('[data-sp]'); if (spBox) spBox.remove(); }
-      if (spHide.never) { var spCard = $('.sp-card'); if (spCard) spCard.remove(); }
+      // (Not in test mode, where it always shows: data-sp-test.)
+      if (spHide.until > Date.now() || spHide.never) { var spBox = $('[data-sp]:not([data-sp-test])'); if (spBox) spBox.remove(); }
+      if (spHide.never) { var spCard = $('.sp-card:not([data-sp-test])'); if (spCard) spCard.remove(); }
     } catch (e) {}
 
     // Forms: one submit at a time; remember unsaved input (see the update check)
