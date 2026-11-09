@@ -287,7 +287,8 @@ function sizeGrid(name, sizes, chart, value, { none = false } = {}) {
 function kitStep(x) {
   const d = x.d, p = x.prices;
   const of = x.onFile;
-  const detail = (field, label, value, input) => `<details class="sgn-edit"${errFor(x.errors, field) || !value ? ' open' : ''}>
+  const willFail = f => !!x.openDetails?.has(f) || (f === 'emergency_name' && !!x.openDetails?.has('emergency_phone'));
+  const detail = (field, label, value, input) => `<details class="sgn-edit"${errFor(x.errors, field) || !value || willFail(field) ? ' open' : ''}>
     <summary class="sgn-cell"><span class="sgn-k"><span class="sgn-lbl">${esc(label)}</span><span class="sgn-kv">${esc(value || 'Not on file')}</span></span><span class="sgn-ed">Edit</span></summary>
     <div class="sgn-edit__in">${input}${errMsg(x.errors, field)}</div></details>`;
   const maskPhone = ph => { const s = String(ph || '').replace(/\s/g, ''); return s.length > 7 ? `${s.slice(0, 4)} ••• ${s.slice(-4)}` : s; };

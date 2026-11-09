@@ -23593,6 +23593,12 @@ function signupStepData(st, kind, n, d, ctx, errors = []) {
     returning: ctx.returning, payFirst: ctx.payFirst, plansOffered: ctx.plansOffered, shared: ctx.shared, leagueSeason: ctx.leagueSeason,
     sizes: JERSEY_SIZES, sizeChart: SIZE_CHART, jersey, hasWaiver: ctx.hasWaiver,
     onFile: { emergency_name: st.reg.emergency_name || '', emergency_phone: st.reg.emergency_phone || '', birthday: st.reg.birthday || '' },
+    // Step 5's folded "Your details" rows open by themselves when what they'd send won't pass
+    // (own number as emergency contact, a bad number, no birthday), so nobody is stuck on a
+    // problem they can't see (2026-11-09).
+    openDetails: n === 5 ? new Set(checkStep(5, {
+      ...d, emergency_name: d.emergency_name ?? st.reg.emergency_name ?? '', emergency_phone: d.emergency_phone ?? st.reg.emergency_phone ?? '', birthday: d.birthday ?? st.reg.birthday ?? '',
+    }, ctx).map(e => e.field)) : new Set(),
     workOnPrefilled: !!d._workOnPrefilled, kitPrefilled: !!d._kitPrefilled,
     photo: photo && photo.via !== 'activation' ? photo : null, photoUrl: '/season-signup/my-photo',
     poseText: pose?.prompt || 'Your pose shows here', poseLabel: pose?.label || '',

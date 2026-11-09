@@ -259,9 +259,9 @@
     var fresh = doc.querySelector('[data-sgn]'), cur = document.querySelector('[data-sgn]');
     if (!fresh || !cur || !cur.parentNode) return false;
     var host = cur.parentNode;
-    $('[data-sgn]', host).forEach(function (n) { if (n.parentNode === host) n.remove(); });
+    $$('[data-sgn]', host).forEach(function (n) { if (n.parentNode === host) n.remove(); });
     var bits = [];
-    $('[data-sgn]', fresh.parentNode).forEach(function (n) { if (n.parentNode === fresh.parentNode) bits.push(document.importNode(n, true)); });
+    $$('[data-sgn]', fresh.parentNode).forEach(function (n) { if (n.parentNode === fresh.parentNode) bits.push(document.importNode(n, true)); });
     var first = host.firstChild;
     bits.forEach(function (n) { host.insertBefore(n, first); });
     if (doc.title) document.title = doc.title;
@@ -428,8 +428,16 @@
       if (root.getAttribute('data-sgn-ready')) return;
       root.setAttribute('data-sgn-ready', '1');
       counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); avoidAsk(root); waiverLink(root); guardSend(root); busy(root); gfViewer(root);
+      // A step back with problems: glide to the first one and say what's wrong in a notice
+      // (Paolo, 2026-11-09). One problem: its own message; more: how many.
       var e = $('[aria-invalid="true"]', root);
-      if (e && e.scrollIntoView) e.scrollIntoView({ block: 'center' });
+      if (e) {
+        var msgs = $$('.sgn-err', root);
+        setTimeout(function () {
+          if (e.scrollIntoView) e.scrollIntoView({ behavior: 'smooth', block: e.offsetHeight > window.innerHeight * 0.6 ? 'start' : 'center' });
+          gfToast(msgs.length > 1 ? msgs.length + ' things to fix. Starting with this one.' : (msgs[0] ? msgs[0].textContent : 'Check this one.'), 'err');
+        }, 60);
+      }
     });
   }
   window.wkndSignupInit = init;

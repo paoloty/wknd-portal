@@ -125,6 +125,16 @@ test('each pose has one winner: most votes, a tie to whoever got there first', (
   assert.equal(w.finals_mvp, undefined);
 });
 
+import { phMobile } from '../lib/season-signup.js';
+test('emergency phone: any normal way of writing a PH mobile, never your own number', () => {
+  for (const v of ['09181237730', '0918 123 7730', '0918-123-7730', '(0918) 123 7730', '+63 918 123 7730', '+63 (918) 123-7730', '639181237730', '9181237730', '0918.123.7730'])
+    assert.equal(phMobile(v), '9181237730', v);
+  for (const v of ['', '82345678', '(02) 8123 4567', '0918123773', '091812377301', '+1 415 555 0100']) assert.equal(phMobile(v), '', v);
+  assert.equal(checkStep(5, { ...good, emergency_phone: '(0918) 123 7730' }, ctx).length, 0);
+  // own number, written differently: still caught
+  assert.equal(checkStep(5, { ...good, emergency_phone: '+63 917 123 4567' }, ctx)[0].field, 'emergency_phone');
+});
+
 import { stayTeamId, returningToPlace } from '../lib/season-signup.js';
 test('team builder: confirmed "stay" players go on the team with their old team’s name, once', () => {
   const teams = [{ id: 't-blue', name: 'Blue' }, { id: 't-mar', name: 'Maroon' }];

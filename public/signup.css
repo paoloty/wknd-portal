@@ -149,6 +149,8 @@
 textarea.sgn-input { resize: vertical; min-height: 88px; line-height: 1.4; }
 .sgn-field input:focus, .sgn-input:focus { outline: none; border-color: var(--amber); }
 .sgn [aria-invalid="true"] input, .sgn input[aria-invalid="true"] { border-color: var(--sgn-danger); }
+/* Scrolled to on a step with problems: clear of the app bar and the sticky step header. */
+.sgn [aria-invalid="true"] { scroll-margin-top: 96px; scroll-margin-bottom: 120px; }
 .sgn-counter { margin: -2px 2px 0; font-size: 12px; color: var(--sgn-muted); text-align: right; }
 .sgn-counter.is-ok { color: var(--sgn-win); }
 
