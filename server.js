@@ -23945,8 +23945,7 @@ function resolveSeasonSignupContext(req) {
   const reg = getRegistration(regId);
   if (!reg || reg.status !== 'approved') return null;
   const sigSeason = getSetting('signup_target_season', '');
-  const sigOpen = getSetting('season_signup_open', '0') === '1';
-  if (!sigSeason || !sigOpen) return null;
+  if (!sigSeason || !signupAccess(reg).open) return null;   // open, or test mode for this tester
   return { regId, reg, sigSeason };
 }
 
