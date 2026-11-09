@@ -178,6 +178,19 @@
     });
   }
 
+  // Review's "Read it": opens the waiver below and scrolls to it. Handled here, so the app
+  // doesn't take the #link for a new screen (which reloads it at the top).
+  function waiverLink(root) {
+    $$('[data-sgn-open-waiver]', root).forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        var w = $('#sgn-waiver', root); if (!w) return;
+        e.preventDefault();
+        w.open = true;
+        w.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  }
+
   // Send: no game face yet is the one thing worth stopping for here (the server checks the rest).
   // Not in test mode (the amber bar), where nothing is required.
   function guardSend(root) {
@@ -310,7 +323,7 @@
     $$('[data-sgn]').forEach(function (root) {
       if (root.getAttribute('data-sgn-ready')) return;
       root.setAttribute('data-sgn-ready', '1');
-      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); guardSend(root); gfViewer(root);
+      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); waiverLink(root); guardSend(root); gfViewer(root);
       var e = $('[aria-invalid="true"]', root);
       if (e && e.scrollIntoView) e.scrollIntoView({ block: 'center' });
     });

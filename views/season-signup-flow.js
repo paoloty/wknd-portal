@@ -468,7 +468,7 @@ export function gameFaceScreen(kind, x) {
   const shown = x.poses.filter(p => p.entries.length);
   const sections = shown.map(p => `<section class="sgn-gfc" id="gf-${esc(p.key)}" data-gf-cat="${esc(p.key)}" data-gf-label="${esc(p.label)}">
     <div class="sgn-gfc__h"><span class="sgn-lbl">${esc(p.label)}</span>${voting ? `<small data-gf-state${p.entries.some(e => e.voted) ? ' class="is-done"' : ''}>${p.entries.some(e => e.voted) ? '✓ Voted' : `${p.entries.length} face${p.entries.length === 1 ? '' : 's'}`}</small>` : ''}</div>
-    <div class="sgn-gf${x.phase === 'over' ? ' sgn-gf--one' : ''}">${p.entries.map(tile).join('')}</div></section>`).join('');
+    <div class="sgn-gfgrid${x.phase === 'over' ? ' sgn-gfgrid--one' : ''}">${p.entries.map(tile).join('')}</div></section>`).join('');
   const votedIn = shown.filter(p => p.entries.some(e => e.voted)).length;
   const prog = voting && x.canVote && shown.length ? `<div class="sgn-gfp" data-gf-prog><span class="sgn-gfp__dots">${shown.map(p => `<i${p.entries.some(e => e.voted) ? ' class="on"' : ''}></i>`).join('')}</span>
     <span class="sgn-gfp__t"><b class="sgn-num" data-gf-count>${votedIn} of ${shown.length}</b> categories voted</span><span class="sgn-gfp__end">Closes ${esc(x.closesShort)}</span></div>` : '';

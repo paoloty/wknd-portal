@@ -279,7 +279,7 @@ textarea.sgn-input { resize: vertical; min-height: 88px; line-height: 1.4; }
 .sgn-cam__row { display: flex; flex-direction: column; gap: 8px; }
 .sgn-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
 .sgn-qr img { width: 180px; height: 180px; border-radius: 10px; background: #fff; padding: 8px; }
-.sgn-waiver { font-size: 12px; line-height: 1.55; color: var(--sgn-muted); }
+.sgn-waiver { font-size: 12px; line-height: 1.55; color: var(--sgn-muted); scroll-margin-top: 80px; }
 .sgn-waiver > summary { cursor: pointer; color: var(--sgn-amber-text); font-weight: 600; min-height: 32px; }
 .sgn-waiver p { margin: 6px 0 0; }
 .sgn-waiver p b { color: var(--text); }
@@ -332,8 +332,8 @@ textarea.sgn-input { resize: vertical; min-height: 88px; line-height: 1.4; }
 .sgn-gfc__h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 0 4px; }
 .sgn-gfc__h small { font-size: 12px; color: var(--sgn-muted); white-space: nowrap; }
 .sgn-gfc__h small.is-done { color: var(--sgn-amber-text); }
-.sgn-gf { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
-.sgn-gf--one { grid-template-columns: minmax(0, 240px); justify-content: center; }
+.sgn-gfgrid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+.sgn-gfgrid--one { grid-template-columns: minmax(0, 240px); justify-content: center; }
 .sgn-gf__tile { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .sgn-gf__ph { position: relative; display: block; width: 100%; aspect-ratio: 3 / 4; padding: 0; border-radius: var(--sgn-ri); overflow: hidden; background: var(--surface-2); border: 2px solid transparent; cursor: zoom-in; }
 .sgn-gf__ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -353,8 +353,8 @@ textarea.sgn-input { resize: vertical; min-height: 88px; line-height: 1.4; }
 .sgn-gf__vote:disabled { background: none; color: var(--sgn-subtle); cursor: default; }
 @media (min-width: 900px) {
   .sgn--site.sgn--wide .sgn-head { max-width: 600px; }
-  .sgn--site.sgn--wide .sgn-gf { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 16px; }
-  .sgn--site.sgn--wide .sgn-gf--one { grid-template-columns: minmax(0, 240px); }
+  .sgn--site.sgn--wide .sgn-gfgrid { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 16px; }
+  .sgn--site.sgn--wide .sgn-gfgrid--one { grid-template-columns: minmax(0, 240px); }
 }
 
 /* The viewer (public/signup.js gfViewer): full screen on a phone, a dialog on a wide screen */
