@@ -23639,7 +23639,7 @@ setInterval(runSeasonPaymentJobs, 60 * 60 * 1000);
 // from polls: polls show in the popup, Home and the app, and know nothing of photos or entrants.
 import { gameFaceScreen } from './views/season-signup-flow.js';
 import { CONTEST_POSES, CONTEST_VOTE_DAYS, contestPhase, contestWinners } from './lib/season-signup.js';
-import { getContestEntries, setContestEntry, castGameFaceVote, getGameFaceVotes, getMyGameFaceVotes } from './lib/portal-db.js';
+import { getContestEntries, setContestEntry, castGameFaceVote, deleteGameFaceVote, getGameFaceVotes, getMyGameFaceVotes } from './lib/portal-db.js';
 
 const GF_BASE = { site: '/game-face', app: '/app/game-face' };
 const gfSeason = () => getSetting('signup_target_season', '');
@@ -23688,10 +23688,11 @@ function gameFacePage(req, res) {
   const poses = CONTEST_POSES.map(p => {
     let list = g.live.filter(e => e.pose === p.key);
     if (g.phase === 'over') list = list.filter(e => g.winners[p.key]?.id === e.id);
-    return { key: p.key, label: p.label, entries: list.map(e => ({ id: e.id, name: e.name, photo: gfPhoto(e), mine: e.reg_id === regId, voted: my[p.key] === e.id, votes: g.winners[p.key]?.votes || 0 })) };
+    return { key: p.key, label: p.label, entries: list.map(e => ({ id: e.id, name: e.name, photo: gfPhoto(e), big: gfPhoto(e, 960), mine: e.reg_id === regId, voted: my[p.key] === e.id, votes: g.winners[p.key]?.votes || 0 })) };
   });
   sendSignup(req, res, kind, gameFaceScreen(kind, {
     season, phase: g.phase, closes: g.times.closeAt ? gfWhen(g.times.closeAt) : '', voteDays: CONTEST_VOTE_DAYS,
+    closesShort: g.times.closeAt ? manilaFormat(g.times.closeAt, { weekday: 'short', month: 'short', day: 'numeric' }) : '',
     voteAction: `${GF_BASE[kind]}/vote`, canVote, loginHref: kind === 'site' && !regId ? loginUrl(req) : '',
     mine: mine && g.phase !== 'over' ? mine.state : '', poses,
   }), { title: 'Game Face contest' });
@@ -23699,18 +23700,26 @@ function gameFacePage(req, res) {
 app.get('/game-face', gameFacePage);
 app.get('/app/game-face', requireApp, gameFacePage);
 
-// A vote: one per category, changeable until close; not for your own photo.
+// A vote: one per category, changeable until close; not for your own photo. Voting for the face
+// you already voted for takes the vote back. The page's script asks for JSON (it saves in place);
+// without script it's a form post and comes back to the category.
 function gameFaceVote(req, res) {
   const kind = signupKindOf(req);
   const back = GF_BASE[kind];
+  const json = /application\/json/.test(req.get('Accept') || '');
+  const fail = (status, error, to) => (json ? res.status(status).json({ error }) : res.redirect(to || back));
   const regId = req.session?.playerRegId || '';
   const reg = regId ? getRegistration(regId) : null;
-  if (!reg || reg.status !== 'approved') return res.redirect(kind === 'app' ? '/app/login' : loginUrl(req));
+  if (!reg || reg.status !== 'approved') return fail(401, 'Log in to vote.', kind === 'app' ? '/app/login' : loginUrl(req));
   const season = gfSeason();
   const g = season ? gameFaceData(season) : null;
   const e = g?.live.find(x => x.id === String(req.body.entry || ''));
-  if (!e || g.phase !== 'voting' || e.reg_id === regId) return res.redirect(back);
-  castGameFaceVote(season, e.pose, regId, e.id);
+  if (!g || g.phase !== 'voting') return fail(400, 'Voting is closed.');
+  if (!e) return fail(400, 'That photo isn’t in the contest any more. Reload the page.');
+  if (e.reg_id === regId) return fail(400, 'You can’t vote for your own photo.');
+  const undo = getMyGameFaceVotes(season, regId)[e.pose] === e.id;
+  if (undo) deleteGameFaceVote(season, e.pose, regId); else castGameFaceVote(season, e.pose, regId, e.id);
+  if (json) return res.json({ ok: true, undo, votes: getMyGameFaceVotes(season, regId) });
   res.redirect(`${back}#gf-${e.pose}`);
 }
 app.post('/game-face/vote', express.urlencoded({ extended: false }), gameFaceVote);

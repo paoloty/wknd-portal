@@ -191,11 +191,125 @@
     }, true);
   }
 
+  // The Game Face contest page: a photo opens the viewer (swipe or arrows through the category;
+  // on a wide screen the category's faces as thumbnails, ← → V Esc), and Vote saves in place
+  // through the same form route, asking for JSON. Voting for your vote again takes it back.
+  var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  var ARROW = function (d) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"/></svg>'; };
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function firstName(n) { return String(n).split(' ')[0]; }
+  function gfToast(text, tone) {
+    if (window.wkndToast) return window.wkndToast(text, tone || 'ok');
+    $$('.sgn-toast').forEach(function (t) { t.remove(); });
+    var t = document.createElement('div'); t.className = 'sgn-toast' + (tone === 'err' ? ' sgn-toast--err' : ''); t.setAttribute('role', 'status');
+    t.innerHTML = (tone === 'err' ? '' : CHECK) + '<span></span>'; $('span', t).textContent = text;
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 2200);
+  }
+  function gfViewer(root) {
+    if (!root.hasAttribute('data-gf')) return;
+    var voteUrl = root.getAttribute('data-gf-vote'), phase = root.getAttribute('data-gf-phase');
+    var v = null, opener = null, x0 = null, busy = false;
+    var box = document.createElement('div');
+    box.className = 'sgn-gfv'; box.hidden = true; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+    document.body.appendChild(box);
+
+    function tiles(cat) { return $$('[data-gf-entry]', cat); }
+    function myVote(cat) { var on = $('.sgn-gf__tile.is-on', cat); return on ? on.getAttribute('data-gf-entry') : ''; }
+    function paint() {
+      var list = tiles(v.cat), t = list[v.i], name = t.getAttribute('data-gf-name'), mine = t.hasAttribute('data-gf-mine');
+      var voted = myVote(v.cat), on = voted === t.getAttribute('data-gf-entry'), label = v.cat.getAttribute('data-gf-label');
+      var other = voted && !on && !mine ? $('[data-gf-entry="' + voted + '"]', v.cat) : null;
+      var action = phase !== 'voting' ? '<p class="sgn-gfv__note">' + (phase === 'over' ? 'Winner' : 'Voting opens when sign-ups close.') + '</p>'
+        : !voteUrl ? '<p class="sgn-gfv__note">Log in to vote.</p>'
+        : mine ? '<button type="button" class="sgn-gfv__big" disabled>This is you</button>'
+        : on ? '<button type="button" class="sgn-gfv__big is-on" data-gfv-vote>' + CHECK + 'Your vote · tap to undo</button>'
+        : '<button type="button" class="sgn-gfv__big" data-gfv-vote>Vote for ' + esc(firstName(name)) + '</button>';
+      box.setAttribute('aria-label', label);
+      box.innerHTML = '<div class="sgn-gfv__card">' +
+        '<div class="sgn-gfv__top"><span class="sgn-gfv__count">' + (v.i + 1) + ' of ' + list.length + '</span><button type="button" class="sgn-gfv__ib" data-gfv-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+        '<div class="sgn-gfv__lbl sgn-lbl">' + esc(label) + '</div>' +
+        '<div class="sgn-gfv__stage" data-gfv-swipe><img src="' + esc(t.getAttribute('data-gf-big')) + '" alt="' + esc(name) + '’s game face">' +
+          '<button type="button" class="sgn-gfv__ib sgn-gfv__nav sgn-gfv__prev" data-gfv-step="-1" aria-label="Previous"' + (v.i ? '' : ' disabled') + '>' + ARROW('M15 6l-6 6 6 6') + '</button>' +
+          '<button type="button" class="sgn-gfv__ib sgn-gfv__nav sgn-gfv__next" data-gfv-step="1" aria-label="Next"' + (v.i < list.length - 1 ? '' : ' disabled') + '>' + ARROW('M9 6l6 6-6 6') + '</button></div>' +
+        '<div class="sgn-gfv__thumbs">' + list.map(function (x, j) { return '<button type="button" data-gfv-jump="' + j + '" class="' + (j === v.i ? 'on' : '') + (x.classList.contains('is-on') ? ' voted' : '') + '" aria-label="' + esc(x.getAttribute('data-gf-name')) + '"><img src="' + esc($('img', x).getAttribute('src')) + '" alt=""></button>'; }).join('') + '</div>' +
+        '<div class="sgn-gfv__dots">' + list.map(function (_, j) { return '<i' + (j === v.i ? ' class="on"' : '') + '></i>'; }).join('') + '</div>' +
+        '<div class="sgn-gfv__foot"><div class="sgn-gfv__who"><b>' + esc(name) + '</b><small>' + esc(label) + (other ? ' · you voted for ' + esc(firstName(other.getAttribute('data-gf-name'))) : '') + '</small></div>' + action +
+          (phase === 'voting' && voteUrl ? '<span class="sgn-gfv__keys">← → to move · V to vote · Esc to close</span>' : '') + '</div></div>';
+    }
+    function open(cat, i, from) { v = { cat: cat, i: i }; opener = from; paint(); box.hidden = false; document.documentElement.style.overflow = 'hidden'; var c = $('[data-gfv-close]', box); if (c) c.focus(); }
+    function close() { box.hidden = true; v = null; document.documentElement.style.overflow = ''; if (opener && opener.isConnected) opener.focus(); }
+    function step(d) { if (!v) return; var n = tiles(v.cat).length, i = Math.max(0, Math.min(n - 1, v.i + d)); if (i !== v.i) { v.i = i; paint(); } }
+
+    // Put a category's tiles, its "Voted" note and the progress bar in line with my votes.
+    function apply(votes) {
+      $$('[data-gf-cat]', root).forEach(function (cat) {
+        var mine = votes[cat.getAttribute('data-gf-cat')] || '';
+        tiles(cat).forEach(function (t) {
+          if (t.hasAttribute('data-gf-mine')) return;
+          var on = t.getAttribute('data-gf-entry') === mine, b = $('.sgn-gf__vote', t), ph = $('.sgn-gf__ph', t), tag = $('.sgn-gf__tag', ph);
+          t.classList.toggle('is-on', on);
+          if (b) { b.innerHTML = on ? CHECK + 'Voted' : 'Vote'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+          if (on && !tag) { tag = document.createElement('span'); tag.className = 'sgn-gf__tag'; ph.insertBefore(tag, $('.sgn-gf__zoom', ph)); }
+          if (tag) { if (on) tag.innerHTML = CHECK + 'Your vote'; else tag.remove(); }
+        });
+        var st = $('[data-gf-state]', cat);
+        if (st) { st.classList.toggle('is-done', !!mine); st.textContent = mine ? '✓ Voted' : tiles(cat).length + ' face' + (tiles(cat).length === 1 ? '' : 's'); }
+      });
+      var cats = $$('[data-gf-cat]', root), done = cats.filter(function (c) { return !!votes[c.getAttribute('data-gf-cat')]; }).length;
+      $$('.sgn-gfp__dots i', root).forEach(function (d, i) { d.classList.toggle('on', !!votes[cats[i] && cats[i].getAttribute('data-gf-cat')]); });
+      var cnt = $('[data-gf-count]', root); if (cnt) cnt.textContent = done + ' of ' + cats.length;
+    }
+    function vote(entry) {
+      if (busy || !voteUrl) return;
+      busy = true;
+      var t = $('[data-gf-entry="' + entry + '"]', root), name = t ? firstName(t.getAttribute('data-gf-name')) : '';
+      fetch(voteUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: 'entry=' + encodeURIComponent(entry) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (!res.ok) { gfToast(res.d.error || 'That vote didn’t save. Try again.', 'err'); return; }
+          apply(res.d.votes || {});
+          if (v) paint();
+          gfToast(res.d.undo ? 'Vote taken back' : 'Vote saved for ' + name);
+        })
+        .catch(function () { gfToast('You’re offline. Your vote didn’t save.', 'err'); })
+        .then(function () { busy = false; });
+    }
+
+    root.addEventListener('click', function (e) {
+      var o = e.target.closest('[data-gf-open]');
+      if (o) { var cat = o.closest('[data-gf-cat]'); open(cat, tiles(cat).indexOf(o.closest('[data-gf-entry]')), o); return; }
+      var b = e.target.closest('button.sgn-gf__vote');
+      if (b && !b.disabled && b.value) { e.preventDefault(); vote(b.value); }
+    });
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) { if (e.target === box) close(); return; }
+      if (b.disabled) return;
+      if (b.hasAttribute('data-gfv-close')) close();
+      else if (b.hasAttribute('data-gfv-step')) step(Number(b.getAttribute('data-gfv-step')));
+      else if (b.hasAttribute('data-gfv-jump')) { v.i = Number(b.getAttribute('data-gfv-jump')); paint(); }
+      else if (b.hasAttribute('data-gfv-vote')) vote(tiles(v.cat)[v.i].getAttribute('data-gf-entry'));
+    });
+    box.addEventListener('pointerdown', function (e) { if (e.target.closest('[data-gfv-swipe]') && !e.target.closest('button')) x0 = e.clientX; });
+    box.addEventListener('pointerup', function (e) { if (x0 === null) return; var dx = e.clientX - x0; x0 = null; if (Math.abs(dx) > 40) step(dx < 0 ? 1 : -1); });
+    document.addEventListener('keydown', function (e) {
+      if (!v || box.hidden) return;
+      if (e.key === 'Escape') close();
+      else if (e.key === 'ArrowRight') step(1);
+      else if (e.key === 'ArrowLeft') step(-1);
+      else if ((e.key === 'v' || e.key === 'V') && voteUrl && phase === 'voting') { var t = tiles(v.cat)[v.i]; if (!t.hasAttribute('data-gf-mine')) vote(t.getAttribute('data-gf-entry')); }
+    });
+    // The app swaps screens in place: a viewer left open goes with its page.
+    var gone = new MutationObserver(function () { if (!root.isConnected) { box.remove(); document.documentElement.style.overflow = ''; gone.disconnect(); } });
+    gone.observe(document.body, { childList: true, subtree: true });
+  }
+
   function init() {
     $$('[data-sgn]').forEach(function (root) {
       if (root.getAttribute('data-sgn-ready')) return;
       root.setAttribute('data-sgn-ready', '1');
-      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); guardSend(root);
+      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); guardSend(root); gfViewer(root);
       var e = $('[aria-invalid="true"]', root);
       if (e && e.scrollIntoView) e.scrollIntoView({ block: 'center' });
     });

@@ -430,9 +430,11 @@ export function signupClickScreen(kind, x) {
 }
 
 // ── The Game Face contest (/game-face, /app/game-face) ────────────────────────
-// data: { season, phase: entries|voting|over, closes, voteAction, canVote, loginHref, mine,
-//         poses: [{ key, label, entries: [{ id, name, photo, mine, voted, votes }] }] }
+// data: { season, phase: entries|voting|over, closes, closesShort, voteAction, canVote, loginHref, mine,
+//         poses: [{ key, label, entries: [{ id, name, photo, big, mine, voted, votes }] }] }
 // mine: what the viewer's own entry needs to know ('waiting' | 'approved' | 'hidden'), or ''.
+// Tapping a photo opens the viewer (public/signup.js gfViewer); Vote saves in place there. Without
+// script every Vote is a plain form button (tapping your vote again takes it back).
 const MINE_MSG = {
   waiting: ['info', 'Your entry is waiting for an admin to approve it. It shows here once it’s in.'],
   approved: ['ok', 'Your game face is in the contest.'],
@@ -446,22 +448,35 @@ export function gameFaceScreen(kind, x) {
     voting: `Pick one face in each category. You can change your pick until ${x.closes}. Results stay hidden until then.`,
     over: 'The votes are in. Each winner gets a free Papawis run.',
   }[x.phase];
+  const voting = x.phase === 'voting';
+  const zoom = svg('<path d="M4 9V4h5M20 15v5h-5M4 4l6 6M20 20l-6-6"/>');
   const tile = e => {
     const tag = x.phase === 'over' ? `${e.votes} vote${e.votes === 1 ? '' : 's'}` : e.mine ? 'You' : e.voted ? `${ic.check}Your vote` : '';
-    const inner = `<span class="sgn-gf__ph"><img src="${esc(e.photo)}" alt="${esc(e.name)}’s game face" loading="lazy" decoding="async">${tag ? `<span class="sgn-gf__tag">${tag}</span>` : ''}</span><span class="sgn-gf__name">${esc(e.name)}${x.phase === 'over' ? '<small>Winner</small>' : ''}</span>`;
-    const cls = `sgn-gf__tile${e.voted ? ' is-on' : ''}`;
-    if (x.phase !== 'voting' || !x.canVote) return `<div class="${cls}">${inner}</div>`;
-    return `<button type="submit" class="${cls}" name="entry" value="${esc(e.id)}"${e.mine ? ' disabled' : ''} aria-label="${e.mine ? 'Your own photo' : `Vote for ${esc(e.name)}`}"${e.voted ? ' aria-pressed="true"' : ''}>${inner}</button>`;
+    const vote = !voting ? (x.phase === 'over' ? '<small class="sgn-gf__win">Winner</small>' : '')
+      : e.mine ? '<button type="button" class="sgn-gf__vote" disabled>You</button>'
+      : !x.canVote ? (x.loginHref ? `<a class="sgn-gf__vote" href="${esc(x.loginHref)}">Vote</a>` : '')
+      : `<button type="submit" class="sgn-gf__vote" name="entry" value="${esc(e.id)}" aria-pressed="${e.voted ? 'true' : 'false'}" aria-label="${e.voted ? `Take back your vote for ${esc(e.name)}` : `Vote for ${esc(e.name)}`}">${e.voted ? `${ic.check}Voted` : 'Vote'}</button>`;
+    return `<div class="sgn-gf__tile${e.voted ? ' is-on' : ''}" data-gf-entry="${esc(e.id)}" data-gf-name="${esc(e.name)}" data-gf-big="${esc(e.big)}"${e.mine ? ' data-gf-mine="1"' : ''}>
+      <button type="button" class="sgn-gf__ph" data-gf-open aria-label="See ${esc(e.name)}’s photo"><img src="${esc(e.photo)}" alt="" loading="lazy" decoding="async">${tag ? `<span class="sgn-gf__tag">${tag}</span>` : ''}<span class="sgn-gf__zoom" aria-hidden="true">${zoom}</span></button>
+      <div class="sgn-gf__row"><span class="sgn-gf__name">${esc(e.name)}</span>${vote}</div></div>`;
   };
-  const sections = x.poses.filter(p => p.entries.length).map(p => `<section id="gf-${esc(p.key)}"><div class="sgn-lbl sgn-sec">${esc(p.label)}</div>
+  const shown = x.poses.filter(p => p.entries.length);
+  const sections = shown.map(p => `<section class="sgn-gfc" id="gf-${esc(p.key)}" data-gf-cat="${esc(p.key)}" data-gf-label="${esc(p.label)}">
+    <div class="sgn-gfc__h"><span class="sgn-lbl">${esc(p.label)}</span>${voting ? `<small data-gf-state${p.entries.some(e => e.voted) ? ' class="is-done"' : ''}>${p.entries.some(e => e.voted) ? '✓ Voted' : `${p.entries.length} face${p.entries.length === 1 ? '' : 's'}`}</small>` : ''}</div>
     <div class="sgn-gf${x.phase === 'over' ? ' sgn-gf--one' : ''}">${p.entries.map(tile).join('')}</div></section>`).join('');
+  const votedIn = shown.filter(p => p.entries.some(e => e.voted)).length;
+  const prog = voting && x.canVote && shown.length ? `<div class="sgn-gfp" data-gf-prog><span class="sgn-gfp__dots">${shown.map(p => `<i${p.entries.some(e => e.voted) ? ' class="on"' : ''}></i>`).join('')}</span>
+    <span class="sgn-gfp__t"><b class="sgn-num" data-gf-count>${votedIn} of ${shown.length}</b> categories voted</span><span class="sgn-gfp__end">Closes ${esc(x.closesShort)}</span></div>` : '';
   const mine = MINE_MSG[x.mine];
-  const body = `<div class="sgn-head"><div class="sgn-lbl sgn-lbl--amber">Season ${esc(String(x.season))}</div><h1>Game Face contest</h1><p class="sgn-sub">${esc(sub)}</p></div>
+  // The progress bar sits directly in the form so it stays stuck below the header for the whole list.
+  const body = `<div class="sgn-head"><div class="sgn-lbl sgn-lbl--amber">Season ${esc(String(x.season))}</div><h1>Game Face contest</h1><p class="sgn-sub">${esc(sub)}</p></div>${prog}
     ${mine ? `<p class="sgn-msg sgn-msg--${mine[0]}">${esc(mine[1])}</p>` : ''}
-    ${x.phase === 'voting' && !x.canVote ? `<p class="sgn-msg sgn-msg--info">${x.loginHref ? `<a href="${esc(x.loginHref)}">Log in</a> to vote.` : 'Only members can vote.'}</p>` : ''}
-    ${sections || `<div class="sgn-card sgn-how"><p>${x.phase === 'over' ? 'No votes came in.' : 'No entries yet. Enter on Step 6 of your sign-up.'}</p></div>`}`;
-  const content = x.phase === 'voting' && x.canVote ? `<form method="post" action="${esc(x.voteAction)}" data-busy class="sgn-gf-form">${body}</form>` : body;
-  return frame(kind, { bar: topBar(kind, { back: L.home, backLabel: L.homeLabel, title: 'Game Face' }), body: content });
+    ${voting && !x.canVote ? `<p class="sgn-msg sgn-msg--info">${x.loginHref ? `<a href="${esc(x.loginHref)}">Log in</a> to vote.` : 'Only members can vote.'}</p>` : ''}
+    ${sections || `<div class="sgn-card sgn-how"><p>${x.phase === 'over' ? 'No votes came in.' : 'No entries yet. Enter on Step 6 of your sign-up.'}</p></div>`}
+    <p class="sgn-fine sgn-center">Each category’s winner gets a free Papawis run.</p>`;
+  const content = voting && x.canVote ? `<form method="post" action="${esc(x.voteAction)}" class="sgn-gf-form">${body}</form>` : `<div class="sgn-gf-form">${body}</div>`;
+  const bar = topBar(kind, { back: L.home, backLabel: L.homeLabel, title: 'Game Face' });
+  return `<div class="sgn sgn--${kind} sgn--wide" data-sgn data-gf data-gf-phase="${esc(x.phase)}"${voting && x.canVote ? ` data-gf-vote="${esc(x.voteAction)}"` : ''}>${bar}<div class="sgn-body">${content}</div></div>`;
 }
 
 // ── Not open, not approved, banned ────────────────────────────────────────────
