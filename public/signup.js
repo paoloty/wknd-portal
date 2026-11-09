@@ -34,11 +34,12 @@
     root.addEventListener('change', update); if (ta) ta.addEventListener('input', update); update();
   }
 
-  // Step 1 and 6: the main button looks off until the box is ticked (the server still checks).
+  // Step 1 and 6: the main button stays amber (it reads as broken greyed out, and the server
+  // checks anyway); until the box is ticked, a line under it says what's missing.
   function gate(root) {
-    var box = $('[data-sgn-gate]', root), btn = $('[data-sgn-next]', root) || $('[data-sgn-send]', root);
-    if (!box || !btn) return;
-    function update() { btn.classList.toggle('is-off', !box.checked); }
+    var box = $('[data-sgn-gate]', root), hint = $('[data-sgn-gate-hint]', root);
+    if (!box || !hint) return;
+    function update() { hint.hidden = box.checked; }
     box.addEventListener('change', update); update();
   }
 
@@ -181,25 +182,70 @@
   // Tapping Next, Send, Back or Save: that button spins ("Saving…"), the others fade, and a
   // second tap (or the keyboard's Go) is ignored until the next screen is in. Not on a submit
   // something else stopped (guardSend's "take your game face first").
+  // With script, the step is sent in the background and the next screen swapped in place (no full
+  // reload; Next comes back in the same answer, server.js signupPostStep X-Sgn-Fetch), with a thin
+  // amber bar across the top meanwhile. Anything unexpected: the plain page load instead.
   var BUSY_LABEL = { next: 'Saving…', send: 'Sending…', later: 'Saving…' };
   function busy(root) {
     var form = $('#sgn-form', root); if (!form) return;
+    function reset() {
+      form._sending = false; form.classList.remove('is-sending');
+      $$('.is-busy', root).forEach(function (b) { b.classList.remove('is-busy'); b.removeAttribute('aria-busy'); if (b._was != null) b.innerHTML = b._was; });
+    }
     form.addEventListener('submit', function (e) {
       if (e.defaultPrevented) return;
       if (form._sending) { e.preventDefault(); return; }
       form._sending = true;
       var b = e.submitter; form.classList.add('is-sending');
-      if (!b) return;
-      b.classList.add('is-busy'); b.setAttribute('aria-busy', 'true');
-      b._was = b.innerHTML;
-      var label = BUSY_LABEL[b.value] || '';
-      b.innerHTML = '<span class="sgn-spin" aria-hidden="true"></span>' + (label ? '<span>' + label + '</span>' : '');
+      if (b) {
+        b.classList.add('is-busy'); b.setAttribute('aria-busy', 'true');
+        b._was = b.innerHTML;
+        var label = BUSY_LABEL[b.value] || '';
+        b.innerHTML = '<span class="sgn-spin" aria-hidden="true"></span>' + (label ? '<span>' + label + '</span>' : '');
+      }
+      if (!window.fetch || !window.DOMParser || !window.URLSearchParams || !window.FormData) return; // the plain post
+      e.preventDefault();
+      var data = new URLSearchParams(new FormData(form));
+      if (b && b.name) data.append(b.name, b.value);
+      var bar = loadBar();
+      fetch(form.getAttribute('action'), { method: 'POST', body: data, credentials: 'same-origin', headers: { 'X-Sgn-Fetch': '1', Accept: 'text/html' } })
+        .then(function (r) { return r.text().then(function (t) { return { r: r, t: t }; }); })
+        .then(function (x) {
+          var to = x.r.headers.get('X-Sgn-Url') || (x.r.redirected ? x.r.url : '');
+          var url = to ? new URL(to, location.href).href : '';
+          bar.done();
+          if ((x.r.ok || x.r.status === 400) && swapScreen(x.t, url)) return;
+          location.href = url || location.href; // not a sign-up screen (signed out, an error page): load it properly
+        })
+        .catch(function () { bar.done(); reset(); gfToast('No connection. Your answers are still here. Try again.', 'err'); });
     });
     // Back to this screen from the browser's history: buttons as they were.
-    window.addEventListener('pageshow', function () {
-      form._sending = false; form.classList.remove('is-sending');
-      $$('.is-busy', root).forEach(function (b) { b.classList.remove('is-busy'); b.removeAttribute('aria-busy'); if (b._was != null) b.innerHTML = b._was; });
-    });
+    window.addEventListener('pageshow', reset);
+  }
+  // The thin amber bar across the top while a step is on its way.
+  function loadBar() {
+    var el = document.createElement('div'); el.className = 'sgn-loadbar'; el.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(el);
+    requestAnimationFrame(function () { el.classList.add('is-on'); });
+    return { done: function () { el.classList.add('is-done'); setTimeout(function () { el.remove(); }, 300); } };
+  }
+  // Put the answer's sign-up screen where this one is (with the test-mode bar beside it), move the
+  // address on when it's a new screen, and set it up. → false when the answer isn't one.
+  function swapScreen(html, url) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var fresh = doc.querySelector('[data-sgn]'), cur = document.querySelector('[data-sgn]');
+    if (!fresh || !cur || !cur.parentNode) return false;
+    var host = cur.parentNode;
+    $$('.sgn-testbar, [data-sgn]', host).forEach(function (n) { if (n.parentNode === host) n.remove(); });
+    var bits = [];
+    $$('.sgn-testbar, [data-sgn]', fresh.parentNode).forEach(function (n) { if (n.parentNode === fresh.parentNode) bits.push(document.importNode(n, true)); });
+    var first = host.firstChild;
+    bits.forEach(function (n) { host.insertBefore(n, first); });
+    if (doc.title) document.title = doc.title;
+    if (url && url !== location.href) history.pushState({ app: true }, '', url);
+    window.scrollTo(0, 0);
+    init();
+    return true;
   }
 
   // Step 4's "Anyone you'd rather not play with?": Yes shows the list, No hides it.
@@ -224,16 +270,19 @@
     });
   }
 
-  // Send: no game face yet is the one thing worth stopping for here (the server checks the rest).
-  // Not in test mode (the amber bar), where nothing is required.
+  // Send: no game face yet is the one thing worth stopping for here (the server checks the rest),
+  // unless "Add it later" is ticked. Not in test mode (the amber bar), where nothing is required.
   function guardSend(root) {
     var form = $('#sgn-form', root), gf = $('[data-sgn-gf]', root);
-    if (!form || !gf || document.querySelector('.sgn-testbar')) return;
+    if (!form || !gf) return;
+    var later = $('[data-sgn-photo-later]', gf), note = $('[data-sgn-photo-later-note]', gf);
+    if (later && note) later.addEventListener('change', function () { note.hidden = !later.checked; });
+    if (document.querySelector('.sgn-testbar')) return;
     form.addEventListener('submit', function (e) {
       var b = e.submitter;
-      if (!b || b.value !== 'send' || gf.getAttribute('data-photo')) return;
+      if (!b || b.value !== 'send' || gf.getAttribute('data-photo') || (later && later.checked)) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      var errEl = $('[data-sgn-cam-err]', gf); errEl.textContent = 'Take your game face first.'; errEl.hidden = false;
+      var errEl = $('[data-sgn-cam-err]', gf); errEl.textContent = 'Take your game face first, or tick “Add it later”.'; errEl.hidden = false;
       gf.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, true);
   }
@@ -362,6 +411,20 @@
     });
   }
   window.wkndSignupInit = init;
+  // Back and forward between sign-up screens swapped in by busy(): the app's own navigation
+  // never saw them, so they're fetched and swapped here (first, ahead of the app's handler).
+  // Leaving the sign-up (Home, anywhere else) is the app's as usual.
+  if (!window.__sgnHistory) {
+    window.__sgnHistory = true;
+    window.addEventListener('popstate', function (e) {
+      if (!document.querySelector('[data-sgn]') || !/^\/(app\/signup|season-signup)(\/\d)?$/.test(location.pathname)) return;
+      e.stopImmediatePropagation();
+      fetch(location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
+        .then(function (r) { return r.text(); })
+        .then(function (t) { if (!swapScreen(t, '')) location.reload(); })
+        .catch(function () { location.reload(); });
+    }, true);
+  }
   if (!document.querySelector('main.app')) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
   }

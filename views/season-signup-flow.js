@@ -353,16 +353,29 @@ function gameFace(x) {
     ${taker}
     <p class="sgn-err" data-sgn-cam-err role="alert" hidden></p>
     ${errMsg(x.errors, 'photo')}
+    ${!photo && !x.photoPage ? `<label class="sgn-later-photo"><input type="checkbox" name="photo_later" value="1" data-sgn-photo-later${checked(x.d.photo_later === '1')}><span>No camera now? Add it later</span></label>
+    <p class="sgn-fine" data-sgn-photo-later-note${x.d.photo_later === '1' ? '' : ' hidden'}>Fine. Send your sign-up now and add your game face from Home before sign-ups close.</p>` : ''}
     <p class="sgn-fine">Every season, so we know it’s really you signing up. Only admins see it, unless you enter the contest.</p>
-    <label class="sgn-check"><input type="checkbox" name="contest" value="1"${checked(x.d.contest === '1')}><span class="sgn-cb">${ic.check}</span><span><b>Enter the Game Face contest</b><small>${x.poseLabel ? `Category: ${esc(x.poseLabel)}. ` : ''}Everyone can see and vote. Winners get a free Papawis run. Optional.</small></span></label>
+    ${x.photoPage ? '' : `<label class="sgn-check"><input type="checkbox" name="contest" value="1"${checked(x.d.contest === '1')}><span class="sgn-cb">${ic.check}</span><span><b>Enter the Game Face contest</b><small>${x.poseLabel ? `Category: ${esc(x.poseLabel)}. ` : ''}Everyone can see and vote. Winners get a free Papawis run. Optional.</small></span></label>
     <details class="sgn-more"><summary>How the contest works</summary><ol>
       <li>${CONTEST_POSES.length} categories: ${CONTEST_POSES.map(p => esc(p.label)).join(', ')}. The pose you were given is your category.</li>
       <li>An admin checks each photo first. Once it’s approved, it shows on the contest page and in the feed.</li>
       <li>When sign-ups close, members vote for ${CONTEST_VOTE_DAYS} days: one face per category. You can’t vote for yourself.</li>
       <li>The most votes in each category wins a free Papawis run, sent to you as a voucher.</li>
       <li>Changed your mind? Untick it until sign-ups close and your photo goes back to admins only.</li>
-    </ol></details>
+    </ol></details>`}
   </div>`;
+}
+
+// Sent without a game face: just the photo card, to add it (from the Sent screen, Home's To do
+// or an admin's ask). x: { base, season, kind, photo, photoUrl, poseText, poseLabel }
+export function signupPhotoScreen(kind, x) {
+  const body = `<div class="sgn-head"><h1>Add your game face</h1><p class="sgn-sub">Every sign-up needs one, so we know it’s really you. It saves as soon as you take it.</p></div>
+    ${gameFace({ ...x, kind, d: {}, errors: [], photoPage: true })}`;
+  return frame(kind, {
+    bar: topBar(kind, { back: x.base, backLabel: 'Sign-up', title: `Season ${x.season}` }),
+    body, actions: `<a class="sgn-btn" href="${esc(x.base)}">Done</a>`,
+  });
 }
 
 function reviewStep(x) {
@@ -393,9 +406,10 @@ export function signupStepScreen(kind, x) {
   const next = STEPS[n];
   const nav = n === LAST_STEP
     ? `<button type="submit" name="go" value="send" class="sgn-btn" data-sgn-send>Count me in for Season ${esc(String(x.season))}</button>
+       <p class="sgn-gatehint" data-sgn-gate-hint hidden>Tick the waiver box to send</p>
        <p class="sgn-fine sgn-center">${x.deadline ? `You can change your answers until sign-ups close on ${esc(x.deadline)}.` : 'You can change your answers until sign-ups close.'}</p>`
     : `<div class="sgn-two"><button type="submit" name="go" value="back" class="sgn-ghost" formnovalidate>Back</button>
-       <button type="submit" name="go" value="next" class="sgn-btn" data-sgn-next>Next: ${esc(next.title)}</button></div>`;
+       <button type="submit" name="go" value="next" class="sgn-btn" data-sgn-next>Next: ${esc(next.title)}</button></div>${n === 1 ? '<p class="sgn-gatehint" data-sgn-gate-hint hidden>Tick “I’ve read this and I agree” to go on</p>' : ''}`;
   const body = `${progress(n)}${errBox(x.errors)}${STEP_BODY[n](x)}`;
   return frame(kind, {
     bar: topBar(kind, { back, backLabel: 'Sign up', title: `Season ${x.season}`, later: true }),
@@ -434,6 +448,8 @@ export function signupSentScreen(kind, x) {
       <a class="sgn-btn" href="${esc(L.settle)}">Settle ${peso(x.owing)}</a>
       <p class="sgn-owe__fine">Already paid? It can take a day to show. Message an admin if it doesn’t.</p>
     </div>` : ''}
+    ${x.noPhoto ? `<div class="sgn-msg sgn-msg--warn"><b>Add your game face.</b> Every sign-up needs one, so we know it’s really you.${x.deadline ? ` Add it before sign-ups close on ${esc(x.deadline)}.` : ''}</div>
+    <a class="sgn-btn" href="${esc(x.base)}/photo">Add my game face</a>` : ''}
     ${x.payments || ''}
     ${waiting ? `<div><div class="sgn-lbl sgn-sec">What happens next</div>
     <div class="sgn-card">${steps.map(([t, s], i) => `<div class="sgn-st"><span class="sgn-sn${i === 0 ? ' sgn-sn--on' : ''}">${i + 1}</span><span class="sgn-ct">${esc(t)}${s ? `<small>${esc(s)}</small>` : ''}</span></div>`).join('')}</div></div>` : ''}

@@ -3260,7 +3260,6 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 /* Its own dark look in both themes: it sits on photos. */
 .sp-take { --sp-muted: #a3abba; --sp-panel: rgba(16,20,29,.72); --sp-line: rgba(255,255,255,.1); }
 .sp-take__in { position: relative; z-index: 1; width: 100%; max-width: 480px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; gap: 12px; }
-.sp-take__top { height: 12vh; max-height: 110px; flex: none; }
 .sp-take__x { position: absolute; z-index: 2; top: calc(var(--safe-t) + 10px); right: 10px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: #e7eaf0; font-size: 22px; line-height: 1; }
 .sp-take__x::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: rgba(255,255,255,.12); z-index: -1; }
 .sp-take__grow { flex: 1; min-height: 12px; }
@@ -3308,6 +3307,11 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .sp-fill small { font-size: 12px; line-height: 1.35; color: var(--sp-muted); }
 .sp-bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
 .sp-bar i { display: block; height: 100%; border-radius: 4px; background: var(--amber); }
+.sp-face--ini { display: grid; place-items: center; background: color-mix(in srgb, var(--ring) 70%, #0a0e16); color: #fff; font-family: var(--font-num); font-weight: 700; font-size: 22px; letter-spacing: .02em; }
+.sp-clock--one { grid-template-columns: minmax(0, 1fr); }
+.sp-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--sp-muted); }
+.sp-chips span { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(16,20,29,.72); border: 1px solid var(--sp-line); line-height: 1; }
+.sp-chips b { color: #fff; font-weight: 600; }
 .sp-who { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--sp-muted); }
 .sp-who b { color: #fff; font-weight: 600; }
 .sp-faces { display: flex; flex: none; }
@@ -3317,3 +3321,12 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .sp-chip { align-self: flex-start; display: inline-flex; align-items: center; min-height: 22px; padding: 0 9px; border-radius: 999px; background: var(--amber); color: #1a1205; font-family: var(--font-num); font-weight: 700; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; line-height: 1; }
 .sp-card__h { font-size: 15px; font-weight: 600; }
 .sp-card__p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+
+/* Install screen from the season sign-up (views/app/layout.js installWallHtml signup): the sign-in
+   code for step 4, and the iPhone steps lighting up in turn so the three taps read as a sequence. */
+.iw-code { font-family: var(--font-num); font-weight: 700; font-size: 19px; letter-spacing: .08em; color: var(--amber-text); white-space: nowrap; }
+html.iw-ios .iw-only-ios-browser:not(.iw-after) .iw-steps li:nth-child(-n+3) .iw-n { animation: iw-turn 6s infinite; }
+html.iw-ios .iw-only-ios-browser:not(.iw-after) .iw-steps li:nth-child(2) .iw-n { animation-delay: 2s; }
+html.iw-ios .iw-only-ios-browser:not(.iw-after) .iw-steps li:nth-child(3) .iw-n { animation-delay: 4s; }
+@keyframes iw-turn { 0%, 30% { transform: scale(1.18); box-shadow: 0 0 0 6px color-mix(in srgb, var(--amber) 28%, transparent); } 34%, 100% { transform: none; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { html.iw-ios .iw-only-ios-browser .iw-steps li .iw-n { animation: none; } }

@@ -19,22 +19,40 @@ function shortDay(s) {
 // The crossfade is timed for 4 (6s each): 2 or 3 photos repeat to make 4; 1 just pans.
 const fourOf = list => (list.length > 1 && list.length < 4 ? [...list, ...list, ...list].slice(0, 4) : list);
 const photoShow = p => (p.photos?.length ? `<div class="sp-photos" aria-hidden="true">${fourOf(p.photos).map((u, i) => `<i style="background-image:url('${esc(u)}');animation-delay:${i * 6}s,${i * 6}s"></i>`).join('')}</div>` : '');
-const headline = p => (p.line ? `Run it back, <em>${esc(p.first)}</em>.` : `Your Season ${esc(String(p.season))} starts here, <em>${esc(p.first)}</em>.`);
+// Started and not sent: "Almost there"; last season's league games: "Run it back"; else a fresh start.
+const headline = p => (p.resume ? `Almost there, <em>${esc(p.first)}</em>.`
+  : p.line && !p.papawisOnly ? `Run it back, <em>${esc(p.first)}</em>.` : `Your Season ${esc(String(p.season))} starts here, <em>${esc(p.first)}</em>.`);
+// No photo: their initials on their team colour (amber with no team), like the player cards.
+const face = p => (p.photo
+  ? `<span class="sp-face" style="--ring:${esc(p.ring || 'var(--amber)')}"><img src="${esc(p.photo)}" alt="" width="64" height="64"></span>`
+  : `<span class="sp-face sp-face--ini" style="--ring:${esc(p.ring || 'var(--amber)')}">${esc(p.initials || '')}</span>`);
 const hero = (p, id) => `<div class="sp-hero">
-    <span class="sp-face" style="--ring:${esc(p.ring || 'var(--amber)')}"><img src="${esc(p.photo)}" alt="" width="64" height="64"></span>
-    <div><div class="sp-kick">Season ${esc(String(p.season))} · Sign-ups open</div><h2 class="sp-h" id="${id}">${headline(p)}</h2></div>
+    ${face(p)}
+    <div><div class="sp-kick">Season ${esc(String(p.season))} · ${p.resume ? 'You started' : 'Sign-ups open'}</div><h2 class="sp-h" id="${id}">${headline(p)}</h2></div>
   </div>`;
 const statLine = p => (p.line ? `<div class="sp-line">${p.line.map(s => `<div><b>${esc(s.v)}</b><span>${esc(s.l)}</span></div>`).join('')}</div>` : '');
+// The price, so step 2 holds no surprise (not for someone already partway through).
+const chips = p => (p.resume ? '' : `<div class="sp-chips"><span>Fee <b>₱${Number(p.fee).toLocaleString('en-PH')}</b></span>${p.jerseyFrom ? `<span>Jersey from <b>₱${Number(p.jerseyFrom).toLocaleString('en-PH')}</b></span>` : ''}<span>About <b>5 min</b></span></div>`);
+// Where the button goes: straight to their step when they've started.
+export const signupHref = (p, base = '/app/signup') => (p.resume ? `${base}/${p.resume.step}` : base);
 function clock(p) {
-  if (p.daysLeft == null) return '';
-  const tone = p.daysLeft <= 2 ? ' is-red' : p.daysLeft <= 7 ? ' is-amber' : '';
+  if (p.daysLeft == null && !p.resume) return '';
+  const tone = p.daysLeft == null ? '' : p.daysLeft <= 2 ? ' is-red' : p.daysLeft <= 7 ? ' is-amber' : '';
+  const days = p.daysLeft == null ? '' : `<div class="sp-days${tone}"><b>${p.daysLeft}</b><span>${p.daysLeft === 1 ? 'Day left' : 'Days left'}</span></div>`;
+  if (p.resume) {
+    const r = p.resume;
+    return `<div class="sp-clock${days ? '' : ' sp-clock--one'}">${days}<div class="sp-fill">
+       <div class="sp-fill__t"><span>Your sign-up</span><span><b>${r.done}</b> of ${r.of} steps</span></div>
+       <div class="sp-bar"><i style="width:${Math.round((r.done / r.of) * 100)}%"></i></div>
+       <small>Saved. Pick up at step ${r.step}: ${esc(r.title)}.</small></div></div>`;
+  }
   const right = p.count != null
     ? `<div class="sp-fill__t"><span>Signed up</span><span><b>${p.count}</b> of ${esc(String(p.spots))} spots</span></div>
        <div class="sp-bar"><i style="width:${Math.min(100, Math.round((p.count / p.spots) * 100))}%"></i></div>
        <small>Picked after ${esc(shortDay(p.deadline))}, not first come.</small>`
     : `<div class="sp-fill__t"><span>Closes <b>${esc(shortDay(p.deadline))}</b></span></div>
        <small>${esc(String(p.spots))} spots, picked after sign-ups close, not first come.</small>`;
-  return `<div class="sp-clock"><div class="sp-days${tone}"><b>${p.daysLeft}</b><span>${p.daysLeft === 1 ? 'Day left' : 'Days left'}</span></div><div class="sp-fill">${right}</div></div>`;
+  return `<div class="sp-clock">${days}<div class="sp-fill">${right}</div></div>`;
 }
 function friendsLine(p) {
   const names = p.friends.slice(0, 2).map(f => f.first);
@@ -52,13 +70,13 @@ export function appSignupPopup(p) {
   ${photoShow(p)}
   <button type="button" class="sp-take__x" data-sp-act="later" aria-label="Close, remind me later">&times;</button>
   <div class="sp-take__in">
-    <div class="sp-take__top"></div>
+    <div class="sp-take__grow"></div>
     ${hero(p, 'sp-h')}
     ${statLine(p)}
     ${clock(p)}
     ${friendsLine(p)}
-    <div class="sp-take__grow"></div>
-    <a class="btn" href="/app/signup" data-sp-act="later" data-sp-go>Sign up now</a>
+    ${chips(p)}
+    <a class="btn" href="${esc(signupHref(p))}" data-sp-act="later" data-sp-go>${p.resume ? 'Finish my sign-up' : 'Sign up now'}</a>
     <button type="button" class="btn btn--plain" data-sp-act="later">Later</button>
     <button type="button" class="sp-never" data-sp-act="never">Not this season</button>
   </div>
@@ -67,11 +85,12 @@ export function appSignupPopup(p) {
 
 // App Home, at the top (it stands in for the To do row while it shows).
 export function appSignupCard(p) {
+  const r = p.resume;
   return `<div class="card sp-card" data-sp-season="${esc(String(p.season))}">
   <span class="sp-chip">Season ${esc(String(p.season))}</span>
-  <b class="sp-card__h">Season ${esc(String(p.season))} sign-ups are open</b>
-  <p class="sp-card__p">${esc(String(p.spots))} spots.${p.deadline ? ` Sign up by ${esc(p.deadline)}.` : ''} Takes about 5 minutes.</p>
-  <a class="btn" href="/app/signup">Sign up</a>
+  <b class="sp-card__h">${r ? `Your Season ${esc(String(p.season))} sign-up isn’t sent yet` : `Season ${esc(String(p.season))} sign-ups are open`}</b>
+  <p class="sp-card__p">${r ? `${r.done} of ${r.of} steps done. Pick up at step ${r.step}: ${esc(r.title)}.` : `${esc(String(p.spots))} spots. Takes about 5 minutes.`}${p.deadline ? ` Sign up by ${esc(p.deadline)}.` : ''}</p>
+  <a class="btn" href="${esc(signupHref(p))}">${r ? 'Finish my sign-up' : 'Sign up'}</a>
 </div>`;
 }
 
@@ -88,9 +107,10 @@ export function siteSignupPopup(p, qr = '') {
       ${statLine(p)}
       ${clock(p)}
       ${friendsLine(p)}
+      ${chips(p)}
       <div class="spp-app"><span class="spp-logo" aria-hidden="true"><img src="/app-icon-180.png?v=2" alt="" width="34" height="34"></span><span><b>Sign-ups are in the WKND app</b><small>Not on your phone yet? It takes 30 seconds.</small></span></div>
       <div class="spp-btns">
-        <a class="spp-btn" href="/app/signup" data-spp-act="later" data-spp-go>Open the app</a>
+        <a class="spp-btn" href="${esc(signupHref(p))}" data-spp-act="later" data-spp-go>${p.resume ? 'Finish in the app' : 'Open the app'}</a>
         <button type="button" class="spp-btn spp-btn--ghost" data-spp-act="later">Later</button>
       </div>
       <button type="button" class="spp-never" data-spp-act="never">Not this season</button>

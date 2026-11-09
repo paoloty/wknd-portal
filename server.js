@@ -6408,6 +6408,11 @@ function appSeasonState(me) {
       : signup
       ? { icon: 'form', title: `Signed up for Season ${season}`, href: '/app/signup', done: true }
       : { icon: 'form', title: `Season ${season} sign-up`, sub: access.testing ? 'Test mode: only admins and testers see this' : 'Sign-ups are open', pill: 'Sign up', href: '/app/signup', done: false });
+    // Sent without a game face: asked for until it's in (while sign-ups are open).
+    if (signup && signupOpen && !['rejected', 'withdrawn'].includes(signup.status) && signupNeedsPhoto(me.reg.id, season)) {
+      const by = getSetting('season_signup_deadline', '');
+      rows.push({ icon: 'camera', title: 'Add your game face', sub: `Season ${season} sign-up${by ? ` · before ${by}` : ''}`, pill: 'Add', href: '/app/signup/photo', done: false });
+    }
   }
   // On a payment plan (Season 5 on): the next payment, opening the sign-up screen, where the
   // full payments card is always fresh from the server. It stands in for the plain balance row.
@@ -6574,6 +6579,24 @@ app.post('/app/login/code', (req, res) => {
     logApp(req, 'code_sent', '', reg);
   }
   res.redirect(`/app/login/code/verify?email=${encodeURIComponent(email)}`);
+});
+
+// The install screen on the season sign-up (views/app/layout.js): the player is signed in here in
+// the browser, but the installed app keeps its own sign-in (iPhone), so they get a code to type
+// there ("Email me a sign-in code instead", their email, this code). 30 minutes, the same code
+// on every ask while it's valid; asking for one in the app sends this same code by email too.
+app.post('/app/signup/login-code', (req, res) => {
+  const reg = req.session?.playerRegId ? getRegistration(req.session.playerRegId) : null;
+  if (!reg?.email || appSignInBlock(reg) || req.session.impersonating) return res.status(400).json({ error: 'Sign in first.' });
+  if (!rateHit(`signupcode:ip:${clientIp(req)}`, 10, 60 * MIN)) return res.status(429).json({ error: 'Too many codes. Try again later.' });
+  const key = reg.email.trim().toLowerCase(), now = Date.now();
+  let entry = appCodes.get(key);
+  if (!entry || entry.exp < now) {
+    const fresh = String(randomInt(0, 1000000)).padStart(6, '0');
+    entry = { code: fresh, hash: hashAppCode(key, fresh), regId: reg.id, exp: now + 30 * MIN, sentAt: 0, triesByIp: new Map(), tries: 0 };
+    appCodes.set(key, entry);
+  }
+  res.set('Cache-Control', 'no-store').json({ code: entry.code, email: reg.email });
 });
 
 app.get('/app/login/code/verify', (req, res) => {
@@ -6804,7 +6827,7 @@ app.get('/app', requireApp, (req, res) => {
   // the full-screen popup now and then. A poll's popup sits on top of it; voting or putting the
   // poll off uncovers it, so only one shows at a time.
   const promo = signupPromo(req);
-  const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form' || t.review)
+  const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form' || t.icon === 'camera' || t.review)
     .filter(t => !(promo && t.href === '/app/signup' && t.pill === 'Sign up'))
     .map(t => t.icon === 'wallet' ? { ...t, href: `${t.href}?from=home` } : t);
   const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now() && !a.hidden_at);
@@ -6819,7 +6842,7 @@ app.get('/app', requireApp, (req, res) => {
   }
   sendTab(res, me, { title: 'WKND', tab: 'home', body: (promo?.popup ? appSignupPopup({ ...promo, ...signupPromoDetail(req, promo) }) : '') + (poll ? appPollTakeover({ poll, total: getLeaguePollVotes(poll.id).length }) : '') + appHomeFeedPage({
     header: homeHeader({ phase: appPhase(), unread: me.unread, bk }) + barkadahanCard(bk),
-    setupHtml: setupCard(setup), installHtml: installCard, promoHtml: promo ? appSignupCard(promo) : '',
+    setupHtml: setupCard(setup), installHtml: installCard, promoHtml: promo ? appSignupCard({ ...promo, resume: signupResume(req, promo.season) }) : '',
     todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
     live: appLiveNowHtml(req, me),
     feed: appFeedPage(me),
@@ -17915,6 +17938,60 @@ async function autoSeasonNudges() {
   console.log(`[auto-nudges] season ${sig} returning: ${result.bell} bell(s), ${result.email} email(s)`);
 }
 
+// Before sign-ups close (mockup claude.ai/artifact/9FoWSPiMXrWHQjgLCBmvPL, 6): active members who
+// haven't sent one and didn't say "Not this season". SIGNUP_CLOSE_REMIND_DAYS out: bell, push and
+// email, one version for a started sign-up, one for the rest. On the closing day: a bell (no
+// email) for started sign-ups only. Same switch as the other season nudges.
+const SIGNUP_CLOSE_REMIND_DAYS = 3;
+async function autoSeasonCloseReminders() {
+  if (!nudgeOn('season_auto_nudges') || getSetting('season_signup_open', '0') !== '1') return;
+  const sig = getSetting('signup_target_season', ''), deadline = getSetting('season_signup_deadline', '').trim();
+  const end = signupDeadlineMs(deadline);
+  if (!sig || end == null || end < Date.now()) return;
+  const daysLeft = Math.ceil((end - Date.now()) / 86400000);
+  const signedUp = new Set(getSeasonSignups(sig).map(s => s.player_id).filter(Boolean));
+  const regOf = id => getRegistrationByPlayerId(id);
+  const saidNo = id => { const r = regOf(id); return !!r && hasAppEvent(r.id, `signup_promo_never_${sig}`); };
+  const started = id => { const r = regOf(id); return !!r && !!getSignupDraft(r.id, sig); };
+  const signupUrl = `${SITE_ORIGIN}/season-signup`;
+  const emailFor = (heading, lines, subject, cta) => async r => ({
+    ...leagueNudgeEmail({ name: r.player.name, subject, heading, lines, cta, url: signupUrl, unsubscribeUrl: leagueUnsubscribeUrl(r.reg.id), label: `Season ${sig}` }),
+    headers: unsubscribeHeaders(leagueUnsubscribeUrl(r.reg.id)),
+  });
+  const pool = (wantStarted) => selectBroadcastRecipients(undefined, { optOutColumn: 'league_email_optout',
+    exclude: id => signedUp.has(id) || saidNo(id) || started(id) !== wantStarted }).recipients;
+  if (daysLeft <= SIGNUP_CLOSE_REMIND_DAYS && daysLeft > 1) {
+    for (const wantStarted of [false, true]) {
+      const key = `season_close_${wantStarted ? 'draft' : 'soon'}:${sig}`;
+      if (getBroadcastByDedupe(key) || getSetting(`${key}_done`, '')) continue;
+      setSetting(`${key}_done`, String(Date.now()));
+      const recipients = pool(wantStarted);
+      if (!recipients.length) continue;
+      const left = `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
+      const result = await sendBroadcast(wantStarted ? {
+        kind: 'season_close_draft', dedupeKey: key, segment: `draft_not_sent:${sig}`,
+        title: `Your Season ${sig} sign-up isn’t sent yet`, body: `${left}. Finish it before ${deadline}.`, link: '/season-signup', recipients,
+        email: emailFor('{name}, your sign-up isn’t sent yet', [`You started your Season ${sig} sign-up but haven’t sent it. ${left}: sign-ups close on ${deadline}.`, 'It’s saved where you left off, in the WKND app.'], `${left}: finish your Season ${sig} sign-up`, 'Finish my sign-up'),
+      } : {
+        kind: 'season_close_soon', dedupeKey: key, segment: `not_signed_up:${sig}`,
+        title: `${left} to sign up for Season ${sig}`, body: `Sign-ups close ${deadline}. Spots are picked after close, not first come.`, link: '/season-signup', recipients,
+        email: emailFor(`${left} to sign up, {name}`, [`Season ${sig} sign-ups close on ${deadline}. Spots are picked after sign-ups close, so there’s no rush to be first, only to be in.`, 'Sign-ups are in the WKND app. It takes about 5 minutes.', 'Not playing this season? Tap “Not this season” in the app and we’ll stop reminding you.'], `${left}: WKND Season ${sig} sign-ups close ${deadline}`, 'Sign up in the app'),
+      });
+      console.log(`[auto-nudges] season ${sig} ${key}: ${result.bell} bell(s), ${result.email} email(s)`);
+    }
+  }
+  if (daysLeft === 1) {
+    const key = `season_lastday:${sig}`;
+    if (getBroadcastByDedupe(key) || getSetting(`${key}_done`, '')) return;
+    setSetting(`${key}_done`, String(Date.now()));
+    const recipients = pool(true);
+    if (!recipients.length) return;
+    const result = await sendBroadcast({ kind: 'season_close_lastday', dedupeKey: key, segment: `draft_not_sent:${sig}`,
+      title: 'Last day: your sign-up isn’t sent', body: `Season ${sig} sign-ups close tonight.`, link: '/season-signup', recipients });
+    console.log(`[auto-nudges] season ${sig} last day: ${result.bell} bell(s)`);
+  }
+}
+
 // The very first run remembers what's already out (public posts, open polls, a season whose
 // sign-ups are already open) so deploying this doesn't announce old news.
 function seedAutoNudges() {
@@ -17938,7 +18015,7 @@ async function runAutoNudges() {
   autoNudgesRunning = true;
   try {
     seedAutoNudges();
-    for (const [name, fn] of [['picks', autoPickReminder], ['podium', autoPodiumNudge], ['publish', autoPublishNotices], ['season', autoSeasonNudges]]) {
+    for (const [name, fn] of [['picks', autoPickReminder], ['podium', autoPodiumNudge], ['publish', autoPublishNotices], ['season', autoSeasonNudges], ['season-close', autoSeasonCloseReminders]]) {
       try { await fn(); } catch (e) { console.error(`[auto-nudges] ${name} failed:`, e.message); }
     }
   } finally {
@@ -18029,6 +18106,7 @@ const REACH_KIND_LABELS = {
   mvp_podium_reminder: 'Podium reminder', mvp_podium_resend: 'Podium reminder, resend', season_results: 'Season results',
   papawis_announce: 'Papawis announcement', papawis_slot: 'Papawis slot alert', post_published: 'Post published',
   poll_opened: 'Poll opened', season_signup_open: 'Season sign-ups open', season_returning: 'Season: last season’s players',
+  season_close_soon: 'Season: sign-ups closing soon', season_close_draft: 'Season: sign-up not sent', season_close_lastday: 'Season: last day, not sent',
   quiet_nudge: 'Slipping-away nudge',
 };
 function reachSegLabel(seg) {
@@ -23217,12 +23295,12 @@ app.post('/register', (req, res) => {
 // steps saved as a draft as you go, Send, and the Sent screen with Edit until close. The same
 // routes serve the site (/season-signup) and the app (/app/signup); only the wrapper differs.
 // The rules live in lib/season-signup.js, the screens in views/season-signup-flow.js.
-import { signupStartScreen, signupStepScreen, signupSentScreen, signupClickScreen, signupNoticeScreen, signupHowScreen, paymentsCard, signupAppOnlyScreen } from './views/season-signup-flow.js';
+import { signupStartScreen, signupStepScreen, signupSentScreen, signupClickScreen, signupNoticeScreen, signupHowScreen, paymentsCard, signupAppOnlyScreen, signupPhotoScreen } from './views/season-signup-flow.js';
 import { appSignupPopup, appSignupCard, siteSignupPopup } from './views/signup-promo.js';
 import { SIZES as JERSEY_SIZES, SIZE_CHART, sizeSurcharge, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
 import { STEPS as SIGNUP_STEPS, LAST_STEP as SIGNUP_LAST, EXPECTATIONS_VERSION, PLAN_KEYS, MAX_CLICK_WITH, readStep, checkStep, checkAll, resumeStep, reviewLines, pickPose, poseByKey } from './lib/season-signup.js';
 import { playerRecord } from './lib/season-candidates.js';
-import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit, clearSeasonSignup, checkActivePlayer } from './lib/portal-db.js';
+import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit, clearSeasonSignup, checkActivePlayer, getPlayerPapawisSummary, getLastNotificationAt, countAppEvents } from './lib/portal-db.js';
 
 // Returning-player team poll: only shown if they actually played the prior season and
 // still have a team on record.
@@ -23262,10 +23340,19 @@ function signupAccess(reg) {
 // claude.ai/artifact/MJgoq4yqoP2qsCHgmvK4mH) ─────────────────────────────────────────────
 // Active members (checkActivePlayer: approved, can log in, seen within 90 days) who haven't
 // signed up see it: the app's popup and Home card, the site's popup and banners, all leading
-// to /app/signup. "Later" hides the popups for SIGNUP_PROMO_LATER_DAYS; "Not this season" hides
-// the popups, card and banners for good. Kept as app events, so the site and the app agree.
+// to /app/signup. The popup (mockup claude.ai/artifact/9FoWSPiMXrWHQjgLCBmvPL, 8): each "Later"
+// puts it off SIGNUP_PROMO_LATER_DAYS, and after SIGNUP_PROMO_MAX_LATERS it stops, except once
+// more in the last SIGNUP_CLOSE_REMIND_DAYS before close. "Not this season" hides the popups, card,
+// banners and reminders for good. Kept as app events, so the site and the app agree.
 // Members outside it can still sign up from the app's Me screen. → null, or what the pieces show
-const SIGNUP_PROMO_LATER_DAYS = 3;
+const SIGNUP_PROMO_LATER_DAYS = 3, SIGNUP_PROMO_MAX_LATERS = 3;
+function signupPromoPopupDue(regId, season, deadline) {
+  const type = `signup_promo_later_${season}`, now = Date.now();
+  const end = signupDeadlineMs(deadline);
+  // The last stretch: once, whatever was said before (a Later within it ends it).
+  if (end != null && end - now <= SIGNUP_CLOSE_REMIND_DAYS * 86400000 && end > now) return !hasAppEvent(regId, type, end - SIGNUP_CLOSE_REMIND_DAYS * 86400000);
+  return countAppEvents(regId, type) < SIGNUP_PROMO_MAX_LATERS && !hasAppEvent(regId, type, now - SIGNUP_PROMO_LATER_DAYS * 86400000);
+}
 function signupPromo(req) {
   if (req.session?.impersonating) return null;
   const regId = req.session?.playerRegId;
@@ -23275,42 +23362,68 @@ function signupPromo(req) {
   if (!season || !signupAccess(reg).open || getSeasonSignup(regId, season)) return null;
   if (hasAppEvent(regId, `signup_promo_never_${season}`) || !checkActivePlayer(reg.player_id).ok) return null;
   return {
-    season, deadline: getSetting('season_signup_deadline', ''), spots: Number(getSetting('season_roster_capacity', '48')) || 48, fee: signupPrices().fee,
-    popup: !hasAppEvent(regId, `signup_promo_later_${season}`, Date.now() - SIGNUP_PROMO_LATER_DAYS * 86400000),
+    season, deadline: getSetting('season_signup_deadline', ''), spots: Number(getSetting('season_roster_capacity', '48')) || 48, fee: signupPrices().fee, jerseyFrom: signupPrices().topPrice,
+    popup: signupPromoPopupDue(regId, season, getSetting('season_signup_deadline', '')),
   };
 }
 // What the popup shows (mockup claude.ai/artifact/TezEmy2yyspWF51yKLMViW, A + B): the player's
 // last-season line, days left, how many are in and which of the people they've played with,
 // and up to 4 random game photos behind it. Only built when the popup shows.
 const SIGNUP_PROMO_COUNT_FROM = 10; // fewer than this signed up: the count stays hidden, only days left show
+// The end of the sign-up deadline day (Manila), in ms, or null when it doesn't read as a date.
+// A deadline typed without a year ("Nov 30") is this year's, or next year's once it's gone by.
+function signupDeadlineMs(deadline) {
+  const raw = String(deadline || ''), yr = Number(manilaTodayStr().slice(0, 4));
+  if (!/\d/.test(raw)) return null;
+  const hasYear = /\d{4}/.test(raw);
+  const day = s => { const t = Date.parse(s); return Number.isNaN(t) ? null : manilaFormat(t, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'en-CA'); };
+  let ymd = day(hasYear ? raw : `${raw}, ${yr}`);
+  if (ymd && !hasYear && ymd < manilaTodayStr()) ymd = day(`${raw}, ${yr + 1}`);
+  return ymd ? Date.parse(`${ymd}T23:59:59+08:00`) : null;
+}
+// Started but not sent: the step they're on (the popup's and Home card's button goes straight there).
+function signupResume(req, season) {
+  const draft = getSignupDraft(req.session.playerRegId, season);
+  const st = draft ? signupState(req) : null;
+  if (!st) return null;
+  const step = resumeStep(draft, signupCtx(st));
+  return { step, of: SIGNUP_LAST, done: step - 1, title: SIGNUP_STEPS[step - 1]?.title || '' };
+}
 function signupPromoDetail(req, p) {
   const pid = req.session.playerPlayerId, leagueSeason = Number(p.season) - 1;
   const me = getPlayerWithTeam(pid) || {};
   const team = me.team_id ? getAllTeams().find(x => x.id === me.team_id) : null;
   const rec = playerRecord(pid), tot = getPlayerSeasonStats(pid, String(leagueSeason));
   const gp = Number(tot?.games_played) || 0;
+  const since = new Date(Date.now() - 365 * 86400000 + 8 * 3600000).toISOString().slice(0, 10);
+  // No league games last season: their Papawis line instead (runs, last run, member since).
+  const pw = gp ? null : getPlayerPapawisSummary(pid, since);
+  const reg = getRegistration(req.session.playerRegId);
+  const joined = reg?.approved_at || reg?.created_at || 0;
   const line = gp ? [
     { v: rec?.teamGames ? `${rec.played}/${rec.teamGames}` : String(gp), l: 'Games' },
     { v: (tot.pts / gp).toFixed(1), l: 'Points' }, { v: (tot.reb / gp).toFixed(1), l: 'Boards' },
+  ] : pw.runs ? [
+    { v: String(pw.runs), l: pw.runs === 1 ? 'Papawis run' : 'Papawis runs' },
+    { v: shortDate(pw.last), l: 'Last run' },
+    ...(joined ? [{ v: manilaFormat(joined, { month: 'short', ...(new Date(joined).getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) }), l: 'Member since' }] : []),
   ] : null;
+  const resume = signupResume(req, p.season);
   const inIds = new Set(getSeasonSignups(p.season).filter(s => s.status === 'waitlisted' || s.status === 'confirmed').map(s => s.player_id).filter(Boolean));
-  const since = new Date(Date.now() - 365 * 86400000 + 8 * 3600000).toISOString().slice(0, 10);
   const friends = sharedCourtPlayers(pid, { leagueSeason, sinceDay: since })
     .filter(x => x.id !== pid && inIds.has(x.id))
     .sort((a, b) => (b.teammate * 3 + b.papawis + b.opponent) - (a.teammate * 3 + a.papawis + a.opponent))
     .slice(0, 3).map(x => ({ first: x.first_name || displayPlayerName(x.name).split(' ')[0], photo: playerPhotoUrl(x.id, 96) }));
-  // A deadline typed without a year ("Nov 30") is this year's, or next year's once it's gone by.
-  const yr = new Date().getFullYear(), raw = String(p.deadline || '');
-  const hasYear = /\d{4}/.test(raw);
-  let t = /\d/.test(raw) ? Date.parse(hasYear ? raw : `${raw}, ${yr}`) : NaN;
-  if (!hasYear && t + 86400000 < Date.now()) t = Date.parse(`${raw}, ${yr + 1}`);
+  const t = signupDeadlineMs(p.deadline);
   const covered = getAllGames().filter(g => g.has_cover && !g.under_review);
   const lastSeason = covered.filter(g => String(g.season) === String(leagueSeason));
+  const first = me.first_name || displayPlayerName(me.name || '').split(' ')[0] || 'there';
   return {
-    first: me.first_name || displayPlayerName(me.name || '').split(' ')[0] || 'there',
-    photo: playerPhotoUrl(pid, 192), ring: team ? (team.color || teamColor(team.name)) : '',
-    teamName: team?.name || '', leagueSeason, line,
-    daysLeft: Number.isNaN(t) ? null : Math.max(0, Math.ceil((t + 86400000 - Date.now()) / 86400000)),
+    first, photo: me.picture_url ? playerPhotoUrl(pid, 192) : '',
+    initials: (displayPlayerName(me.name || '') || first).split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+    ring: team ? (team.color || teamColor(team.name)) : '',
+    teamName: team?.name || '', leagueSeason, line, papawisOnly: !gp && !!line, resume,
+    daysLeft: t == null ? null : Math.max(0, Math.ceil((t - Date.now()) / 86400000)),
     count: inIds.size >= SIGNUP_PROMO_COUNT_FROM ? inIds.size : null, friends, inTotal: inIds.size,
     photos: shuffled(lastSeason.length >= 4 ? lastSeason : covered).slice(0, 4).map(g => `/api/photo/${encodeURIComponent(g.id)}?w=960&v=${gameCoverVersion(String(g.id))}`),
   };
@@ -23411,6 +23524,12 @@ function signupBlocked(req, res, kind, st) {
   return false;
 }
 
+// Sent without a game face (or only the account's activation photo): it's still to add.
+function signupNeedsPhoto(regId, season) {
+  const cap = getLivenessCapture(regId, season);
+  return !cap || cap.via === 'activation';
+}
+
 // The Sent screen data (status, payments once confirmed, click-with faces).
 function signupSentData(st, kind, signup) {
   const ids = getClickWith(st.season, st.regId);
@@ -23418,6 +23537,7 @@ function signupSentData(st, kind, signup) {
   return {
     base: SIGNUP_BASE[kind], season: st.season, deadline: st.deadline, signup, open: st.open,
     canEdit: st.open && signup.status === 'waitlisted', canReset: st.testing && signup.status === 'waitlisted',
+    noPhoto: st.open && !['rejected', 'withdrawn'].includes(signup.status) && signupNeedsPhoto(st.regId, st.season),
     // Still owing: the Sent screen says so (they can't be picked until it's paid), with Settle.
     owing: st.playerId ? Math.max(0, Math.round(Number(getPlayerFinancials(st.playerId)?.current_balance || 0))) : 0,
     clickWith: ids.map(id => players[id]).filter(Boolean),
@@ -23451,7 +23571,7 @@ function signupStart(req, res) {
 app.get('/season-signup', signupStart);
 app.get('/app/signup', requireApp, signupStart);
 // The site's steps, edit, click-with and start over: all in the app now, so to the page that says so.
-app.all(['/season-signup/:n(\\d)', '/season-signup/edit', '/season-signup/click', '/season-signup/reset'], (req, res) => res.redirect(303, '/season-signup'));
+app.all(['/season-signup/:n(\\d)', '/season-signup/edit', '/season-signup/click', '/season-signup/reset', '/season-signup/photo'], (req, res) => res.redirect(303, '/season-signup'));
 
 app.get(['/season-signup/how', '/app/signup/how'], (req, res, next) => (signupKindOf(req) === 'app' ? requireApp(req, res, next) : next()), (req, res) => {
   const kind = signupKindOf(req);
@@ -23532,9 +23652,10 @@ function signupPostStep(req, res) {
     const first = st.testing ? null : checkAll(d, ctx);
     if (first) return again(first.step, checkStep(first.step, d, ctx));
     const photo = getLivenessCapture(st.regId, st.season);
-    if (!photo || photo.via === 'activation') {
-      if (!st.testing) return again(SIGNUP_LAST, [{ step: SIGNUP_LAST, field: 'photo', message: 'Take your game face first.' }]);
-      d.contest = '';
+    // No game face yet: fine with "Add it later" ticked (Home asks for it until it's in, and
+    // admins can ask too); its contest entry waits for the photo.
+    if ((!photo || photo.via === 'activation') && !st.testing && d.photo_later !== '1') {
+      return again(SIGNUP_LAST, [{ step: SIGNUP_LAST, field: 'photo', message: 'Take your game face first, or tick “Add it later”.' }]);
     }
     // A tester's blank answers never overwrite the contact details and waiver on file.
     if (st.testing) for (const k of ['emergency_name', 'emergency_phone', 'birthday']) if (!String(d[k] || '').trim()) d[k] = st.reg[k] || '';
@@ -23559,7 +23680,14 @@ function signupPostStep(req, res) {
 
   const errors = st.testing ? [] : checkStep(n, d, ctx);
   if (errors.length) return again(n, errors);
-  res.redirect(`${base}/${Math.min(n + 1, SIGNUP_LAST)}`);
+  const next = Math.min(n + 1, SIGNUP_LAST);
+  // Next from the page's script (public/signup.js busy): the next step in this same answer, one
+  // trip instead of a redirect and a second request; X-Sgn-Url says where it is.
+  if (req.get('X-Sgn-Fetch') === '1' && next <= (st.testing ? SIGNUP_LAST : resumeStep(d, ctx))) {
+    res.set('X-Sgn-Url', `${base}/${next}`);
+    return sendSignup(req, res, kind, signupStepScreen(kind, signupStepData(st, kind, next, d, ctx)), { title: SIGNUP_STEPS[next - 1].title });
+  }
+  res.redirect(`${base}/${next}`);
 }
 app.post('/season-signup/:n(\\d)', express.urlencoded({ extended: false, limit: '200kb' }), signupPostStep);
 app.post('/app/signup/:n(\\d)', requireApp, express.urlencoded({ extended: false, limit: '200kb' }), signupPostStep);
@@ -23577,6 +23705,21 @@ function signupEdit(req, res) {
 }
 app.post('/season-signup/edit', signupEdit);
 app.post('/app/signup/edit', requireApp, signupEdit);
+
+// Sent without a game face: the photo card on its own, while sign-ups are open (the camera
+// saves through /season-signup/liveness-capture, as on step 6).
+app.get('/app/signup/photo', requireApp, (req, res) => {
+  const kind = 'app', st = signupState(req);
+  if (signupBlocked(req, res, kind, st)) return;
+  const base = SIGNUP_BASE[kind];
+  const signup = st.season ? getSeasonSignup(st.regId, st.season) : null;
+  if (!signup || !st.open) return res.redirect(base);
+  const cap = getLivenessCapture(st.regId, st.season), pose = poseByKey(signup.contest_pose);
+  sendSignup(req, res, kind, signupPhotoScreen(kind, {
+    base, season: st.season, photo: cap && cap.via !== 'activation' ? cap : null, photoUrl: '/season-signup/my-photo',
+    poseText: pose?.prompt || 'Your pose shows here', poseLabel: pose?.label || '',
+  }), { title: 'Add your game face' });
+});
 
 // Test mode's "Start over": a tester's waitlisted sign-up (and its Game Face post) is deleted,
 // so the whole flow can be run again from step 1.
@@ -24300,6 +24443,28 @@ app.get('/admin/seasons', requireAuth, (req, res) => {
   }));
 });
 
+// Sign-ups sent without a game face ("Add it later"), for the Season page: who, and when an
+// admin last asked. → [{ id, name, sent, asked }]
+function seasonNoPhotoAdmin(season) {
+  return getSeasonSignups(season).filter(x => (x.status === 'waitlisted' || x.status === 'confirmed') && signupNeedsPhoto(x.reg_id, season))
+    .map(x => ({ id: x.id, name: displayPlayerName(x.full_name || ''), sent: x.created_at, asked: x.player_id ? getLastNotificationAt(x.player_id, 'game_face_ask') : 0 }));
+}
+// "Ask for it": a bell and a push to each picked player (or all of them), opening the photo screen.
+app.post('/admin/season/game-face-ask', requireAuth, express.json(), (req, res) => {
+  const season = getSetting('signup_target_season', '');
+  const want = req.body?.id ? new Set([String(req.body.id)]) : null;
+  const list = season ? seasonNoPhotoAdmin(season).filter(x => !want || want.has(x.id)) : [];
+  let n = 0;
+  for (const x of list) {
+    const s = getSeasonSignupById(x.id), pid = s ? getRegistration(s.reg_id)?.player_id : '';
+    if (!pid) continue;
+    createNotification({ playerId: pid, type: 'game_face_ask', title: 'Your game face is missing', body: 'Your Season ' + season + ' sign-up needs one. It takes 10 seconds.', link: '/app/signup/photo' });
+    n++;
+  }
+  if (!n) return res.status(400).json({ error: 'Nobody to ask.' });
+  res.json({ ok: true, message: n === 1 ? 'Asked.' : 'Asked ' + n + ' players.' });
+});
+
 app.get('/admin/season', requireAuth, (req, res) => {
   const sigSeason        = getSetting('signup_target_season', '');
   const sigOpen          = getSetting('season_signup_open', '0') === '1';
@@ -24325,7 +24490,7 @@ app.get('/admin/season', requireAuth, (req, res) => {
     settings: seasonNudgesPanel(),
     body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline,
       testMode: getSetting('season_signup_test', '0') === '1', testers: signupTesters(),
-      testerOptions: getAllPlayers().filter(p => p.status !== 'inactive').map(p => ({ id: p.id, name: displayPlayerName(p.name) })).sort((a, b) => a.name.localeCompare(b.name)), portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason) }),
+      testerOptions: getAllPlayers().filter(p => p.status !== 'inactive').map(p => ({ id: p.id, name: displayPlayerName(p.name) })).sort((a, b) => a.name.localeCompare(b.name)), portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason), noPhoto: sigSeason ? seasonNoPhotoAdmin(sigSeason) : [] }),
   }));
 });
 
@@ -24462,6 +24627,7 @@ function candidateSignupInfo(season) {
         ['Rates themselves', SELF_FIELDS.map(([k, l]) => `${l}: ${tier[a[k]] || '—'}`).join(' · ')],
       ],
       volunteer: v ? [...(v.roles || []).map(r => VOLUNTEER_LABEL[r] || r), v.note].filter(Boolean).join(', ') : '',
+      noPhoto: signupNeedsPhoto(s.reg_id, season),   // sent with "Add it later": still pickable, flagged
     };
   }
   return out;

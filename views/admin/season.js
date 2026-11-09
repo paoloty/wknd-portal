@@ -12,7 +12,7 @@ export function adminSeasonBody({
   seasonFormat = '', quotaAmount = '', jerseyTopPrice = '', jerseyShortPrice = '', teamCount = '4',
   jerseySurchargeStep = '50', jerseyPocketsPrice = '100', seasonRosterCapacity = '',
   allSeasons = [], jerseyCutPrice = '50', payments = null, volunteers = [], gameFace = null,
-  testMode = false, testers = [], testerOptions = [],
+  testMode = false, testers = [], testerOptions = [], noPhoto = [],
 } = {}) {
   const started = draftStatus === 'started';
   const known = [...new Set(allSeasons.map(String))].sort((a, b) => Number(b) - Number(a));
@@ -75,6 +75,7 @@ export function adminSeasonBody({
     ${started ? '' : signupsBlock}
     ${paymentsBlock(payments)}
     ${volunteersBlock(volunteers)}
+    ${noPhotoBlock(noPhoto)}
     ${gameFaceBlock(gameFace)}
     ${section({ id: 'season-details', title: 'Details', note: sigSeason ? `· Season ${sigSeason}` : '', bodyHtml: details })}
     ${nextBlock}
@@ -113,6 +114,18 @@ function gameFaceBlock(g) {
     id: 'season-gameface', title: 'Game Face contest', note: `· ${g.entries.length} entr${g.entries.length === 1 ? 'y' : 'ies'}`,
     bodyHtml: `<div class="aui-panel">${head}${rows}</div>`,
   });
+}
+
+// Sign-ups sent without a game face ("Add it later"): ask each player (a bell and a push that opens
+// their photo screen), or all of them. list: [{ id, name, sent, asked }] (server.js seasonNoPhotoAdmin)
+const shortWhen = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
+function noPhotoBlock(list) {
+  if (!list?.length) return '';
+  const rows = list.map(x => `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__title">${escHtml(x.name)} ${badge('No game face', 'amber')}</div>
+      <div class="aui-cell__sub">Sent ${shortWhen(x.sent)}${x.asked ? ` · asked ${shortWhen(x.asked)}` : ''}</div></div>
+    <div class="aset-next__go"><form data-json-action="/admin/season/game-face-ask"><input type="hidden" name="id" value="${attr(x.id)}">${button(x.asked ? 'Ask again' : 'Ask for it', { kind: x.asked ? 'secondary' : 'primary', type: 'submit' })}</form></div></div>`).join('');
+  const all = list.length > 1 ? `<form class="aset-next" data-json-action="/admin/season/game-face-ask" data-confirm data-confirm-title="Ask all ${list.length}?" data-confirm-body="Each gets a bell and a push asking for their game face." data-confirm-send="Ask all"><div class="aset-next__text"><div class="aui-cell__sub">Each gets a bell and a push that opens their photo screen.</div></div><div class="aset-next__go">${button(`Ask all ${list.length}`, { kind: 'secondary', type: 'submit' })}</div></form>` : '';
+  return section({ id: 'season-nophoto', title: 'Sign-ups without a game face', note: `· ${list.length}`, bodyHtml: `<div class="aui-panel">${rows}${all}</div>` });
 }
 
 const peso = n => `₱${Math.round(Number(n) || 0).toLocaleString('en-US')}`;

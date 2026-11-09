@@ -67,6 +67,7 @@ export function adminSeasonCandidatesBody({ data, capacity = 0, query = {}, nomi
     r.blockers.includes('No account') ? badge('No account', 'gray') : '',
     r.blockers.includes('Not signed up') ? badge('Not signed up', 'gray') : '',
     signups[r.id]?.risk.level ? badge('Playing-time risk', signups[r.id].risk.level === 'red' ? 'red' : 'amber') : '',
+    signups[r.id]?.noPhoto ? badge('No game face', 'amber') : '',
   ].filter(Boolean).join('');
 
   const why = r => {

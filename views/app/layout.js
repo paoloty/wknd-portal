@@ -135,7 +135,18 @@ const shareGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="none" stroke
 const dotsGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
 const moreGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
 
-function installWallHtml(qr = '') {
+// signup: reached from the season sign-up (installWall 'all'): it says why, and adds what to do
+// once installed: sign in to the app with a code made for them (iPhone keeps the app's sign-in
+// apart from Safari's; POST /app/signup/login-code), then tap the sign-up on Home.
+function installWallHtml(qr = '', signup = false) {
+  const after = signup ? `<div class="iw-card iw-after iw-only-ios-browser iw-only-android-browser">
+    <div class="kick">Then, in the app</div>
+    <ol class="iw-steps">
+      <li><span class="iw-n">4</span><span>Tap <b>Email me a sign-in code instead</b>, enter your email, then this code: <b class="iw-code" data-iw-code>··· ···</b></span></li>
+      <li><span class="iw-n">5</span><span>Tap <b>Season sign-up</b> at the top of Home</span></li>
+    </ol>
+    <p class="iw-alt">The code works for 30 minutes. Already signed in to the app? Skip to 5.</p>
+  </div>` : '';
   return `<section class="install-wall" aria-label="Install the WKND app">
   <div class="iw-card iw-only-desktop">
     <div class="kick">Season sign-ups are in the app</div>
@@ -147,7 +158,7 @@ function installWallHtml(qr = '') {
   <div class="iw-top">
     <span class="iw-icon"><img src="/app-icon-180.png?v=2" alt="" width="72" height="72"></span>
     <h1>Install the<br><em>WKND app</em></h1>
-    <p class="iw-lede">The players app works from your home screen, not the browser. It takes 10 seconds.</p>
+    <p class="iw-lede">${signup ? 'Season sign-ups are in the app. ' : ''}The players app works from your home screen, not the browser. It takes 10 seconds.</p>
   </div>
 
   <div class="iw-card iw-only-inapp">
@@ -180,12 +191,17 @@ function installWallHtml(qr = '') {
       <li><span class="iw-n">3</span><span>Open <b>WKND</b> from your home screen</span></li>
     </ol>
   </div>
+  ${after}
 
   <div class="iw-note"><b>Already added it?</b> Close this and open the <b>WKND</b> icon on your home screen. The app doesn't work from the browser or Messenger.</div>
   <div class="iw-note iw-note--plain"><b>Icon opens the website instead?</b> It was added from another page. Press and hold it, tap <b>Remove App</b> (or <b>Remove</b>), then add it again from this screen.</div>
   <div class="iw-arrow iw-only-ios-browser" aria-hidden="true">${shareGlyph}</div>
-</section>`;
+</section>${signup ? INSTALL_CODE_SCRIPT : ''}`;
 }
+// Step 4's sign-in code, asked for only when the install screen really shows on a phone.
+const INSTALL_CODE_SCRIPT = `<script>(function(){var d=document.documentElement;if(!d.classList.contains('needs-install')||d.classList.contains('iw-desktop'))return;
+fetch('/app/signup/login-code',{method:'POST',credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j)return;
+var c=j.code.slice(0,3)+' '+j.code.slice(3);document.querySelectorAll('[data-iw-code]').forEach(function(e){e.textContent=c;});}).catch(function(){});})();</script>`;
 
 // tab: which tab is lit ('' = none, e.g. sign-in and setup, which also drop the tab bar).
 // badges: { picks, me } counts on those tabs: picks = open games not picked yet (amber, needs
@@ -242,7 +258,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   ${ga}
 </head>
 <body class="${esc(bodyClass)}">
-  ${installWall ? installWallHtml(installQr) : ''}
+  ${installWall ? installWallHtml(installQr, installWall === 'all') : ''}
   ${test ? `<div class="test-pill" role="status">${esc(test)}</div>` : ''}
   <main class="app${bare ? ' app--bare' : ''}">${body}</main>
   ${tabbar}
