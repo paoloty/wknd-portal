@@ -2571,7 +2571,7 @@ function renderPage(req, opts) {
   let showSignupBanner = false, signupBannerSeason = '';
   if (isPlayer && !req.session?.isAdmin) {
     const sigSeason   = getSetting('signup_target_season', '');
-    const sigOpen     = getSetting('season_signup_open', '0') === '1';
+    const sigOpen     = signupAccess(getRegistration(req.session.playerRegId)).open;
     const onSignupPg  = opts.currentPath === '/season-signup';
     const onHomePg    = opts.currentPath === '/';
     if (sigSeason && sigOpen && !onSignupPg && !onHomePg) {
@@ -6398,7 +6398,8 @@ const parsePositions = raw => { try { const a = JSON.parse(raw || '[]'); return 
 // Season rows for setup step 3 and Home's To Do: sign-up, jersey details, balance.
 function appSeasonState(me) {
   const season = getSetting('signup_target_season', '');
-  const signupOpen = !!season && getSetting('season_signup_open', '0') === '1';
+  const access = signupAccess(me.reg);
+  const signupOpen = !!season && access.open;
   const signup = season ? getSeasonSignup(me.reg.id, season) : null;
   const balance = Number(getPlayerFinancials(me.playerId)?.current_balance || 0);
   const peso = n => `₱${Number(n).toLocaleString('en-PH')}`;
@@ -6408,7 +6409,7 @@ function appSeasonState(me) {
   if (signupOpen || signup) {
     rows.push(signup
       ? { icon: 'form', title: `Signed up for Season ${season}`, href: '/app/signup', done: true }
-      : { icon: 'form', title: `Season ${season} sign-up`, sub: 'Sign-ups are open', pill: 'Sign up', href: '/app/signup', done: false });
+      : { icon: 'form', title: `Season ${season} sign-up`, sub: access.testing ? 'Test mode: only admins and testers see this' : 'Sign-ups are open', pill: 'Sign up', href: '/app/signup', done: false });
   }
   // On a payment plan (Season 5 on): the next payment, opening the sign-up screen, where the
   // full payments card is always fresh from the server. It stands in for the plain balance row.
@@ -13771,7 +13772,7 @@ app.get('/', (req, res) => {
   let signupBanner = null;
   if (req.session?.playerRegId && !req.session?.isAdmin) {
     const sigSeason = getSetting('signup_target_season', '');
-    const sigOpen   = getSetting('season_signup_open', '0') === '1';
+    const sigOpen   = signupAccess(getRegistration(req.session.playerRegId)).open;
     if (sigSeason && sigOpen && !getSeasonSignup(req.session.playerRegId, sigSeason)) {
       signupBanner = { season: sigSeason, ...pickSignupBannerMessage() };
     }
@@ -23213,7 +23214,7 @@ import { signupStartScreen, signupStepScreen, signupSentScreen, signupClickScree
 import { SIZES as JERSEY_SIZES, SIZE_CHART, sizeSurcharge, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
 import { STEPS as SIGNUP_STEPS, LAST_STEP as SIGNUP_LAST, EXPECTATIONS_VERSION, PLAN_KEYS, MAX_CLICK_WITH, readStep, checkStep, checkAll, resumeStep, reviewLines, pickPose, poseByKey } from './lib/season-signup.js';
 import { playerRecord } from './lib/season-candidates.js';
-import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit } from './lib/portal-db.js';
+import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit, clearSeasonSignup } from './lib/portal-db.js';
 
 // Returning-player team poll: only shown if they actually played the prior season and
 // still have a team on record.
@@ -23228,12 +23229,23 @@ const SIGNUP_BASE = { site: '/season-signup', app: '/app/signup' };
 const signupKindOf = req => (req.path.startsWith('/app/') ? 'app' : 'site');
 
 function sendSignup(req, res, kind, body, { title = 'Season sign-up', status = 200 } = {}) {
+  if (signupState(req)?.testing) body = `<div class="sgn-testbar" role="status"><b>Test mode.</b> Only admins and testers can sign up right now.</div>${body}`;
   if (kind === 'app') return res.status(status).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(req), ga: buildAppGaSnippet(req), title: `${title} · WKND`, bare: true, body }));
   res.status(status).send(renderPage(req, {
     title: `${title} — WKND Basketball`, currentPath: '/season-signup', minimalHeader: true, noindex: true,
     metaTags: `<link rel="stylesheet" href="/signup.css?v=${SIGNUP_VER}">`,
     body: `${body}<script src="/signup.js?v=${SIGNUP_VER}" defer></script>`,
   }));
+}
+
+// Test mode (Season → Set up → Sign-ups): while sign-ups are closed, admins and the picked
+// players can sign up for real, on the site and in the app. Nobody else sees a thing, and the
+// "sign-ups are open" nudges only go out once they really open.
+const signupTesters = () => { try { const a = JSON.parse(getSetting('season_signup_testers', '[]')); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } };
+function signupAccess(reg) {
+  if (getSetting('season_signup_open', '0') === '1') return { open: true, testing: false };
+  const testing = !!reg && getSetting('season_signup_test', '0') === '1' && (!!reg.is_admin || (!!reg.player_id && signupTesters().includes(String(reg.player_id))));
+  return { open: testing, testing };
 }
 
 // Who is signing up and what the season looks like. null = not signed in.
@@ -23243,10 +23255,11 @@ function signupState(req) {
   const reg = getRegistration(regId);
   if (!reg) return null;
   const season = getSetting('signup_target_season', '');
+  const access = signupAccess(reg);
   return {
     regId, reg, season, playerId: reg.player_id || '',
     approved: reg.status === 'approved',
-    open: !!season && getSetting('season_signup_open', '0') === '1',
+    open: !!season && access.open, testing: !!season && access.testing,
     deadline: getSetting('season_signup_deadline', ''),
     banned: !!(reg.player_id && getPlayerById(reg.player_id)?.banned_at),
   };
@@ -23326,7 +23339,7 @@ function signupSentData(st, kind, signup) {
   const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   return {
     base: SIGNUP_BASE[kind], season: st.season, deadline: st.deadline, signup, open: st.open,
-    canEdit: st.open && signup.status === 'waitlisted',
+    canEdit: st.open && signup.status === 'waitlisted', canReset: st.testing && signup.status === 'waitlisted',
     clickWith: ids.map(id => players[id]).filter(Boolean),
     payments: signup.status === 'confirmed' ? paymentsCard(kind, seasonPaymentsFor(signup)) : '',
     contest: signup.contest_opt_in ? { href: GF_BASE[kind], sub: { entries: 'See every entry', voting: 'Voting is open', over: 'See the winners' }[contestPhase(gameFaceTimes(st.season))] } : null,
@@ -23346,6 +23359,7 @@ function signupStart(req, res) {
     base: SIGNUP_BASE[kind], season: st.season, deadline: st.deadline, spots: Number(getSetting('season_roster_capacity', '48')) || 48,
     ...p, record: ctx.record, recordSeason: ctx.leagueSeason, owing: ctx.owing, payFirst: ctx.payFirst,
     draftStep: draft ? resumeStep(d, ctx) : 0,
+    canReset: st.testing && (signup ? signup.status === 'waitlisted' : !!draft),
   }));
 }
 app.get('/season-signup', signupStart);
@@ -23468,6 +23482,23 @@ function signupEdit(req, res) {
 }
 app.post('/season-signup/edit', signupEdit);
 app.post('/app/signup/edit', requireApp, signupEdit);
+
+// Test mode's "Start over": a tester's waitlisted sign-up (and its Game Face post) is deleted,
+// so the whole flow can be run again from step 1.
+function signupReset(req, res) {
+  const kind = signupKindOf(req), st = signupState(req);
+  if (signupBlocked(req, res, kind, st)) return;
+  const signup = st.testing ? getSeasonSignup(st.regId, st.season) : null;
+  if (signup && signup.status !== 'waitlisted') return res.redirect(SIGNUP_BASE[kind]);
+  if (st.testing) {
+    if (signup?.contest_post_id) deleteAppAnnouncement(signup.contest_post_id);
+    clearSeasonSignup(st.regId, st.season);
+    insertAdminLog({ actor: st.reg.full_name || st.reg.email, actorType: 'player', method: 'POST', path: '/season-signup/reset', details: { event: 'season_signup_test_reset', season: st.season } });
+  }
+  res.redirect(SIGNUP_BASE[kind]);
+}
+app.post('/season-signup/reset', signupReset);
+app.post('/app/signup/reset', requireApp, signupReset);
 
 // "Who do you click with?" (Sent screen): up to MAX_CLICK_WITH active players, team building only.
 function clickPeople(st) {
@@ -24198,7 +24229,9 @@ app.get('/admin/season', requireAuth, (req, res) => {
     title: 'Season',
     currentPath: '/admin/season',
     settings: seasonNudgesPanel(),
-    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason) }),
+    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline,
+      testMode: getSetting('season_signup_test', '0') === '1', testers: signupTesters(),
+      testerOptions: getAllPlayers().filter(p => p.status !== 'inactive').map(p => ({ id: p.id, name: displayPlayerName(p.name) })).sort((a, b) => a.name.localeCompare(b.name)), portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason) }),
   }));
 });
 
@@ -24528,10 +24561,14 @@ app.post('/admin/season/settings', requireAuth, express.json(), (req, res) => {
     'season_signup_open', 'season_signup_deadline', 'portal_season',
     'season_format', 'season_quota_amount', 'season_team_count',
     'jersey_top_price', 'jersey_short_price',
-    'jersey_surcharge_step', 'jersey_pockets_price', 'season_roster_capacity', 'jersey_nba_cut_price',
+    'jersey_surcharge_step', 'jersey_pockets_price', 'season_roster_capacity', 'jersey_nba_cut_price', 'season_signup_test',
   ];
   for (const key of allowed) {
     if (key in (req.body || {})) setSetting(key, String(req.body[key]));
+  }
+  if (Array.isArray(req.body?.season_signup_testers)) {
+    const ids = new Set(getAllPlayers().map(p => String(p.id)));
+    setSetting('season_signup_testers', JSON.stringify([...new Set(req.body.season_signup_testers.map(String))].filter(id => ids.has(id))));
   }
   res.json({ ok: true });
 });

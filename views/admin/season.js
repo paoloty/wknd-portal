@@ -2,7 +2,7 @@
 // The details for the season being set up, with one Save; opening sign-ups; moving on to the next
 // season. Saves through /admin/season/settings and /admin/season/start.
 import { escHtml } from '../layout.js';
-import { pageHeader, section, field, fieldGrid, button, toggleRow, needsYou, badge } from './ui.js';
+import { pageHeader, section, field, fieldGrid, button, toggleRow, needsYou, badge, playerPicker } from './ui.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
@@ -12,6 +12,7 @@ export function adminSeasonBody({
   seasonFormat = '', quotaAmount = '', jerseyTopPrice = '', jerseyShortPrice = '', teamCount = '4',
   jerseySurchargeStep = '50', jerseyPocketsPrice = '100', seasonRosterCapacity = '',
   allSeasons = [], jerseyCutPrice = '50', payments = null, volunteers = [], gameFace = null,
+  testMode = false, testers = [], testerOptions = [],
 } = {}) {
   const started = draftStatus === 'started';
   const known = [...new Set(allSeasons.map(String))].sort((a, b) => Number(b) - Number(a));
@@ -21,7 +22,8 @@ export function adminSeasonBody({
   const status = !sigSeason ? 'No season is being set up yet.'
     : started ? `Season ${sigSeason} has started. ${confirmedCount} players, teams locked.`
     : sigOpen ? `Sign-ups are open: ${count} in, ${confirmedCount} confirmed.`
-    : count ? `Sign-ups are closed: ${count} in, ${confirmedCount} confirmed.`
+    : count ? `Sign-ups are closed: ${count} in, ${confirmedCount} confirmed.${testMode ? ' Test mode is on.' : ''}`
+    : testMode ? 'Set up, not open yet. Test mode is on.'
     : 'Set up, not open yet.';
 
   const needs = [
@@ -50,7 +52,12 @@ export function adminSeasonBody({
 
   const signupsBlock = sigSeason && !started ? section({
     id: 'season-signups', title: 'Sign-ups',
-    bodyHtml: `<div class="aui-panel">${toggleRow({ label: 'Open to members', help: 'Members see a sign-up banner on every page.', name: 'season_signup_open', on: sigOpen, post: '/admin/season/settings', setting: true, reload: true })}</div>`,
+    bodyHtml: `<div class="aui-panel">${toggleRow({ label: 'Open to members', help: 'Members see a sign-up banner on every page.', name: 'season_signup_open', on: sigOpen, post: '/admin/season/settings', setting: true, reload: true })}</div>
+      ${sigOpen ? '' : `<div class="aui-panel">${toggleRow({ label: 'Test mode', help: 'Admins and the testers below can sign up for real. Nobody else sees it or is told. Testers can start over from their sign-up page.', name: 'season_signup_test', on: testMode, post: '/admin/season/settings', setting: true, reload: true })}
+        ${testMode ? `<form class="aset-form" data-json-action="/admin/season/settings" data-done="Testers saved.">
+          ${fieldGrid(playerPicker({ name: 'season_signup_testers[]', label: 'Testers', options: testerOptions, selected: testers, placeholder: 'Add a player' }))}
+          <div class="aset-form__save">${button('Save testers', { kind: 'primary', type: 'submit' })}</div>
+        </form>` : ''}</div>`}`,
   }) : '';
 
   const options = [...new Set([nextSeason, ...known, sigSeason].filter(Boolean))].map(s => [s, `Season ${s}${s === nextSeason ? ' (next)' : ''}${s === sigSeason ? ' (current)' : ''}`]);

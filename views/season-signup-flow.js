@@ -103,6 +103,9 @@ function feeCard(d, { payFirst }) {
   </div>`;
 }
 
+// Test mode only (server.js signupReset): wipe your own sign-up or draft and run it again.
+const resetForm = base => `<form method="post" action="${esc(base)}/reset" class="sgn-testreset"><button type="submit" class="sgn-ghost">Start over (test mode)</button><small>Deletes your sign-up and photo so you can do it again from step 1.</small></form>`;
+
 export function signupStartScreen(kind, d) {
   const L = LINKS[kind];
   const base = d.base;
@@ -124,7 +127,8 @@ export function signupStartScreen(kind, d) {
   </div>`;
   const body = `${head}${owe}${facts}${owing ? recordCard(d.record, d.recordSeason) + feeCard(d, { payFirst: true }) : feeCard(d, { payFirst: d.payFirst }) + recordCard(d.record, d.recordSeason)}
     ${stepList(kind, base, resume)}
-    <p class="sgn-links"><a href="${esc(base)}/how">How we choose the 48</a> · <a href="${esc(L.conduct)}">Conduct rules</a></p>`;
+    <p class="sgn-links"><a href="${esc(base)}/how">How we choose the 48</a> · <a href="${esc(L.conduct)}">Conduct rules</a></p>
+    ${d.canReset ? resetForm(base) : ''}`;
   const startHref = `${base}/${resume || 1}`;
   const startLabel = resume ? `Continue: ${STEPS[resume - 1].title}` : 'Start';
   const actions = owing
@@ -412,7 +416,8 @@ export function signupSentScreen(kind, x) {
     ${x.open && x.signup.status !== 'withdrawn' && x.signup.status !== 'rejected' ? `<a class="sgn-card sgn-extra" href="${esc(x.base)}/click">
       <span class="sgn-avs">${click.slice(0, 3).map(p => `<span>${esc(avInitials(p))}</span>`).join('')}<span class="sgn-avs__plus">+</span></span>
       <span class="sgn-ct">Who do you click with?<small>${click.length ? `${click.length} picked. Tap to change.` : 'Optional. Helps us build teams.'}</small></span>${ic.chev}</a>` : ''}
-    ${x.contest ? `<a class="sgn-card sgn-extra" href="${esc(x.contest.href)}"><span class="sgn-ct">Game Face contest<small>${esc(x.contest.sub)}</small></span>${ic.chev}</a>` : ''}`;
+    ${x.contest ? `<a class="sgn-card sgn-extra" href="${esc(x.contest.href)}"><span class="sgn-ct">Game Face contest<small>${esc(x.contest.sub)}</small></span>${ic.chev}</a>` : ''}
+    ${x.canReset ? resetForm(x.base) : ''}`;
   // A POST, not a link: opening the editor copies the sign-up into a draft.
   const actions = x.canEdit ? `<form method="post" action="${esc(x.base)}/edit"><button type="submit" class="sgn-ghost">Edit my sign-up</button></form>` : `<a class="sgn-ghost" href="${esc(L.home)}">Back to ${esc(L.homeLabel)}</a>`;
   return frame(kind, { bar: topBar(kind, { back: L.home, backLabel: L.homeLabel, title: `Season ${x.season}` }), body, actions });
