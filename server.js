@@ -23265,7 +23265,9 @@ function signupState(req) {
     approved: reg.status === 'approved',
     open: !!season && access.open, testing: !!season && access.testing,
     deadline: getSetting('season_signup_deadline', ''),
-    banned: !!(reg.player_id && getPlayerById(reg.player_id)?.banned_at),
+    // Suspended for money (an unpaid balance or an overdue fine) still signs up, like anyone
+    // owing: the Start screen says they can't be picked until it's paid. An admin's ban stops it.
+    banned: (p => !!p?.banned_at && p.ban_kind !== 'balance' && p.ban_kind !== 'fine')(reg.player_id ? getPlayerById(reg.player_id) : null),
   };
 }
 
@@ -23330,8 +23332,7 @@ function signupBlocked(req, res, kind, st) {
   if (!st) { res.redirect(kind === 'app' ? '/app/login' : loginUrl(req)); return true; }
   if (!st.approved) { sendSignup(req, res, kind, signupNoticeScreen(kind, { title: 'Application pending', body: 'Season sign-ups open to you once an admin approves your account.' })); return true; }
   if (st.banned) {
-    sendSignup(req, res, kind, signupNoticeScreen(kind, { title: 'Your account is suspended', body: 'You can’t sign up for a season right now. Settle your balance and the suspension lifts, then the sign-up opens.',
-      action: `<a class="sgn-btn" href="${kind === 'app' ? '/app/settle' : '/settle-balance'}">Settle my balance</a>` }));
+    sendSignup(req, res, kind, signupNoticeScreen(kind, { title: 'Your account is suspended', body: 'You can’t sign up for a season right now. Message an admin if you think that’s a mistake.' }));
     return true;
   }
   return false;
