@@ -228,7 +228,10 @@ textarea.sgn-input { resize: vertical; min-height: 88px; line-height: 1.4; }
 .sgn-search { display: flex; align-items: center; gap: 8px; padding: 0 12px; min-height: 44px; border-radius: var(--sgn-ri); background: var(--sgn-field); border: 1px solid var(--sgn-field-border); }
 .sgn-search svg { width: 16px; height: 16px; color: var(--sgn-muted); flex: none; }
 .sgn-search input { flex: 1; min-width: 0; background: none; border: 0; color: var(--text); font: inherit; font-size: 16px; outline: none; }
-.sgn-plist { max-height: 360px; overflow-y: auto; border-radius: var(--sgn-r); background: var(--surface); border: 1px solid var(--border); }
+.sgn-plist { border-radius: var(--sgn-r); background: var(--surface); border: 1px solid var(--border); }
+/* A box that scrolls inside the scrolling page traps a finger on a phone (iPhone won't hand the
+   swipe back to the page), so on phones the list is part of the page; search narrows it. */
+@media (min-width: 900px) { .sgn-plist { max-height: 360px; overflow-y: auto; } }
 .sgn-person { position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 14px; min-height: 52px; box-sizing: border-box; cursor: pointer; }
 .sgn-person + .sgn-person { border-top: 1px solid var(--sgn-hair); }
 .sgn-person.is-full { opacity: .45; }
@@ -283,7 +286,8 @@ textarea.sgn-input { resize: vertical; min-height: 88px; line-height: 1.4; }
 .sgn-waiver > summary { cursor: pointer; color: var(--sgn-amber-text); font-weight: 600; min-height: 32px; }
 .sgn-waiver p { margin: 6px 0 0; }
 .sgn-waiver p b { color: var(--text); }
-.sgn-waiver--open { max-height: 220px; overflow-y: auto; padding: 10px 12px; border-radius: var(--sgn-ri); background: var(--surface-2); }
+.sgn-waiver--open { padding: 10px 12px; border-radius: var(--sgn-ri); background: var(--surface-2); }
+@media (min-width: 900px) { .sgn-waiver--open { max-height: 220px; overflow-y: auto; } } /* phones: part of the page (see .sgn-plist) */
 .sgn-waiver-full { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 /* "How the contest works" under the Game Face tick box */
 .sgn-more { font-size: 12px; line-height: 1.5; color: var(--sgn-muted); }
