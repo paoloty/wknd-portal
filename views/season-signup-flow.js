@@ -411,7 +411,8 @@ export function signupSentScreen(kind, x) {
     <div class="sgn-card">${steps.map(([t, s], i) => `<div class="sgn-st"><span class="sgn-sn${i === 0 ? ' sgn-sn--on' : ''}">${i + 1}</span><span class="sgn-ct">${esc(t)}${s ? `<small>${esc(s)}</small>` : ''}</span></div>`).join('')}</div></div>` : ''}
     ${x.open && x.signup.status !== 'withdrawn' && x.signup.status !== 'rejected' ? `<a class="sgn-card sgn-extra" href="${esc(x.base)}/click">
       <span class="sgn-avs">${click.slice(0, 3).map(p => `<span>${esc(avInitials(p))}</span>`).join('')}<span class="sgn-avs__plus">+</span></span>
-      <span class="sgn-ct">Who do you click with?<small>${click.length ? `${click.length} picked. Tap to change.` : 'Optional. Helps us build teams.'}</small></span>${ic.chev}</a>` : ''}`;
+      <span class="sgn-ct">Who do you click with?<small>${click.length ? `${click.length} picked. Tap to change.` : 'Optional. Helps us build teams.'}</small></span>${ic.chev}</a>` : ''}
+    ${x.contest ? `<a class="sgn-card sgn-extra" href="${esc(x.contest.href)}"><span class="sgn-ct">Game Face contest<small>${esc(x.contest.sub)}</small></span>${ic.chev}</a>` : ''}`;
   // A POST, not a link: opening the editor copies the sign-up into a draft.
   const actions = x.canEdit ? `<form method="post" action="${esc(x.base)}/edit"><button type="submit" class="sgn-ghost">Edit my sign-up</button></form>` : `<a class="sgn-ghost" href="${esc(L.home)}">Back to ${esc(L.homeLabel)}</a>`;
   return frame(kind, { bar: topBar(kind, { back: L.home, backLabel: L.homeLabel, title: `Season ${x.season}` }), body, actions });
@@ -426,6 +427,41 @@ export function signupClickScreen(kind, x) {
     bar: topBar(kind, { back: x.base, backLabel: 'Sign-up', title: `Season ${x.season}` }),
     body, form: `${x.base}/click`, actions: '<button type="submit" class="sgn-btn">Save</button>',
   });
+}
+
+// ── The Game Face contest (/game-face, /app/game-face) ────────────────────────
+// data: { season, phase: entries|voting|over, closes, voteAction, canVote, loginHref, mine,
+//         poses: [{ key, label, entries: [{ id, name, photo, mine, voted, votes }] }] }
+// mine: what the viewer's own entry needs to know ('waiting' | 'approved' | 'hidden'), or ''.
+const MINE_MSG = {
+  waiting: ['info', 'Your entry is waiting for an admin to approve it. It shows here once it’s in.'],
+  approved: ['ok', 'Your game face is in the contest.'],
+  hidden: ['info', 'Your photo isn’t in the contest this time. Message an admin if you’d like to know why.'],
+};
+export function gameFaceScreen(kind, x) {
+  const L = LINKS[kind];
+  const total = x.poses.reduce((n, p) => n + p.entries.length, 0);
+  const sub = {
+    entries: `${total} ${total === 1 ? 'entry' : 'entries'} so far. Voting opens for ${x.voteDays} days once sign-ups close. Each category’s winner gets a free Papawis run.`,
+    voting: `Pick one face in each category. You can change your pick until ${x.closes}. Results stay hidden until then.`,
+    over: 'The votes are in. Each winner gets a free Papawis run.',
+  }[x.phase];
+  const tile = e => {
+    const tag = x.phase === 'over' ? `${e.votes} vote${e.votes === 1 ? '' : 's'}` : e.mine ? 'You' : e.voted ? `${ic.check}Your vote` : '';
+    const inner = `<span class="sgn-gf__ph"><img src="${esc(e.photo)}" alt="${esc(e.name)}’s game face" loading="lazy" decoding="async">${tag ? `<span class="sgn-gf__tag">${tag}</span>` : ''}</span><span class="sgn-gf__name">${esc(e.name)}${x.phase === 'over' ? '<small>Winner</small>' : ''}</span>`;
+    const cls = `sgn-gf__tile${e.voted ? ' is-on' : ''}`;
+    if (x.phase !== 'voting' || !x.canVote) return `<div class="${cls}">${inner}</div>`;
+    return `<button type="submit" class="${cls}" name="entry" value="${esc(e.id)}"${e.mine ? ' disabled' : ''} aria-label="${e.mine ? 'Your own photo' : `Vote for ${esc(e.name)}`}"${e.voted ? ' aria-pressed="true"' : ''}>${inner}</button>`;
+  };
+  const sections = x.poses.filter(p => p.entries.length).map(p => `<section id="gf-${esc(p.key)}"><div class="sgn-lbl sgn-sec">${esc(p.label)}</div>
+    <div class="sgn-gf${x.phase === 'over' ? ' sgn-gf--one' : ''}">${p.entries.map(tile).join('')}</div></section>`).join('');
+  const mine = MINE_MSG[x.mine];
+  const body = `<div class="sgn-head"><div class="sgn-lbl sgn-lbl--amber">Season ${esc(String(x.season))}</div><h1>Game Face contest</h1><p class="sgn-sub">${esc(sub)}</p></div>
+    ${mine ? `<p class="sgn-msg sgn-msg--${mine[0]}">${esc(mine[1])}</p>` : ''}
+    ${x.phase === 'voting' && !x.canVote ? `<p class="sgn-msg sgn-msg--info">${x.loginHref ? `<a href="${esc(x.loginHref)}">Log in</a> to vote.` : 'Only members can vote.'}</p>` : ''}
+    ${sections || `<div class="sgn-card sgn-how"><p>${x.phase === 'over' ? 'No votes came in.' : 'No entries yet. Enter on Step 6 of your sign-up.'}</p></div>`}`;
+  const content = x.phase === 'voting' && x.canVote ? `<form method="post" action="${esc(x.voteAction)}" data-busy class="sgn-gf-form">${body}</form>` : body;
+  return frame(kind, { bar: topBar(kind, { back: L.home, backLabel: L.homeLabel, title: 'Game Face' }), body: content });
 }
 
 // ── Not open, not approved, banned ────────────────────────────────────────────

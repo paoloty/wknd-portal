@@ -11,7 +11,7 @@ export function adminSeasonBody({
   count = 0, confirmedCount = 0,
   seasonFormat = '', quotaAmount = '', jerseyTopPrice = '', jerseyShortPrice = '', teamCount = '4',
   jerseySurchargeStep = '50', jerseyPocketsPrice = '100', seasonRosterCapacity = '',
-  allSeasons = [], jerseyCutPrice = '50', payments = null, volunteers = [],
+  allSeasons = [], jerseyCutPrice = '50', payments = null, volunteers = [], gameFace = null,
 } = {}) {
   const started = draftStatus === 'started';
   const known = [...new Set(allSeasons.map(String))].sort((a, b) => Number(b) - Number(a));
@@ -27,6 +27,8 @@ export function adminSeasonBody({
   const needs = [
     sigSeason && !started && !(Number(quotaAmount) > 0) ? { title: 'Set the season fee', sub: 'Players are charged this when the season starts.', href: '#season-details', label: 'Set it', hot: true } : null,
     sigSeason && !started && !sigOpen && !count && Number(quotaAmount) > 0 ? { title: 'Sign-ups aren’t open yet', sub: 'Members can’t sign up until you open them.', href: '#season-signups', label: 'Open', hot: true } : null,
+    gameFace?.entries.some(e => e.state === 'waiting') && gameFace.phase === 'entries' ? { title: 'Game Face entries to check', sub: 'Approve each photo before it goes public.', href: '#season-gameface', label: 'Check' } : null,
+    gameFace && gameFace.phase === 'entries' && !gameFace.signupsOpen && gameFace.live ? { title: 'Open Game Face voting', sub: 'Sign-ups are closed, so voting can start.', href: '#season-gameface', label: 'Open', hot: true } : null,
   ];
 
   const details = `<form class="aui-panel aset-form" id="season-details-form" data-json-action="/admin/season/settings" data-done="Season details saved.">
@@ -66,6 +68,7 @@ export function adminSeasonBody({
     ${started ? '' : signupsBlock}
     ${paymentsBlock(payments)}
     ${volunteersBlock(volunteers)}
+    ${gameFaceBlock(gameFace)}
     ${section({ id: 'season-details', title: 'Details', note: sigSeason ? `· Season ${sigSeason}` : '', bodyHtml: details })}
     ${nextBlock}
   </div>`;
@@ -79,6 +82,29 @@ function volunteersBlock(groups) {
   return section({
     id: 'season-volunteers', title: 'Volunteers', note: '· from sign-ups',
     bodyHtml: `<div class="aui-panel">${groups.map(g => `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__title">${escHtml(g.label)} <span class="aui-muted">${g.people.length}</span></div><div class="aui-cell__sub">${g.people.map(p => escHtml(p.note ? `${p.name} (“${p.note}”)` : p.name)).join(', ')}</div></div></div>`).join('')}</div>`,
+  });
+}
+
+// The Game Face contest (server.js gameFaceAdmin): approve or hide each entry while sign-ups
+// run, open voting once they close, then the winners. Only approved photos go public.
+// g: { phase, signupsOpen, opens, closes, voters, live, entries: [{ id, name, pose, state, photo, winner }] }
+const GF_BADGE = { waiting: ['Waiting', 'amber'], approved: ['In', 'green'], hidden: ['Hidden', 'gray'] };
+function gameFaceBlock(g) {
+  if (!g) return '';
+  const act = (e, what, kind) => `<form data-json-action="/admin/season/game-face/${attr(e.id)}/${what}">${button(what === 'approve' ? 'Approve' : 'Hide', { kind, type: 'submit' })}</form>`;
+  const rows = g.entries.map(e => `<div class="aset-next"><span class="aui-photo aui-photo--sm"><img src="${attr(e.photo)}" alt="" loading="lazy"></span>
+    <div class="aset-next__text"><div class="aui-cell__title">${escHtml(e.name)} ${e.winner ? badge('Winner', 'amber') : g.phase === 'over' && e.state === 'approved' ? badge('Entered') : badge(...GF_BADGE[e.state])}</div><div class="aui-cell__sub">${escHtml(e.pose)}</div></div>
+    ${g.phase === 'over' ? '' : `<div class="aset-next__go">${e.state !== 'approved' ? act(e, 'approve', e.state === 'waiting' ? 'primary' : 'secondary') : ''}${e.state !== 'hidden' ? act(e, 'hide', 'secondary') : ''}</div>`}</div>`).join('');
+  const head = g.phase === 'entries'
+    ? `<form class="aset-next" data-json-action="/admin/season/game-face/open" data-confirm data-confirm-title="Open voting?" data-confirm-body="Voting runs for 3 days. A post goes on top of the app's Home and everyone is told." data-confirm-send="Open voting">
+        <div class="aset-next__text"><div class="aui-cell__title">${g.live} in the contest</div><div class="aui-cell__sub">${g.signupsOpen ? 'Voting opens once sign-ups close.' : 'Sign-ups are closed. Open voting for 3 days.'}</div></div>
+        <div class="aset-next__go">${button('Open voting', { kind: g.signupsOpen ? 'secondary' : 'primary', type: 'submit', attrs: g.signupsOpen || !g.live ? 'disabled' : '' })}</div></form>`
+    : g.phase === 'voting'
+      ? `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__title">Voting until ${escHtml(g.closes)}</div><div class="aui-cell__sub">${g.voters} member${g.voters === 1 ? '' : 's'} voted so far. Results stay hidden until it closes.</div></div></div>`
+      : `<form class="aset-next" data-json-action="/admin/season/game-face/finish"><div class="aset-next__text"><div class="aui-cell__title">Voting closed ${escHtml(g.closes)}</div><div class="aui-cell__sub">${g.voters} member${g.voters === 1 ? '' : 's'} voted. Winners get a free Papawis run; only their photos stay up.</div></div>${g.entries.some(e => e.winner) ? '' : `<div class="aset-next__go">${button('Name the winners', { kind: 'primary', type: 'submit' })}</div>`}</form>`;
+  return section({
+    id: 'season-gameface', title: 'Game Face contest', note: `· ${g.entries.length} entr${g.entries.length === 1 ? 'y' : 'ies'}`,
+    bodyHtml: `<div class="aui-panel">${head}${rows}</div>`,
   });
 }
 

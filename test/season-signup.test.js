@@ -1,7 +1,7 @@
 // node --test test/season-signup.test.js — the Season 5 sign-up rules (lib/season-signup.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { paydaysFrom, firstPayday, planSchedule, playingTimeRisk, checkStep, checkAll, readStep, resumeStep, pickPose, reviewLines, CONTEST_POSES } from '../lib/season-signup.js';
+import { paydaysFrom, firstPayday, planSchedule, playingTimeRisk, checkStep, checkAll, readStep, resumeStep, pickPose, reviewLines, CONTEST_POSES, contestPhase, contestWinners } from '../lib/season-signup.js';
 
 test('paydays are the 15th and the 30th, or the last day of a shorter month', () => {
   assert.deepEqual(paydaysFrom('2027-01-20', 4), ['2027-01-30', '2027-02-15', '2027-02-28', '2027-03-15']);
@@ -93,4 +93,27 @@ test('payments: paid in order within ₱100, late after the due day, reminders b
   assert.ok(s.rows[0].paid); assert.equal(s.next.due, '2027-02-15'); assert.ok(!s.firstLate);
   s = paymentStatus(sched, 4950, '2027-03-01');
   assert.equal(s.next, null); assert.equal(reminderDue(s, '2027-03-01'), null);
+});
+
+test('the contest shows entries, then voting once opened, then it is over', () => {
+  assert.equal(contestPhase({}, 1000), 'entries');
+  assert.equal(contestPhase({ openAt: 500, closeAt: 2000 }, 1000), 'voting');
+  assert.equal(contestPhase({ openAt: 500, closeAt: 2000 }, 2000), 'over');
+  assert.equal(contestPhase({ openAt: 500, closeAt: 9000, finishedAt: 800 }, 1000), 'over');
+});
+
+test('each pose has one winner: most votes, a tie to whoever got there first', () => {
+  const entries = [{ id: 'a', pose: 'and_one' }, { id: 'b', pose: 'and_one' }, { id: 'c', pose: 'clean' }, { id: 'x', pose: 'too_small' }];
+  const votes = [
+    { pose: 'and_one', signup_id: 'a', created_at: 10 }, { pose: 'and_one', signup_id: 'b', created_at: 5 },
+    { pose: 'and_one', signup_id: 'b', created_at: 30 }, { pose: 'and_one', signup_id: 'a', created_at: 20 },
+    { pose: 'clean', signup_id: 'c', created_at: 1 },
+    // a vote for someone no longer in the contest doesn't count
+    { pose: 'too_small', signup_id: 'gone', created_at: 1 },
+  ];
+  const w = contestWinners(entries, votes);
+  assert.deepEqual(w.and_one, { id: 'a', votes: 2 });
+  assert.deepEqual(w.clean, { id: 'c', votes: 1 });
+  assert.equal(w.too_small, undefined);
+  assert.equal(w.finals_mvp, undefined);
 });

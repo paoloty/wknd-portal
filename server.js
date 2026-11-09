@@ -10525,6 +10525,7 @@ function appLinkFor(link = '') {
   if (/^\/settle-balance/.test(path)) return '/app/settle';
   const ss = /^\/season-signup(\/(how|click|\d))?\/?$/.exec(path);
   if (ss) return `/app/signup${ss[1] || ''}`;
+  if (/^\/game-face\/?$/.test(path)) return '/app/game-face';
   return '/app/notifications';
 }
 onNotificationCreated(n => {
@@ -10714,7 +10715,7 @@ const manilaInputMs = v => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(v || '
 const FEED_TYPES = { announcement: 'Announcement', highlight: 'Highlight', photos: 'Photos', throwback: 'Throwback', facebook: 'Facebook' };
 const FEED_PHOTO_MAX = 30;
 const feedType = v => (FEED_TYPES[v] ? v : 'announcement');
-const feedRefOk = v => !v || /^(game|pw):[\w-]{1,80}$/.test(v);
+const feedRefOk = v => !v || /^(game|pw|gf):[\w-]{1,80}$/.test(v);
 // Older than 12 hours: an old post being brought in, so no notification.
 const feedIsPast = ms => !!ms && ms < Date.now() - 12 * 3600e3;
 // The game or run a post is from, as the card's link row.
@@ -10728,6 +10729,11 @@ function feedRefOf(ref) {
   if (kind === 'pw') {
     const r = getPapawisGame(id);
     return r ? { title: `Papawis · ${pwDay(r.date)}`, sub: 'Results and box score', href: `/app/papawis/${encodeURIComponent(r.id)}` } : null;
+  }
+  // The Game Face contest (season sign-up): its page, worded for where the contest is.
+  if (kind === 'gf') {
+    const phase = contestPhase(gameFaceTimes(id));
+    return { title: `Game Face contest · Season ${id}`, sub: { entries: 'See every entry', voting: 'Vote now', over: 'See the winners' }[phase], href: '/app/game-face' };
   }
   return null;
 }
@@ -23323,6 +23329,7 @@ function signupSentData(st, kind, signup) {
     canEdit: st.open && signup.status === 'waitlisted',
     clickWith: ids.map(id => players[id]).filter(Boolean),
     payments: signup.status === 'confirmed' ? paymentsCard(kind, seasonPaymentsFor(signup)) : '',
+    contest: signup.contest_opt_in ? { href: GF_BASE[kind], sub: { entries: 'See every entry', voting: 'Voting is open', over: 'See the winners' }[contestPhase(gameFaceTimes(st.season))] } : null,
   };
 }
 
@@ -23435,6 +23442,8 @@ function signupPostStep(req, res) {
       regId: st.regId, playerId: st.playerId, season: st.season, d, hasBalance: ctx.owing > 0, balanceAmt: ctx.owing,
       teamPref: ctx.returning ? d.team_pref : '', contactChangeNote: changes.join('; '), pose: d.pose,
     });
+    // Untick the contest or retake the photo, and the entry's feed post comes down.
+    syncGameFacePost(st.regId, st.season);
     insertAdminLog({ actor: reg.full_name || reg.email, actorType: 'player', method: 'POST', path: '/season-signup', details: { event: 'season_signup', edit: signup ? 1 : 0 } });
     return res.redirect(base);
   }
@@ -23620,6 +23629,203 @@ function runSeasonPaymentJobs() {
 }
 setTimeout(runSeasonPaymentJobs, 3 * 60 * 1000);
 setInterval(runSeasonPaymentJobs, 60 * 60 * 1000);
+
+// ── The Game Face contest (spec: "Game Face contest") ────────────────────────────────
+// Entries are sign-ups that ticked the contest on Step 6. An admin approves or hides each
+// (Season → Set up → Game Face); an approved entry posts to the feed. After sign-ups close an
+// admin opens voting for CONTEST_VOTE_DAYS: one vote per category per member, never your own
+// photo, results hidden until it ends. Then each category's winner gets a free Papawis run, the
+// winners' posts stay and the rest come down. It never touches selection. Votes are kept apart
+// from polls: polls show in the popup, Home and the app, and know nothing of photos or entrants.
+import { gameFaceScreen } from './views/season-signup-flow.js';
+import { CONTEST_POSES, CONTEST_VOTE_DAYS, contestPhase, contestWinners } from './lib/season-signup.js';
+import { getContestEntries, setContestEntry, castGameFaceVote, getGameFaceVotes, getMyGameFaceVotes } from './lib/portal-db.js';
+
+const GF_BASE = { site: '/game-face', app: '/app/game-face' };
+const gfSeason = () => getSetting('signup_target_season', '');
+function gameFaceTimes(season) {
+  const n = k => Number(getSetting(`game_face_${k}_${season}`, '0')) || 0;
+  return { openAt: n('open_at'), closeAt: n('close_at'), finishedAt: n('done_at') };
+}
+// Where an entry stands: 'hidden' by an admin, 'approved' (for the photo it has now: a retake
+// needs approving again) or 'waiting'.
+const gfState = e => (e.status === 'hidden' ? 'hidden' : e.status === 'approved' && e.captured_at && e.photo_at === e.captured_at && e.via !== 'activation' ? 'approved' : 'waiting');
+const gfPhoto = (e, w = 640) => `/game-face/photo/${encodeURIComponent(e.id)}?w=${w}&t=${e.captured_at || 0}`;
+const gfWhen = ms => manilaFormat(ms, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+// Everything the page and the admin section need: entries with their state, the phase, and
+// (once it's over) the winners.
+function gameFaceData(season) {
+  const times = gameFaceTimes(season);
+  const phase = contestPhase(times);
+  const entries = getContestEntries(season).map(e => ({ ...e, state: gfState(e), name: displayPlayerName(e.full_name) }));
+  const live = entries.filter(e => e.state === 'approved');
+  const winners = phase === 'over' ? contestWinners(live, getGameFaceVotes(season)) : {};
+  return { season, times, phase, entries, live, winners };
+}
+
+// An entry's feed post follows the entry: shown while it's approved and entered (and after the
+// contest only for a winner), hidden otherwise. Called after anything that changes either.
+function syncGameFacePost(regId, season) {
+  const s = getSeasonSignup(regId, season);
+  if (!s?.contest_post_id) return;
+  const e = getContestEntries(season).find(x => x.id === s.id);
+  const { phase, winners } = gameFaceData(season);
+  const show = !!e && gfState(e) === 'approved' && (phase !== 'over' || Object.values(winners).some(w => w.id === e.id));
+  setAppAnnouncementHidden(s.contest_post_id, !show);
+}
+
+function gameFacePage(req, res) {
+  const kind = signupKindOf(req);
+  const season = gfSeason();
+  if (!season) return sendSignup(req, res, kind, signupNoticeScreen(kind, { title: 'No contest right now', body: 'The Game Face contest runs with each season’s sign-ups.' }), { title: 'Game Face contest' });
+  const g = gameFaceData(season);
+  const regId = req.session?.playerRegId || '';
+  const reg = regId ? getRegistration(regId) : null;
+  const canVote = !!reg && reg.status === 'approved';
+  const my = canVote ? getMyGameFaceVotes(season, regId) : {};
+  const mine = regId ? g.entries.find(e => e.reg_id === regId) : null;
+  const poses = CONTEST_POSES.map(p => {
+    let list = g.live.filter(e => e.pose === p.key);
+    if (g.phase === 'over') list = list.filter(e => g.winners[p.key]?.id === e.id);
+    return { key: p.key, label: p.label, entries: list.map(e => ({ id: e.id, name: e.name, photo: gfPhoto(e), mine: e.reg_id === regId, voted: my[p.key] === e.id, votes: g.winners[p.key]?.votes || 0 })) };
+  });
+  sendSignup(req, res, kind, gameFaceScreen(kind, {
+    season, phase: g.phase, closes: g.times.closeAt ? gfWhen(g.times.closeAt) : '', voteDays: CONTEST_VOTE_DAYS,
+    voteAction: `${GF_BASE[kind]}/vote`, canVote, loginHref: kind === 'site' && !regId ? loginUrl(req) : '',
+    mine: mine && g.phase !== 'over' ? mine.state : '', poses,
+  }), { title: 'Game Face contest' });
+}
+app.get('/game-face', gameFacePage);
+app.get('/app/game-face', requireApp, gameFacePage);
+
+// A vote: one per category, changeable until close; not for your own photo.
+function gameFaceVote(req, res) {
+  const kind = signupKindOf(req);
+  const back = GF_BASE[kind];
+  const regId = req.session?.playerRegId || '';
+  const reg = regId ? getRegistration(regId) : null;
+  if (!reg || reg.status !== 'approved') return res.redirect(kind === 'app' ? '/app/login' : loginUrl(req));
+  const season = gfSeason();
+  const g = season ? gameFaceData(season) : null;
+  const e = g?.live.find(x => x.id === String(req.body.entry || ''));
+  if (!e || g.phase !== 'voting' || e.reg_id === regId) return res.redirect(back);
+  castGameFaceVote(season, e.pose, regId, e.id);
+  res.redirect(`${back}#gf-${e.pose}`);
+}
+app.post('/game-face/vote', express.urlencoded({ extended: false }), gameFaceVote);
+app.post('/app/game-face/vote', requireApp, express.urlencoded({ extended: false }), gameFaceVote);
+
+// An entry's photo: public while it's approved (after the contest, winners only); admins see
+// any entry to approve it. Never a photo that wasn't entered.
+app.get('/game-face/photo/:id', async (req, res) => {
+  const season = gfSeason();
+  const g = season ? gameFaceData(season) : null;
+  const e = g?.entries.find(x => x.id === req.params.id);
+  const isPublic = e && e.state === 'approved' && (g.phase !== 'over' || g.winners[e.pose]?.id === e.id);
+  if (!e || !(isPublic || req.session?.isAdmin)) return res.status(404).end();
+  const cap = getLivenessCapture(e.reg_id, season);
+  if (!/^data:image\/(?:jpeg|png|webp);base64,/.test(cap?.photo_data || '')) return res.status(404).end();
+  if (!isPublic) res.set('Cache-Control', 'private, no-store');
+  return sendPlayerPhoto(req, res, cap.photo_data, { widths: ANN_WIDTHS, maxAge: 300 });
+});
+
+// Admin: approve (posts it to the feed) or hide an entry.
+app.post('/admin/season/game-face/:id/:act(approve|hide)', requireAuth, express.json(), (req, res) => {
+  const season = gfSeason();
+  const g = gameFaceData(season);
+  const e = g.entries.find(x => x.id === req.params.id);
+  if (!e) return res.status(404).json({ error: 'That entry isn’t in the contest any more. Reload the page.' });
+  if (g.phase === 'over') return res.status(400).json({ error: 'The contest is over.' });
+  if (req.params.act === 'hide') {
+    setContestEntry(e.id, { status: 'hidden', postId: e.post_id, photoAt: e.photo_at });
+    if (e.post_id) setAppAnnouncementHidden(e.post_id, true);
+    return res.json({ ok: true, message: `${e.name}’s entry is hidden.` });
+  }
+  const cap = getLivenessCapture(e.reg_id, season);
+  if (!cap || cap.via === 'activation') return res.status(400).json({ error: 'There’s no photo for this season.' });
+  // A fresh post each time, with the photo as it is now.
+  if (e.post_id) deleteAppAnnouncement(e.post_id);
+  const pose = CONTEST_POSES.find(p => p.key === e.pose);
+  const postId = crypto.randomUUID();
+  addAppAnnouncement({ id: postId, type: 'photos', title: `Game Face: ${pose?.label || 'contest entry'}`,
+    body: `${e.name} is in the Game Face contest. Voting opens when sign-ups close.`, ref: `gf:${season}`, createdBy: 'WKND' });
+  addAppPostPhoto(postId, cap.photo_data);
+  setContestEntry(e.id, { status: 'approved', postId, photoAt: cap.captured_at });
+  if (e.player_id) createNotification({ playerId: e.player_id, type: 'game_face', title: 'Your game face is in the contest', body: `Category: ${pose?.label || ''}. Voting opens when sign-ups close.`, link: '/game-face' });
+  res.json({ ok: true, message: `${e.name} is in.` });
+});
+
+// Admin: open voting (after sign-ups close). Pinned on Home until it closes, and everyone's told.
+app.post('/admin/season/game-face/open', requireAuth, express.json(), (req, res) => {
+  const season = gfSeason();
+  const g = gameFaceData(season);
+  if (getSetting('season_signup_open', '0') === '1') return res.status(400).json({ error: 'Close sign-ups first. Voting opens once nobody can change their entry.' });
+  if (g.phase !== 'entries') return res.status(400).json({ error: 'Voting has already opened.' });
+  if (!g.live.length) return res.status(400).json({ error: 'Approve at least one entry first.' });
+  const now = Date.now(), closeAt = now + CONTEST_VOTE_DAYS * 86400000;
+  setSetting(`game_face_open_at_${season}`, String(now));
+  setSetting(`game_face_close_at_${season}`, String(closeAt));
+  const id = crypto.randomUUID();
+  const f = { type: 'announcement', title: 'Vote for the best game face', body: `${g.live.length} ${g.live.length === 1 ? 'entry' : 'entries'}, 4 categories, a free Papawis run for each winner. Voting closes ${gfWhen(closeAt)}.` };
+  addAppAnnouncement({ id, ...f, ref: `gf:${season}`, pinnedUntil: closeAt, createdBy: 'WKND' });
+  notifyFeedPost(id, f);
+  logSystem('game_face_voting_open', { season, entries: g.live.length });
+  res.json({ ok: true, message: `Voting is open until ${gfWhen(closeAt)}.` });
+});
+
+// After voting closes: the winners get their free run and a bell, a winners post goes up and
+// the other entries come down. Once per season. → true if it ran.
+function finishGameFace(season) {
+  const t = gameFaceTimes(season);
+  if (!t.closeAt || t.finishedAt || Date.now() < t.closeAt) return false;
+  setSetting(`game_face_done_at_${season}`, String(Date.now()));
+  const g = gameFaceData(season);
+  const lines = [];
+  const postId = crypto.randomUUID();
+  const won = [];
+  for (const p of CONTEST_POSES) {
+    const w = g.winners[p.key];
+    const e = w && g.live.find(x => x.id === w.id);
+    if (!e) continue;
+    won.push(e);
+    lines.push(`${p.label}: ${e.name} (${w.votes} vote${w.votes === 1 ? '' : 's'})`);
+    if (e.player_id) {
+      grantVoucher(e.player_id, `Free Papawis run: Game Face contest, ${p.label}`, String(Number(season) + 1), `gameface:${season}:${p.key}`);
+      createNotification({ playerId: e.player_id, type: 'game_face', title: 'You won the Game Face contest', body: `${p.label}. A free Papawis run is on your account.`, link: '/game-face' });
+    }
+  }
+  for (const e of g.entries) if (e.post_id) setAppAnnouncementHidden(e.post_id, !won.includes(e));
+  if (won.length) {
+    addAppAnnouncement({ id: postId, type: 'photos', title: 'Your Game Face winners', body: lines.join('\n\n'), ref: `gf:${season}`, createdBy: 'WKND' });
+    for (const e of won) addAppPostPhoto(postId, getLivenessCapture(e.reg_id, season).photo_data);
+  }
+  logSystem('game_face_finished', { season, winners: won.map(e => e.id) });
+  return true;
+}
+// Checked every 10 minutes on production; an admin can also finish it from the Season page.
+setInterval(() => { if (process.env.NODE_ENV === 'production') { const s = gfSeason(); if (s) finishGameFace(s); } }, 10 * 60 * 1000);
+app.post('/admin/season/game-face/finish', requireAuth, express.json(), (req, res) => {
+  const season = gfSeason();
+  if (!finishGameFace(season)) return res.status(400).json({ error: gameFaceTimes(season).finishedAt ? 'The winners are already named.' : 'Voting hasn’t closed yet.' });
+  res.json({ ok: true, message: 'Winners named and their free runs added.' });
+});
+
+// The Season page's Game Face section.
+function gameFaceAdmin(season) {
+  if (!season) return null;
+  const g = gameFaceData(season);
+  if (!g.entries.length && g.phase === 'entries') return null;
+  const pose = k => CONTEST_POSES.find(p => p.key === k)?.label || '';
+  const votes = g.phase === 'entries' ? [] : getGameFaceVotes(season);
+  return {
+    phase: g.phase, signupsOpen: getSetting('season_signup_open', '0') === '1',
+    opens: g.times.openAt ? gfWhen(g.times.openAt) : '', closes: g.times.closeAt ? gfWhen(g.times.closeAt) : '',
+    voters: new Set(votes.map(v => v.voter_id)).size,
+    entries: g.entries.map(e => ({ id: e.id, name: e.name, pose: pose(e.pose), state: e.state, photo: gfPhoto(e, 160), winner: Object.values(g.winners).some(w => w.id === e.id) })),
+    live: g.live.length,
+  };
+}
 
 // "Wouldn't play with again" answers as an admin may see them. An elevated admin is also a player;
 // the shared super-admin login isn't.
@@ -23983,7 +24189,7 @@ app.get('/admin/season', requireAuth, (req, res) => {
     title: 'Season',
     currentPath: '/admin/season',
     settings: seasonNudgesPanel(),
-    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [] }),
+    body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline, portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason) }),
   }));
 });
 
