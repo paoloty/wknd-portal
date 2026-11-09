@@ -179,9 +179,10 @@
   }
 
   // Send: no game face yet is the one thing worth stopping for here (the server checks the rest).
+  // Not in test mode (the amber bar), where nothing is required.
   function guardSend(root) {
     var form = $('#sgn-form', root), gf = $('[data-sgn-gf]', root);
-    if (!form || !gf) return;
+    if (!form || !gf || document.querySelector('.sgn-testbar')) return;
     form.addEventListener('submit', function (e) {
       var b = e.submitter;
       if (!b || b.value !== 'send' || gf.getAttribute('data-photo')) return;

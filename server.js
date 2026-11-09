@@ -23229,7 +23229,7 @@ const SIGNUP_BASE = { site: '/season-signup', app: '/app/signup' };
 const signupKindOf = req => (req.path.startsWith('/app/') ? 'app' : 'site');
 
 function sendSignup(req, res, kind, body, { title = 'Season sign-up', status = 200 } = {}) {
-  if (signupState(req)?.testing) body = `<div class="sgn-testbar" role="status"><b>Test mode.</b> Only admins and testers can sign up right now.</div>${body}`;
+  if (signupState(req)?.testing) body = `<div class="sgn-testbar" role="status"><b>Test mode.</b> Only admins and testers can sign up right now. Nothing is required.</div>${body}`;
   if (kind === 'app') return res.status(status).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(req), ga: buildAppGaSnippet(req), title: `${title} · WKND`, bare: true, body }));
   res.status(status).send(renderPage(req, {
     title: `${title} — WKND Basketball`, currentPath: '/season-signup', minimalHeader: true, noindex: true,
@@ -23400,7 +23400,8 @@ function signupStep(req, res) {
   const { draft, d } = signupDraft(st);
   if (signup && (!draft || signup.status !== 'waitlisted')) return res.redirect(base);
   const ctx = signupCtx(st);
-  const reach = resumeStep(d, ctx);
+  // Test mode: every step opens, filled in or not.
+  const reach = st.testing ? SIGNUP_LAST : resumeStep(d, ctx);
   if (n > reach) return res.redirect(`${base}/${reach}`);
   sendSignup(req, res, kind, signupStepScreen(kind, signupStepData(st, kind, n, d, ctx)), { title: SIGNUP_STEPS[n - 1].title });
 }
@@ -23439,10 +23440,16 @@ function signupPostStep(req, res) {
   const again = (step, errors) => sendSignup(req, res, kind, signupStepScreen(kind, signupStepData(st, kind, step, d, ctx, errors)), { title: SIGNUP_STEPS[step - 1].title, status: 400 });
 
   if (go === 'send' && n === SIGNUP_LAST) {
-    const first = checkAll(d, ctx);
+    // Test mode: nothing is required, the game face photo included (no photo, no contest entry).
+    const first = st.testing ? null : checkAll(d, ctx);
     if (first) return again(first.step, checkStep(first.step, d, ctx));
     const photo = getLivenessCapture(st.regId, st.season);
-    if (!photo || photo.via === 'activation') return again(SIGNUP_LAST, [{ step: SIGNUP_LAST, field: 'photo', message: 'Take your game face first.' }]);
+    if (!photo || photo.via === 'activation') {
+      if (!st.testing) return again(SIGNUP_LAST, [{ step: SIGNUP_LAST, field: 'photo', message: 'Take your game face first.' }]);
+      d.contest = '';
+    }
+    // A tester's blank answers never overwrite the contact details and waiver on file.
+    if (st.testing) for (const k of ['emergency_name', 'emergency_phone', 'birthday']) if (!String(d[k] || '').trim()) d[k] = st.reg[k] || '';
     const reg = st.reg;
     // Contact details: saved to the profile; a change from what was on file is flagged for admins.
     const changes = [];
@@ -23451,7 +23458,7 @@ function signupPostStep(req, res) {
     if (reg.birthday && reg.birthday !== d.birthday) changes.push(`Birthday: "${reg.birthday}" -> "${d.birthday}"`);
     updateRegistrationContact(st.regId, { emergency_name: d.emergency_name, emergency_phone: d.emergency_phone });
     updateRegBirthday(st.regId, d.birthday, reg.player_id || null);
-    if (!reg.waiver_agreed_at) setWaiverAgreement(st.regId, d.waiver_signature);
+    if (!reg.waiver_agreed_at && String(d.waiver_signature || '').trim()) setWaiverAgreement(st.regId, d.waiver_signature);
     saveSeasonSignupFromDraft({
       regId: st.regId, playerId: st.playerId, season: st.season, d, hasBalance: ctx.owing > 0, balanceAmt: ctx.owing,
       teamPref: ctx.returning ? d.team_pref : '', contactChangeNote: changes.join('; '), pose: d.pose,
@@ -23462,7 +23469,7 @@ function signupPostStep(req, res) {
     return res.redirect(base);
   }
 
-  const errors = checkStep(n, d, ctx);
+  const errors = st.testing ? [] : checkStep(n, d, ctx);
   if (errors.length) return again(n, errors);
   res.redirect(`${base}/${Math.min(n + 1, SIGNUP_LAST)}`);
 }
