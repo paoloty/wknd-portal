@@ -24654,6 +24654,48 @@ function candidateSignupInfo(season) {
   }
   return out;
 }
+// One sign-up's form, as the admin sign-up page shows it (views/admin/season-signup-detail.js,
+// layout 3 of claude.ai/artifact/KeBVKqbVgpuDfLEpJeUqaS, Paolo 2026-11-09): plan and
+// availability, the role answers with the Playing-time risk, self-rating next to their ratings,
+// kit, game face, help, "rather not" both ways and the emergency contact. Older seasons' sign-ups
+// have none of the new answers; their parts are just left out.
+function signupFormForAdmin(s, req) {
+  const a = s.player_id ? (getPlayerAssessment(s.player_id, s.season) || {}) : {};
+  const rating = s.player_id ? getLatestPlayerRating(s.player_id) : null;
+  const tier = Object.fromEntries(SELF_TIERS);
+  const actual = { self_scoring: rating ? (rating.scoring_ovr ?? rating.scoring) : null, self_defense: rating ? (rating.defense_ovr ?? rating.defense) : null, self_overall: rating ? (rating.overall_ovr ?? rating.overall) : null };
+  const self = SELF_FIELDS.filter(([k]) => a[k]).map(([k, label]) => ({ label, says: tier[a[k]] || a[k], rating: actual[k] != null ? Math.round(actual[k]) : null, gap: actual[k] != null && alignmentFlag(a[k], actual[k]) === 'gap' }));
+  const role = ROLE_QS.filter(q => a[q.key]).map(q => {
+    const o = q.options.find(x => x.v === a[q.key]);
+    return { q: q.q, a: ROLE_LABEL[q.key][a[q.key]] || a[q.key], flag: o?.flag || '', note: q.key === 'role_playoffs' && o?.big ? `${o.big} a game` : '' };
+  });
+  let plans = {};
+  try { plans = JSON.parse(s.plans || '{}'); } catch {}
+  const month = ym => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const away = (plans.away || []).map(k => `${AWAY_LABEL[k] || k}${plans.when?.[k]?.length ? ` (${plans.when[k].map(month).join(', ')})` : ''}`);
+  const vol = getSeasonVolunteers(s.season).find(v => v.reg_id === s.reg_id);
+  const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const named = getSeasonNominations(s.season).filter(n => n.nominator_reg_id === s.reg_id).map(n => ({ playerId: n.nominee_player_id, name: displayPlayerName(players[n.nominee_player_id]?.name || '') || 'A player' }));
+  const namedBy = s.player_id ? seasonRatherNotAdmin(s.season, req).rows.find(r => r.playerId === s.player_id) || null : null;
+  const reg = getRegistration(s.reg_id) || {};
+  const cap = s.liveness;
+  const pose = poseByKey(s.contest_pose);
+  return {
+    isNew: !!s.games_miss,
+    plan: PLAN_LABEL[s.payment_plan] || '',
+    gamesMiss: s.games_miss ? (GAMES_MISS_LABEL[s.games_miss] || s.games_miss) : '',
+    away, awayNote: s.away_note || '',
+    role, risk: role.length ? playingTimeRisk(a, { selfGap: self.some(x => x.gap) }) : null,
+    self, workOn: a.q7_work_on || '',
+    kit: s.jersey_top ? signupJersey({ jersey_top: s.jersey_top, jersey_shorts: s.jersey_shorts, pockets: !!s.pockets, jersey_cut: s.jersey_cut }) : null,
+    gameFace: { photo: !!cap && cap.via !== 'activation', photoId: cap?.id || '', pose: pose?.label || '', inContest: !!s.contest_opt_in },
+    help: vol ? [...(vol.roles || []).map(r => VOLUNTEER_LABEL[r] || r), vol.note].filter(Boolean) : [],
+    named, namedBy,
+    emergency: [reg.emergency_name, reg.emergency_phone].filter(Boolean).join(' · '),
+    birthday: reg.birthday ? new Date(`${reg.birthday}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '',
+  };
+}
+
 // Contribution ticks from the candidates row menu: add one (setup / referee / other) or take
 // back the newest.
 app.post('/admin/season/candidates/:id/contribution', requireAuth, express.json(), (req, res) => {
@@ -24719,7 +24761,7 @@ app.get('/admin/season/signups/:id', requireAuth, (req, res) => {
     body: adminSignupDetailBody({
       signup, isSuperAdmin, seasonEmail: getLatestEmailForRef(['season_confirmed', 'season_not_selected'], signup.id),
       started: String(signup.season) !== getSetting('signup_target_season', '') || getSetting('season_draft_status', '') === 'started',
-      named: seasonNominationsFor(signup.season, req)[signup.player_id],
+      form: signupFormForAdmin(signup, req),
     }),
   }));
 });
