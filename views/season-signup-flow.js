@@ -229,13 +229,14 @@ function personRow(p, { name = 'avoid', on = false, kind = 'checkbox', meta = ''
 }
 
 // A searchable list of players to tick (rather not / click with), filterable by how they know them.
-function peoplePicker({ people, selected, field, max, filters = true, label }) {
+// open: the list shows straight away, with no Choose button (step 4, once Yes is picked).
+function peoplePicker({ people, selected, field, max, filters = true, label, open = false }) {
   const sel = new Set(selected);
   const chosen = people.filter(p => sel.has(p.id));
   return `<div class="sgn-people" data-sgn-picker data-max="${max}">
     <div class="sgn-chosen" data-sgn-chosen>${chosen.length ? chosen.map(p => `<span class="sgn-tag">${esc(nameOf(p))}</span>`).join('') : '<span class="sgn-fine">No one picked.</span>'}</div>
-    <details class="sgn-pickbox"${chosen.length ? '' : ''}>
-      <summary class="sgn-ghost sgn-ghost--sm">${chosen.length ? 'Change' : esc(label)}</summary>
+    ${open ? '<div class="sgn-pickbox">' : `<details class="sgn-pickbox">
+      <summary class="sgn-ghost sgn-ghost--sm">${chosen.length ? 'Change' : esc(label)}</summary>`}
       <div class="sgn-pickbox__in">
         <label class="sgn-search">${ic.search}<input type="search" placeholder="Search names" data-sgn-search autocomplete="off" enterkeyhint="search" aria-label="Search names"></label>
         ${filters ? `<div class="sgn-seg sgn-seg--sm" role="radiogroup" aria-label="Show">${[['', 'All'], ['team', 'Teammates'], ['opp', 'Opponents'], ['papawis', 'Papawis']].map(([v, l], i) => `<label><input type="radio" name="_rel_${field}" value="${v}" data-sgn-rel${i ? '' : ' checked'}><span>${l}</span></label>`).join('')}</div>` : ''}
@@ -243,7 +244,7 @@ function peoplePicker({ people, selected, field, max, filters = true, label }) {
         <div class="sgn-plist">${people.map(p => personRow(p, { name: field, on: sel.has(p.id), meta: p.meta })).join('') || '<p class="sgn-empty">No one yet.</p>'}</div>
         <p class="sgn-empty" data-sgn-none hidden>No one matches.</p>
       </div>
-    </details>
+    ${open ? '</div>' : '</details>'}
   </div>`;
 }
 
@@ -259,7 +260,7 @@ function leagueStep(x) {
       <label class="sgn-opt"><input type="radio" name="avoid_any" value="no"${checked(d.avoid_any === 'no')}><span class="sgn-rad"></span><span>No, I’m good with everyone</span></label>
       <label class="sgn-opt"><input type="radio" name="avoid_any" value="yes"${checked(d.avoid_any === 'yes')}><span class="sgn-rad"></span><span>Yes<small>Pick up to ${MAX_RATHER_NOT}</small></span></label>
     </div>
-    <div data-sgn-avoid-pick${d.avoid_any === 'yes' ? '' : ' hidden'}>${peoplePicker({ people: x.shared, selected: d.avoid || [], field: 'avoid', max: MAX_RATHER_NOT, label: 'Choose players' })}</div>
+    <div data-sgn-avoid-pick${d.avoid_any === 'yes' ? '' : ' hidden'}>${peoplePicker({ people: x.shared, selected: d.avoid || [], field: 'avoid', max: MAX_RATHER_NOT, open: true })}</div>
     ${errMsg(x.errors, 'avoid')}
     <div class="sgn-lock">${ic.lock}<span>Only admins see this, including who named whom. The player is never told. Something serious? Use Report on their profile instead.</span></div>
   </section>` : '';

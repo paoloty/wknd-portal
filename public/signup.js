@@ -178,15 +178,12 @@
     });
   }
 
-  // Step 4's "Anyone you'd rather not play with?": Yes shows the list (opened), No hides it.
+  // Step 4's "Anyone you'd rather not play with?": Yes shows the list, No hides it.
   function avoidAsk(root) {
     var q = $('[data-sgn-avoid]', root); if (!q) return;
     var pick = $('[data-sgn-avoid-pick]', q);
     q.addEventListener('change', function (e) {
-      if (e.target.name !== 'avoid_any') return;
-      var yes = e.target.value === 'yes';
-      pick.hidden = !yes;
-      var box = $('details', pick); if (yes && box) box.open = true;
+      if (e.target.name === 'avoid_any') pick.hidden = e.target.value !== 'yes';
     });
   }
 

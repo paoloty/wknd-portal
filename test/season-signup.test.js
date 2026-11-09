@@ -69,7 +69,7 @@ test('reading a step keeps only known choices', () => {
   const s2 = readStep(2, { games_miss: '2', away: ['abroad', 'moon'], away_when_abroad: ['2027-02', '2031-01'], payment_plan: 'full' }, { now: new Date('2026-11-09') });
   assert.deepEqual(s2.away, ['abroad']);
   assert.deepEqual(s2.away_when, { abroad: ['2027-02'] });
-  assert.deepEqual(readStep(4, { avoid: ['a', 'a', 'b', 'c'], vol: ['stats', 'x'] }).avoid, ['a', 'b']);
+  assert.deepEqual(readStep(4, { avoid: ['a', 'a', 'b', 'c', 'd', 'e', 'f', 'g'], vol: ['stats', 'x'] }).avoid, ['a', 'b', 'c']);
   assert.deepEqual(readStep(4, { vol: ['stats', 'x'] }).vol, ['stats']);
   assert.deepEqual(readStep(4, { avoid_any: 'no', avoid: ['a'] }).avoid, []);
   assert.equal(readStep(4, { avoid_any: 'maybe' }).avoid_any, '');
