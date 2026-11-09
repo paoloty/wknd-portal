@@ -8,6 +8,7 @@ import { icons, backChev } from './app/layout.js';
 import {
   STEPS, LAST_STEP, GAMES_MISS, AWAY_PLANS, awayMonths, PLAN_KEYS, PLAN_LABEL, planSteps, peso, ROLE_QS, WORK_ON_MIN,
   SELF_TIERS, SELF_FIELDS, VOLUNTEER_ROLES, MAX_RATHER_NOT, MAX_CLICK_WITH, JERSEY_CUTS, WAIVER_POINTS, MIN_GAMES, ROUND_ROBIN_GAMES,
+  CONTEST_POSES, CONTEST_VOTE_DAYS,
 } from '../lib/season-signup.js';
 
 const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -249,7 +250,21 @@ function peoplePicker({ people, selected, field, max, filters = true, label }) {
 function leagueStep(x) {
   const d = x.d;
   const vol = new Set(d.vol || []);
+  // Rather not: a yes/no everyone with shared games answers (first, so it isn't skipped); Yes
+  // opens the list (public/signup.js avoidAsk).
+  const avoid = x.shared.length ? `<section class="sgn-q" data-sgn-avoid${invalid(x.errors, 'avoid')}>
+    <p class="sgn-qt">Anyone you’d rather not play with again?</p>
+    <p class="sgn-hint">From your Season ${esc(String(x.leagueSeason))} games and Papawis runs. Be honest: admins read every answer when picking the 48.</p>
+    <div class="sgn-card sgn-opts sgn-opts--card">
+      <label class="sgn-opt"><input type="radio" name="avoid_any" value="no"${checked(d.avoid_any === 'no')}><span class="sgn-rad"></span><span>No, I’m good with everyone</span></label>
+      <label class="sgn-opt"><input type="radio" name="avoid_any" value="yes"${checked(d.avoid_any === 'yes')}><span class="sgn-rad"></span><span>Yes<small>Pick up to ${MAX_RATHER_NOT}</small></span></label>
+    </div>
+    <div data-sgn-avoid-pick${d.avoid_any === 'yes' ? '' : ' hidden'}>${peoplePicker({ people: x.shared, selected: d.avoid || [], field: 'avoid', max: MAX_RATHER_NOT, label: 'Choose players' })}</div>
+    ${errMsg(x.errors, 'avoid')}
+    <div class="sgn-lock">${ic.lock}<span>Only admins see this, including who named whom. The player is never told. Something serious? Use Report on their profile instead.</span></div>
+  </section>` : '';
   return `<div class="sgn-head"><h1>You and the league</h1></div>
+  ${avoid}
   <section class="sgn-q">
     <p class="sgn-qt">Help run WKND <small>Optional</small></p>
     <p class="sgn-hint">WKND runs on volunteers. Nobody here gets paid. Tap anything you could help with.</p>
@@ -263,14 +278,7 @@ function leagueStep(x) {
       <label class="sgn-opt"><input type="radio" name="team_pref" value="stick"${checked(d.team_pref === 'stick')}><span class="sgn-rad"></span><span><span class="sgn-dot" style="--c:${esc(x.returning.team.color || '#8a93a4')}"></span>Stay with ${esc(x.returning.team.name)}<small>Your Season ${esc(String(x.returning.prevSeason))} team</small></span></label>
       <label class="sgn-opt"><input type="radio" name="team_pref" value="reshuffle"${checked(d.team_pref === 'reshuffle')}><span class="sgn-rad"></span><span>Shuffle me<small>Happy to start fresh on any team</small></span></label>
     </div>${errMsg(x.errors, 'team_pref')}
-  </section>` : ''}
-  <section class="sgn-q"${invalid(x.errors, 'avoid')}>
-    <p class="sgn-qt">Anyone you’d rather not play with again? <small>Optional</small></p>
-    <p class="sgn-hint">Up to ${MAX_RATHER_NOT}, from your Season ${esc(String(x.leagueSeason))} games and Papawis runs.</p>
-    ${x.shared.length ? peoplePicker({ people: x.shared, selected: d.avoid || [], field: 'avoid', max: MAX_RATHER_NOT, label: 'Choose' }) : '<p class="sgn-fine">No one yet: this list is the players you’ve shared a court with in league games or Papawis.</p>'}
-    ${errMsg(x.errors, 'avoid')}
-    <div class="sgn-lock">${ic.lock}<span>Admins see this, including who named whom. The player is never told. Something serious? Use Report on their profile instead.</span></div>
-  </section>`;
+  </section>` : ''}`;
 }
 
 function sizeGrid(name, sizes, chart, value, { none = false } = {}) {
@@ -344,7 +352,14 @@ function gameFace(x) {
     <p class="sgn-err" data-sgn-cam-err role="alert" hidden></p>
     ${errMsg(x.errors, 'photo')}
     <p class="sgn-fine">Every season, so we know it’s really you signing up. Only admins see it, unless you enter the contest.</p>
-    <label class="sgn-check"><input type="checkbox" name="contest" value="1"${checked(x.d.contest === '1')}><span class="sgn-cb">${ic.check}</span><span><b>Enter the Game Face contest</b><small>Category: ${esc(x.poseLabel)}. Everyone can see and vote. Winners get a free Papawis run. Optional.</small></span></label>
+    <label class="sgn-check"><input type="checkbox" name="contest" value="1"${checked(x.d.contest === '1')}><span class="sgn-cb">${ic.check}</span><span><b>Enter the Game Face contest</b><small>${x.poseLabel ? `Category: ${esc(x.poseLabel)}. ` : ''}Everyone can see and vote. Winners get a free Papawis run. Optional.</small></span></label>
+    <details class="sgn-more"><summary>How the contest works</summary><ol>
+      <li>${CONTEST_POSES.length} categories: ${CONTEST_POSES.map(p => esc(p.label)).join(', ')}. The pose you were given is your category.</li>
+      <li>An admin checks each photo first. Once it’s approved, it shows on the contest page and in the feed.</li>
+      <li>When sign-ups close, members vote for ${CONTEST_VOTE_DAYS} days: one face per category. You can’t vote for yourself.</li>
+      <li>The most votes in each category wins a free Papawis run, sent to you as a voucher.</li>
+      <li>Changed your mind? Untick it until sign-ups close and your photo goes back to admins only.</li>
+    </ol></details>
   </div>`;
 }
 

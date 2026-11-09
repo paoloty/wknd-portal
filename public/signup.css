@@ -285,6 +285,10 @@ textarea.sgn-input { resize: vertical; min-height: 88px; line-height: 1.4; }
 .sgn-waiver p b { color: var(--text); }
 .sgn-waiver--open { max-height: 220px; overflow-y: auto; padding: 10px 12px; border-radius: var(--sgn-ri); background: var(--surface-2); }
 .sgn-waiver-full { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+/* "How the contest works" under the Game Face tick box */
+.sgn-more { font-size: 12px; line-height: 1.5; color: var(--sgn-muted); }
+.sgn-more > summary { cursor: pointer; color: var(--sgn-amber-text); font-weight: 600; font-size: 13px; min-height: 44px; display: flex; align-items: center; }
+.sgn-more ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 
 /* Sent */
 .sgn-done { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding-top: 16px; }

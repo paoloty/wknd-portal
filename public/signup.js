@@ -178,6 +178,18 @@
     });
   }
 
+  // Step 4's "Anyone you'd rather not play with?": Yes shows the list (opened), No hides it.
+  function avoidAsk(root) {
+    var q = $('[data-sgn-avoid]', root); if (!q) return;
+    var pick = $('[data-sgn-avoid-pick]', q);
+    q.addEventListener('change', function (e) {
+      if (e.target.name !== 'avoid_any') return;
+      var yes = e.target.value === 'yes';
+      pick.hidden = !yes;
+      var box = $('details', pick); if (yes && box) box.open = true;
+    });
+  }
+
   // Review's "Read it": opens the waiver below and scrolls to it. Handled here, so the app
   // doesn't take the #link for a new screen (which reloads it at the top).
   function waiverLink(root) {
@@ -323,7 +335,7 @@
     $$('[data-sgn]').forEach(function (root) {
       if (root.getAttribute('data-sgn-ready')) return;
       root.setAttribute('data-sgn-ready', '1');
-      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); waiverLink(root); guardSend(root); gfViewer(root);
+      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); avoidAsk(root); waiverLink(root); guardSend(root); gfViewer(root);
       var e = $('[aria-invalid="true"]', root);
       if (e && e.scrollIntoView) e.scrollIntoView({ block: 'center' });
     });

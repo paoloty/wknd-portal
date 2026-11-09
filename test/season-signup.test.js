@@ -41,7 +41,7 @@ const good = {
   agree: '1', games_miss: '1', payment_plan: 'dp1',
   role_playoffs: 'title', role_bench: 'stay_ready', role_chat: 'stay_out', role_coach: 'work_on',
   work_on: 'Talking on defense. I go quiet when I am tired, every game.', self_scoring: 'average', self_defense: 'average', self_overall: 'average',
-  team_pref: 'stick', avoid: ['a'], jersey_top: 'L', jersey_shorts: '', emergency_name: 'Ana', emergency_phone: '0918 123 7730', birthday: '1990-03-14',
+  team_pref: 'stick', avoid_any: 'yes', avoid: ['a'], jersey_top: 'L', jersey_shorts: '', emergency_name: 'Ana', emergency_phone: '0918 123 7730', birthday: '1990-03-14',
   waiver_agree: '1',
 };
 
@@ -51,6 +51,11 @@ test('a whole good draft passes; the first problem names its step and field', ()
   assert.equal(checkAll({ ...good, work_on: 'nothing' }, ctx).field, 'work_on');
   assert.equal(checkAll({ ...good, avoid: ['zz'] }, ctx).field, 'avoid');
   assert.equal(checkAll({ ...good, avoid: ['me'] }, { ...ctx, avoidIds: new Set(['me']) }).field, 'avoid');
+  // "Rather not" is a yes/no everyone with shared games answers; Yes needs a name.
+  assert.equal(checkAll({ ...good, avoid_any: '' }, ctx).field, 'avoid');
+  assert.equal(checkAll({ ...good, avoid: [] }, ctx).message, 'Pick who, or choose No.');
+  assert.equal(checkAll({ ...good, avoid_any: 'no', avoid: [] }, ctx), null);
+  assert.equal(checkAll({ ...good, avoid_any: '', avoid: [] }, { ...ctx, avoidIds: new Set() }), null);
   assert.equal(checkAll({ ...good, emergency_phone: '09171234567' }, ctx).field, 'emergency_phone');
   assert.equal(checkAll({ ...good, birthday: '2010-01-01' }, ctx).field, 'birthday');
   assert.equal(checkAll({ ...good, team_pref: '' }, { ...ctx, returning: false }), null);
@@ -66,6 +71,8 @@ test('reading a step keeps only known choices', () => {
   assert.deepEqual(s2.away_when, { abroad: ['2027-02'] });
   assert.deepEqual(readStep(4, { avoid: ['a', 'a', 'b', 'c'], vol: ['stats', 'x'] }).avoid, ['a', 'b']);
   assert.deepEqual(readStep(4, { vol: ['stats', 'x'] }).vol, ['stats']);
+  assert.deepEqual(readStep(4, { avoid_any: 'no', avoid: ['a'] }).avoid, []);
+  assert.equal(readStep(4, { avoid_any: 'maybe' }).avoid_any, '');
   assert.equal(readStep(5, { jersey_cut: 'weird' }).jersey_cut, 'regular');
   const lines = reviewLines({ ...s2, games_miss: '1' });
   assert.match(lines[2], /Miss 1 game · trip abroad Feb · pay in full/);
