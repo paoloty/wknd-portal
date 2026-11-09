@@ -116,7 +116,7 @@ import {
   insertPlayerAssessment, getPlayerAssessment, getPlayerAssessmentById, getPlayerAssessmentHistory, getAssessmentsBySeason, getLatestPlayerRating,
   upsertAssessmentReview, getAssessmentReviews, getAssessmentReviewsBySeason, deleteAssessmentReview,
   playerPlayedSeason, getPlayerCurrentTeam,
-  getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams, getSeasonTeamById, getSeasonRosterRows, getSandboxSignupSeason, replaceSeasonDraft,
+  getSeasonTeams, upsertSeasonTeam, deleteSeasonTeam, clearSeasonTeams, getSeasonTeamById, getSeasonRosterRows, getSandboxSignupSeason, replaceSeasonDraft, addSeasonRosterSlots,
   getSeasonRoster, saveSeasonRoster, clearSeasonRoster, getSeasonSignupsWithStats, setSeasonSignupJerseyNumber, getLatestRosterSeason,
   setJerseyRequestToken, getSeasonSignupByJerseyToken, submitJerseyDetails, setSeasonSignupShorts,
   setSeasonSignupChargeAdjustments,
@@ -24407,6 +24407,7 @@ import { adminAssessmentReviewBody } from './views/admin/assessment-review.js';
 import { adminLivenessReviewBody } from './views/admin/liveness-review.js';
 import { adminLivenessListBody } from './views/admin/liveness-list.js';
 import { adminSeasonTeamsBody } from './views/admin/season-teams.js';
+import { returningToPlace } from './lib/season-signup.js';
 import { adminSeasonReviewBody } from './views/admin/season-review.js';
 
 app.get('/admin/seasons', requireAuth, (req, res) => {
@@ -24882,10 +24883,27 @@ app.get('/admin/season/teams', requireAuth, (req, res) => {
   const sigSeason   = getSetting('signup_target_season', '');
   if (!sigSeason) return res.redirect('/admin/season');
 
-  const players     = getSeasonSignupsWithStats(sigSeason);
+  let players       = getSeasonSignupsWithStats(sigSeason);
   const teams       = getSeasonTeams(sigSeason);
-  const rosterRows  = getSeasonRoster(sigSeason);
   const draftStatus = getSetting('season_draft_status', '');
+  // Returning players who chose "stay with my team" go straight onto the season team with
+  // their old team's name, each once (Paolo, 2026-11-09). One moved to the pool by an admin
+  // isn't put back: the placed ids are kept per season.
+  let autoPlaced = 0;
+  if (draftStatus !== 'started' && teams.length) {
+    const placedKey = `season_autoplaced_${sigSeason}`;
+    let placed; try { placed = new Set(JSON.parse(getSetting(placedKey, '[]'))); } catch { placed = new Set(); }
+    const toPlace = returningToPlace(players, teams, placed);
+    if (toPlace.length) {
+      addSeasonRosterSlots(sigSeason, toPlace);
+      toPlace.forEach(a => placed.add(a.signup_id));
+      setSetting(placedKey, JSON.stringify([...placed]));
+      if (!draftStatus) setSetting('season_draft_status', 'draft');
+      autoPlaced = toPlace.length;
+      players = getSeasonSignupsWithStats(sigSeason);
+    }
+  }
+  const rosterRows  = getSeasonRoster(sigSeason);
   const leagueTeams = getAllTeams();
   const rosterPublished = getSetting('season_roster_published', '') === sigSeason;
 
@@ -24902,7 +24920,7 @@ app.get('/admin/season/teams', requireAuth, (req, res) => {
   res.send(renderAdminPage(req, {
     title: 'Team builder',
     currentPath: '/admin/season/teams',
-    body: adminSeasonTeamsBody({ sigSeason, players, teams, rosterMap, draftStatus, leagueTeams, rosterPublished }),
+    body: adminSeasonTeamsBody({ sigSeason, players, teams, rosterMap, draftStatus: getSetting('season_draft_status', ''), leagueTeams, rosterPublished, autoPlaced }),
   }));
 });
 

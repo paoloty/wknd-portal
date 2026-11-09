@@ -239,21 +239,47 @@
   // Round 1: one continuous snake through the position groups (C → PF → SF → SG → PG), so
   // the first team doesn't always pick first. Round 2: everyone left goes, best first, to
   // the team with the lowest OVR total.
+  // Returning players who chose to stay and are on that team keep their place; the rest are
+  // balanced around them, with no team filled past an even share while another has room.
   function autoBalance() {
     var tl = teams(); var nT = tl.length;
-    var all = $$('.atb-p');
+    var out = tl.map(function () { return []; });
+    var all = $$('.atb-p').filter(function (li) {
+      var stay = li.getAttribute('data-stay-team'), t = li.closest('.atb-team');
+      var k = stay && t && t.getAttribute('data-team-id') === stay ? tl.indexOf(t) : -1;
+      if (k >= 0) { out[k].push(li); return false; }
+      return true;
+    });
+    // Even sizes: every team gets `base` players and only `extra` of them one more (a team
+    // already past that from its stayers just takes no one else).
+    var total = $$('.atb-p').length, base = Math.floor(total / nT), extra = total - base * nT;
+    var room = function (k) {
+      if (out[k].length < base) return true;
+      return out[k].length === base && out.filter(function (o) { return o.length > base; }).length < extra;
+    };
     var groups = { C: [], PF: [], SF: [], SG: [], PG: [], '': [] };
     all.forEach(function (li) { var p = li.getAttribute('data-pos'); (groups[p] || groups['']).push(li); });
     var byOvr = function (a, b) { return (n(b.getAttribute('data-ovr')) || 0) - (n(a.getAttribute('data-ovr')) || 0); };
     Object.keys(groups).forEach(function (k) { groups[k].sort(byOvr); });
-    var out = tl.map(function () { return []; }), i = 0, dir = 1, over = [];
+    var i = 0, dir = 1, over = [];
+    var step = function () { i += dir; if (i >= nT) { dir = -1; i = nT - 1; } if (i < 0) { dir = 1; i = 0; } };
     ['C', 'PF', 'SF', 'SG', 'PG'].forEach(function (pos) {
-      groups[pos].slice(0, nT).forEach(function (li) { out[i].push(li); i += dir; if (i >= nT) { dir = -1; i = nT - 1; } if (i < 0) { dir = 1; i = 0; } });
-      over = over.concat(groups[pos].slice(nT));
+      var rest = [];
+      groups[pos].forEach(function (li, j) {
+        if (j >= nT) { rest.push(li); return; }
+        var tries = 0; while (!room(i) && tries++ < nT) step();
+        if (!room(i)) { rest.push(li); return; }
+        out[i].push(li); step();
+      });
+      over = over.concat(rest);
     });
     var sum = function (k) { return out[k].reduce(function (a, li) { return a + (n(li.getAttribute('data-ovr')) || 0); }, 0); };
     over.concat(groups['']).sort(byOvr).forEach(function (li) {
-      var best = 0; for (var k = 1; k < nT; k++) if (sum(k) < sum(best) || (sum(k) === sum(best) && out[k].length < out[best].length)) best = k;
+      var best = -1;
+      for (var k = 0; k < nT; k++) {
+        if (!room(k) && out.some(function (o, j) { return room(j); })) continue;
+        if (best < 0 || sum(k) < sum(best) || (sum(k) === sum(best) && out[k].length < out[best].length)) best = k;
+      }
       out[best].push(li);
     });
     tl.forEach(function (t, k) {
@@ -352,7 +378,7 @@
     }
     if (t.closest('[data-atb-balance]')) {
       if (!teams().length) { ui().toast('Add at least one team first.', { tone: 'error' }); return; }
-      ui().confirm({ title: 'Auto-balance the teams?', body: 'Reassigns every player by position and rating, starting from scratch. Nothing is saved until you press Save.', sendLabel: 'Auto-balance' })
+      ui().confirm({ title: 'Auto-balance the teams?', body: 'Reassigns every player by position and rating. Returning players who chose to stay keep their team. Nothing is saved until you press Save.', sendLabel: 'Auto-balance' })
         .then(function (ok) { if (ok) { autoBalance(); ui().toast('Balanced. Check it over, then save.'); } });
       return;
     }

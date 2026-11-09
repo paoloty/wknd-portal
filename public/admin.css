@@ -2638,6 +2638,7 @@ a.agd-name:hover { color: var(--amber-ink); }
 .atb-p__n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .atb-p__sub { font-size: 11.5px; color: var(--text-2); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .atb-new { flex: none; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; border-radius: 6px; font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: .04em; background: var(--aui-green-bg); color: var(--aui-green); }
+.atb-stay { background: var(--aui-amber-bg); color: var(--amber-ink); }
 .atb-p .atb-num { text-align: right; font-size: 15px; color: var(--text-2); }
 .atb-p .atb-p__ovr { font-size: 16px; font-weight: 700; color: var(--amber-ink); }
 .atb-team .atb-p .atb-p__ovr { color: var(--text-2); font-weight: 600; font-size: 15px; }

@@ -6,6 +6,7 @@
 import { escHtml } from '../layout.js';
 import { signupDisplayName } from '../utils.js';
 import { pageHeader, button, banner, avatar, drawer, menu, badge } from './ui.js';
+import { stayTeamId } from '../../lib/season-signup.js';
 
 const attr = s => escHtml(String(s ?? ''));
 const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
@@ -31,7 +32,7 @@ export function outlineDarkRings(html) {
 const avg = (list, k) => { const v = list.map(p => p[k]).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
 
 // One shape for every pool source (sign-ups, sandbox sign-ups, a past season's players).
-function normalise(p) {
+function normalise(p, teams = []) {
   let positions = [];
   try { positions = JSON.parse(p.positions || '[]'); } catch { positions = []; }
   // Jersey sizes, labelled: "Size M" when top and shorts match, else "Top M · Shorts L".
@@ -47,6 +48,9 @@ function normalise(p) {
     isNew: (p.career_games ?? 0) === 0,
     sizes,
     realTeam: p.real_team || '',
+    // Chose "stay with my team": the season team with their old team's name ('' if none).
+    stayTeam: stayTeamId(p, teams),
+    stayName: p.team_pref === 'stick' ? String(p.prev_team_name || '') : '',
   };
 }
 
@@ -54,8 +58,8 @@ function normalise(p) {
 // the pool and the × in a team.
 function playerItem(p, color, locked) {
   const sub = [p.pos || 'No position', p.sizes].filter(Boolean).join(' · ');
-  return `<li class="atb-p" data-id="${attr(p.id)}" data-name="${attr(p.name.toLowerCase())}" data-display="${attr(p.name)}" data-pos="${attr(p.primary)}" data-ovr="${p.ovr ?? ''}" data-off="${p.off ?? ''}" data-def="${p.def ?? ''}" data-real-team="${attr(p.realTeam)}"${locked ? '' : ' draggable="true"'}>
-    <span class="atb-p__main"${locked ? '' : ` role="button" tabindex="0" data-atb-move aria-haspopup="menu" aria-label="Move ${attr(p.name)} to…"`}>${avatar(p.name, color, { size: 32, playerId: p.playerId })}<span class="atb-p__who"><span class="atb-p__name"><span class="atb-p__n">${escHtml(p.name)}</span>${p.isNew ? '<span class="atb-new">NEW</span>' : ''}</span><span class="atb-p__sub">${escHtml(sub)}</span></span></span>
+  return `<li class="atb-p" data-id="${attr(p.id)}" data-name="${attr(p.name.toLowerCase())}" data-display="${attr(p.name)}" data-pos="${attr(p.primary)}" data-ovr="${p.ovr ?? ''}" data-off="${p.off ?? ''}" data-def="${p.def ?? ''}" data-real-team="${attr(p.realTeam)}"${p.stayTeam ? ` data-stay-team="${attr(p.stayTeam)}"` : ''}${locked ? '' : ' draggable="true"'}>
+    <span class="atb-p__main"${locked ? '' : ` role="button" tabindex="0" data-atb-move aria-haspopup="menu" aria-label="Move ${attr(p.name)} to…"`}>${avatar(p.name, color, { size: 32, playerId: p.playerId })}<span class="atb-p__who"><span class="atb-p__name"><span class="atb-p__n">${escHtml(p.name)}</span>${p.isNew ? '<span class="atb-new">NEW</span>' : ''}${p.stayName ? `<span class="atb-new atb-stay" title="Chose to stay with ${attr(p.stayName)}">STAY</span>` : ''}</span><span class="atb-p__sub">${escHtml(sub)}</span></span></span>
     <b class="atb-num atb-p__ovr">${p.ovr ?? '–'}</b><span class="atb-num atb-p__off">${p.off ?? '–'}</span><span class="atb-num atb-p__def">${p.def ?? '–'}</span>
     ${locked ? '' : `<button type="button" class="atb-icon atb-p__move" data-atb-move aria-haspopup="menu" tabindex="-1" aria-hidden="true">Move</button>
     <button type="button" class="atb-icon atb-p__out" data-atb-out aria-label="Send ${attr(p.name)} back to the pool">×</button>`}
@@ -108,16 +112,23 @@ function swatches(colors) {
   return `<div class="atb-swatches" role="radiogroup" aria-label="Team colour">${colors.map((c, i) => `<label class="atb-swatch"><input type="radio" name="color" value="${attr(c)}"${i === 0 ? ' checked' : ''}><span style="background:${attr(c)}" aria-label="${attr(c)}"></span></label>`).join('')}</div>`;
 }
 
-export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [], rosterMap = {}, draftStatus = '', isSandbox = false, sandboxSource = null, leagueTeams = [], rosterPublished = false, compare = null } = {}) {
+export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [], rosterMap = {}, draftStatus = '', isSandbox = false, sandboxSource = null, leagueTeams = [], rosterPublished = false, compare = null, autoPlaced = 0 } = {}) {
   const locked = !isSandbox && draftStatus === 'started';
   const confirmed = players.filter(p => p.status === 'confirmed');
   const byTeam = {};
   const assigned = new Set();
   for (const t of teams) {
-    byTeam[t.id] = (rosterMap[t.id] || []).map(normalise);
+    byTeam[t.id] = (rosterMap[t.id] || []).map(p => normalise(p, teams));
     byTeam[t.id].forEach(p => assigned.add(p.id));
   }
-  const pool = confirmed.filter(p => !assigned.has(String(p.id))).map(normalise);
+  const pool = confirmed.filter(p => !assigned.has(String(p.id))).map(p => normalise(p, teams));
+  // Returning players who chose to stay go on their old team by themselves (server.js); say so
+  // when it just happened, and when stayers have no team of that name on the board.
+  const stayNoTeam = isSandbox || locked || !teams.length ? [] : pool.filter(p => p.stayName && !p.stayTeam);
+  const stayHtml = [
+    autoPlaced ? banner('info', `${autoPlaced} returning ${autoPlaced === 1 ? 'player chose to stay, so they’re on their old team' : 'players chose to stay, so they’re on their old teams'} (marked STAY). Move anyone you like; they won’t be put back. ${rosterPublished ? 'Rosters are published, so players see this now.' : 'Players see nothing until you publish.'}`) : '',
+    stayNoTeam.length ? banner('warn', `${stayNoTeam.length} ${stayNoTeam.length === 1 ? 'player chose' : 'players chose'} to stay with a team that isn’t on the board (${[...new Set(stayNoTeam.map(p => p.stayName))].join(', ')}). Add or rename a team to that name, save, and they’re placed on it.`) : '',
+  ].join('');
   const season = isSandbox ? (sandboxSource?.targetSeason || '') : sigSeason;
   const poolSeason = isSandbox ? (sandboxSource?.season || '') : sigSeason;
   // Once the rosters are published, every save shows on /my-team straight away.
@@ -251,6 +262,7 @@ export function adminSeasonTeamsBody({ sigSeason = '', players = [], teams = [],
     ${header}
     ${locked ? banner('ok', 'Season started — teams are locked. Fees were charged against this draft, so it can’t be changed here.') : ''}
     ${statusHtml}
+    ${stayHtml}
     ${sourceHtml}
     ${balance}
     ${board}

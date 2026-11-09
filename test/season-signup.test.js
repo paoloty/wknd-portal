@@ -125,6 +125,17 @@ test('each pose has one winner: most votes, a tie to whoever got there first', (
   assert.equal(w.finals_mvp, undefined);
 });
 
+import { stayTeamId, returningToPlace } from '../lib/season-signup.js';
+test('team builder: confirmed "stay" players go on the team with their old team’s name, once', () => {
+  const teams = [{ id: 't-blue', name: 'Blue' }, { id: 't-mar', name: 'Maroon' }];
+  const s = (id, extra) => ({ id, status: 'confirmed', team_pref: 'stick', prev_team_name: 'BLUE', ...extra });
+  assert.equal(stayTeamId(s('a'), teams), 't-blue');               // names match ignoring case
+  assert.equal(stayTeamId(s('a', { team_pref: 'reshuffle' }), teams), '');
+  assert.equal(stayTeamId(s('a', { prev_team_name: 'White' }), teams), '');
+  const list = [s('a'), s('b', { status: 'waitlisted' }), s('c', { assigned_team_id: 't-mar' }), s('d'), s('e', { prev_team_name: 'Maroon' })];
+  assert.deepEqual(returningToPlace(list, teams, new Set(['d'])), [{ signup_id: 'a', team_id: 't-blue' }, { signup_id: 'e', team_id: 't-mar' }]);
+});
+
 import { ratherNotTally } from '../lib/season-nominations.js';
 test('rather-not tally: most named first, mutual pairs shown but not counted, own entry hidden', () => {
   const row = (by, of) => ({ nominator_player_id: by, nominee_player_id: of, nominator_name: by.toUpperCase() });
