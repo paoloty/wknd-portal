@@ -54,6 +54,15 @@
 .sgn-msg--info { background: var(--surface-2); color: var(--text); }
 .sgn-err { margin: 6px 2px 0; font-size: 12px; color: var(--sgn-danger); }
 
+/* Busy (public/signup.js busy()): the tapped button spins with "Saving…"; the others fade. */
+.sgn .is-busy { cursor: progress; pointer-events: none; }
+.sgn .sgn-btn.sgn-btn.is-busy { background: var(--amber); color: #1a1205; } /* over .is-off: the tap still saves */
+.sgn .sgn-btn.is-busy, .sgn .sgn-ghost.is-busy, .sgn .sgn-later.is-busy { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.sgn form.is-sending .sgn-actions button:not(.is-busy), .sgn form.is-sending .sgn-ed { opacity: .45; pointer-events: none; }
+.sgn-spin { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: sgn-spin .7s linear infinite; }
+@keyframes sgn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sgn-spin { animation-duration: 1.6s; } }
+
 /* Test mode (sign-ups closed, admins and testers only): an amber bar above the screen, and
    "Start over" on the Sent screen. The bar sits outside .sgn, so it names its own colours. */
 .sgn-testbar { padding: calc(9px + env(safe-area-inset-top, 0px)) 16px 9px; background: #f59332; color: #1a1205; font-size: 13px; line-height: 1.35; text-align: center; }
@@ -418,3 +427,11 @@ textarea.sgn-input { resize: vertical; min-height: 88px; line-height: 1.4; }
   .sgn-tiers { grid-template-columns: 1fr 1fr; }
 }
 .sgn-toast--err { background: var(--sgn-danger, #f87171); border-color: transparent; color: #fff; }
+
+/* The site's "Sign-ups are in the app" page (signupAppOnlyScreen). */
+.sgn-apponly .sgn-st:last-child { border-bottom: 0; }
+.sgn-apponly__qr { display: none; }
+@media (min-width: 760px) {
+  .sgn-apponly__qr { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+  .sgn-apponly__qr img { width: 160px; height: 160px; border-radius: 12px; background: #fff; padding: 8px; }
+}

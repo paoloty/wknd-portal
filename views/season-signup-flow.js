@@ -41,9 +41,10 @@ function topBar(kind, { back, backLabel, title, later = false }) {
 }
 
 // One screen: the top bar, the body, the bottom actions. The site centres it as a phone-width column.
+// The form's busy state (one submit at a time, the tapped button spins) is public/signup.js busy().
 function frame(kind, { bar, body, actions = '', form = null }) {
   const inner = `<div class="sgn-body">${body}</div>${actions ? `<div class="sgn-actions">${actions}</div>` : ''}`;
-  const content = form ? `<form id="sgn-form" method="post" action="${esc(form)}" novalidate data-busy>${inner}</form>` : inner;
+  const content = form ? `<form id="sgn-form" method="post" action="${esc(form)}" novalidate>${inner}</form>` : inner;
   return `<div class="sgn sgn--${kind}" data-sgn>${bar}${content}</div>`;
 }
 
@@ -508,6 +509,30 @@ export function gameFaceScreen(kind, x) {
 }
 
 // ── Not open, not approved, banned ────────────────────────────────────────────
+// The site's /season-signup: sign-ups are in the app only (Paolo, 2026-11-09). Old links and
+// emails land here. x: { season, deadline, open, qr } — qr: a data URL to /app/signup, for computers.
+export function signupAppOnlyScreen(x) {
+  const L = LINKS.site;
+  const s = esc(String(x.season || ''));
+  const head = x.open
+    ? `<div class="sgn-lbl sgn-lbl--amber">Season ${s} sign-up${x.deadline ? ` · Closes ${esc(x.deadline)}` : ''}</div><h1>Sign-ups are in the app</h1>
+       <p class="sgn-sub">Season ${s} sign-ups happen in the WKND app only. Here’s how.</p>`
+    : `<div class="sgn-lbl">Season sign-up</div><h1>Sign-ups are in the app</h1>
+       <p class="sgn-sub">Season sign-ups happen in the WKND app. They aren’t open right now; we’ll tell you in the app and by email when they are.</p>`;
+  const body = `<div class="sgn-head">${head}</div>
+    <div class="sgn-card sgn-apponly">
+      <div class="sgn-st"><span class="sgn-sn">1</span><span class="sgn-ct">Open the app<small>Not on your phone yet? Open wkndbasketball.com/app, then Share → Add to Home Screen.</small></span></div>
+      <div class="sgn-st"><span class="sgn-sn">2</span><span class="sgn-ct">Log in with this account</span></div>
+      <div class="sgn-st"><span class="sgn-sn">3</span><span class="sgn-ct">Tap Season ${s || ''} sign-up<small>On Home or Me</small></span></div>
+    </div>
+    ${x.qr ? `<div class="sgn-apponly__qr"><img src="${x.qr}" alt="QR code that opens the app's sign-up" width="160" height="160"><p class="sgn-fine">On a computer? Scan this with your phone.</p></div>` : ''}
+    <p class="sgn-links"><a href="/season-signup/how">How we choose the 48</a> · <a href="${esc(L.conduct)}">Conduct rules</a></p>`;
+  return frame('site', {
+    bar: topBar('site', { back: L.home, backLabel: L.homeLabel, title: 'Sign up' }),
+    body, actions: '<a class="sgn-btn" href="/app/signup">Open the app</a>',
+  });
+}
+
 export function signupNoticeScreen(kind, { title, body, action = '' }) {
   const L = LINKS[kind];
   return frame(kind, {

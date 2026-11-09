@@ -742,13 +742,13 @@ function memberSignupBannerBig({ season, headline, message, cta }) {
       <div class="reg-banner__eyebrow">
         <span class="reg-banner__pill">
           <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-          Season ${escHtml(String(season))} Signup Open
+          Season ${escHtml(String(season))} Sign-ups Open · In the App
         </span>
       </div>
       <h2 class="reg-banner__headline">${escHtml(headline || 'Lock In Your Spot.')}</h2>
       <p class="reg-banner__deadline">${escHtml(message || 'Confirm your spot for the upcoming season before signup closes.')}</p>
     </div>
-    <a href="/season-signup" class="reg-banner__cta">
+    <a href="/app/signup" class="reg-banner__cta">
       ${escHtml(cta || 'Sign Me Up')} <span aria-hidden="true">→</span>
     </a>
   </div>

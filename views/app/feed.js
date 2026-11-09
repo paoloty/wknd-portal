@@ -191,9 +191,11 @@ export function appFeedRows(items, prevDay = '', { eager = 0 } = {}) {
 // reason (public/app.js initPush shows it after a swap).
 // feed: the feed's first page ({ html, next }, server.js appFeedPage), in the screen itself so
 // the cards come with Home instead of one request later (Fable speed audit, 2026-10-28).
-export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', todos = [], pinned = null, rail = '', live = '', feed = null }) {
+// promoHtml: the season sign-up card (views/signup-promo.js), at the top while it shows.
+export function appHomeFeedPage({ header, setupHtml = '', installHtml = '', promoHtml = '', todos = [], pinned = null, rail = '', live = '', feed = null }) {
   const strip = todoCard(todos);
   return `${header}
+  ${promoHtml}
   ${setupHtml}
   ${installHtml}
   <div class="card glow push-ask" data-push-ask hidden>

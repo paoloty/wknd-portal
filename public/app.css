@@ -3243,3 +3243,31 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .cnd__form .msg { margin: 0; }
 .cnd__appeal summary { display: flex; align-items: center; min-height: 44px; font-size: 14px; font-weight: 600; color: var(--amber-text); cursor: pointer; list-style: none; }
 .cnd__appeal summary::-webkit-details-marker { display: none; }
+
+/* The season sign-up, promoted (views/signup-promo.js): the full-screen popup over Home and the
+   card at the top of Home. Amber is the accent; nothing team-coloured. */
+.sp-take { position: fixed; z-index: 33; /* under a poll popup (.tk), uncovered when it closes */ inset: 0; overflow-y: auto; overscroll-behavior: contain; display: flex;
+  padding: calc(var(--safe-t) + 56px) 20px calc(var(--safe-b) + 20px);
+  background: radial-gradient(120% 55% at 50% 0%, color-mix(in srgb, var(--amber) 22%, var(--bg)) 0%, var(--bg) 62%); }
+.sp-take__in { width: 100%; max-width: 480px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; gap: 12px; }
+.sp-take__x { position: absolute; top: calc(var(--safe-t) + 10px); right: 10px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--muted); font-size: 22px; line-height: 1; }
+.sp-take__x::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: var(--surface-2); z-index: -1; }
+.sp-ball { width: 60px; height: 60px; border-radius: 50%; position: relative; background: radial-gradient(circle at 35% 30%, #ffb36b, var(--amber) 55%, #b85f12); }
+.sp-ball::before, .sp-ball::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(26,18,5,.5); }
+.sp-ball::before { clip-path: inset(0 48% 0 48%); }
+.sp-ball::after { clip-path: inset(48% 0 48% 0); }
+.sp-kick { color: var(--amber-text); margin-top: 6px; }
+.sp-take__h { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.1; text-wrap: balance; }
+.sp-take__p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--muted); }
+.sp-take__grow { flex: 1; min-height: 12px; }
+.sp-take .btn { width: 100%; }
+.sp-never { min-height: 44px; background: none; border: 0; font: inherit; font-size: 14px; color: var(--muted); }
+.sp-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px 4px; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
+.sp-facts > div { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.sp-facts > div + div { border-left: 1px solid var(--hair); }
+.sp-facts b { font-family: var(--font-num); font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; }
+.sp-facts span { font-family: var(--font-num); font-weight: 600; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sp-card { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; border-color: color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 9%, var(--surface)); }
+.sp-chip { align-self: flex-start; display: inline-flex; align-items: center; min-height: 22px; padding: 0 9px; border-radius: 999px; background: var(--amber); color: #1a1205; font-family: var(--font-num); font-weight: 700; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; line-height: 1; }
+.sp-card__h { font-size: 15px; font-weight: 600; }
+.sp-card__p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); }

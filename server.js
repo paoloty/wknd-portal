@@ -2258,16 +2258,16 @@ Output exactly one "Adjective Animal" pair per line, no numbering, no bullets, n
 });
 
 function memberSignupBanner(season) {
-  const { message, cta } = pickSignupBannerMessage();
+  const { message } = pickSignupBannerMessage();
   return `<div class="member-signup-banner">
   <div class="member-signup-banner__copy">
     <span class="member-signup-banner__pill">
       <svg width="7" height="7" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
-      Season ${escHtml(String(season))} Signup Open
+      Season ${escHtml(String(season))} Sign-ups Open · In the App
     </span>
     <span class="member-signup-banner__msg">${escHtml(message)}</span>
   </div>
-  <a href="/season-signup" class="member-signup-banner__cta">${escHtml(cta)} →</a>
+  <a href="/app/signup" class="member-signup-banner__cta">Open the app →</a>
 </div>`;
 }
 
@@ -2568,19 +2568,13 @@ function renderPage(req, opts) {
   // Season signup banner — shown to approved members who haven't yet signed up. Not on the
   // homepage, which gets the bigger mid-page banner (registrationBanner/memberSignupBannerBig
   // in views/home.js) instead of this thin top strip.
+  // The same members the sign-up promotion reaches (server.js signupPromo), admins playing
+  // included; it leads to the app, where sign-ups happen.
   let showSignupBanner = false, signupBannerSeason = '';
-  if (isPlayer && !req.session?.isAdmin) {
-    const sigSeason   = getSetting('signup_target_season', '');
-    const sigOpen     = signupAccess(getRegistration(req.session.playerRegId)).open;
-    const onSignupPg  = opts.currentPath === '/season-signup';
-    const onHomePg    = opts.currentPath === '/';
-    if (sigSeason && sigOpen && !onSignupPg && !onHomePg) {
-      const existing = getSeasonSignup(req.session.playerRegId, sigSeason);
-      if (!existing) {
-        showSignupBanner   = true;
-        signupBannerSeason = sigSeason;
-      }
-    }
+  const signupPromoNow = isPlayer ? signupPromo(req) : null;
+  if (signupPromoNow && opts.currentPath !== '/season-signup' && opts.currentPath !== '/') {
+    showSignupBanner   = true;
+    signupBannerSeason = signupPromoNow.season;
   }
 
   // Jersey-request reminder — shown to any player admin has sent a jersey request to
@@ -2645,7 +2639,7 @@ function renderPage(req, opts) {
   const appBarHtml = appPlayer && !focused && /iPhone|iPad|iPod|Android/i.test(req.get('user-agent') || '') ? appUseBar() : '';
 
   const raffleBarHtml = !focused && opts.currentPath === '/' ? raffleHomeBar() : '';
-  const body = impersonatingHtml + suspendedBarHtml + lockedBarHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : pollPopupFor(req, opts.currentPath));
+  const body = impersonatingHtml + suspendedBarHtml + lockedBarHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : (signupPromoNow?.popup && !String(opts.currentPath || '').startsWith('/season-signup') ? siteSignupPopup(signupPromoNow, signupAppQr) : '') + pollPopupFor(req, opts.currentPath));
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
@@ -6806,7 +6800,12 @@ app.get('/app', requireApp, (req, res) => {
   // The To do card, Me's look: only things with a deadline (money, an open sign-up), gone
   // once done. Open picks are on the rail (the next game day's cards), so they're not here too.
   const rail = picksEnabled() && getUpcomingGames(getAllGames()).length > 0 ? appRailHtml(me) : '';
+  // The season sign-up, promoted (signupPromo): a card at the top in place of its To do row, and
+  // the full-screen popup now and then. A poll's popup sits on top of it; voting or putting the
+  // poll off uncovers it, so only one shows at a time.
+  const promo = signupPromo(req);
   const todos = appAccountTodos(me).filter(t => t.icon === 'wallet' || t.icon === 'form' || t.review)
+    .filter(t => !(promo && t.href === '/app/signup' && t.pill === 'Sign up'))
     .map(t => t.icon === 'wallet' ? { ...t, href: `${t.href}?from=home` } : t);
   const pin = getAppAnnouncements().find(a => a.pinned_until > Date.now() && !a.hidden_at);
   // The site's poll popup, full screen over Home (views/app/poll.js).
@@ -6818,9 +6817,9 @@ app.get('/app', requireApp, (req, res) => {
     bk = { unread: countBarkadahanUnread(me.playerId), online: on.length, faces: on.filter(id => id !== me.playerId).slice(0, 4).map(bkPerson),
       latest: last ? { name: bkPerson(last.player_id).name.split(' ')[0], body: !last.body && last.card ? (last.card.startsWith('pw:') ? 'shared a Papawis run' : 'shared a Who wins? game') : last.body.length > 80 ? `${last.body.slice(0, 80)}…` : last.body } : null };
   }
-  sendTab(res, me, { title: 'WKND', tab: 'home', body: (poll ? appPollTakeover({ poll, total: getLeaguePollVotes(poll.id).length }) : '') + appHomeFeedPage({
+  sendTab(res, me, { title: 'WKND', tab: 'home', body: (promo?.popup ? appSignupPopup(promo) : '') + (poll ? appPollTakeover({ poll, total: getLeaguePollVotes(poll.id).length }) : '') + appHomeFeedPage({
     header: homeHeader({ phase: appPhase(), unread: me.unread, bk }) + barkadahanCard(bk),
-    setupHtml: setupCard(setup), installHtml: installCard,
+    setupHtml: setupCard(setup), installHtml: installCard, promoHtml: promo ? appSignupCard(promo) : '',
     todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
     live: appLiveNowHtml(req, me),
     feed: appFeedPage(me),
@@ -9733,6 +9732,15 @@ app.get('/app/me', requireApp, (req, res) => {
   const todos = appAccountTodos(me);
   const open = appOpenPicks(me);
   if (open.length) todos.unshift({ icon: 'picks', title: open.length === 1 ? '1 game to pick' : `${open.length} games to pick`, sub: 'Who wins?', pill: 'Pick', href: '/app/picks', solid: true });
+  // Signed up and still waiting to be picked, sign-ups open: the way back to it (to change it or
+  // pick who you click with). Here only, not on the badge. Test mode has its own row.
+  {
+    const season = getSetting('signup_target_season', ''), acc = signupAccess(me.reg), mine = season ? getSeasonSignup(me.reg.id, season) : null;
+    if (mine?.status === 'waitlisted' && acc.open && !acc.testing) {
+      const by = getSetting('season_signup_deadline', '');
+      todos.push({ icon: 'form', title: `You’re signed up for Season ${season}`, sub: by ? `Change it until ${by}` : 'You can still change it', pill: 'View', href: '/app/signup' });
+    }
+  }
   // Picked by an admin to score a game (the scorer: /app/score).
   const toScore = scorableGameIds(me.playerId).length + pwScorableRuns(me.playerId).length;
   const meP = getPlayerById(me.playerId);
@@ -13773,14 +13781,9 @@ app.get('/', (req, res) => {
     };
   }
 
-  let signupBanner = null;
-  if (req.session?.playerRegId && !req.session?.isAdmin) {
-    const sigSeason = getSetting('signup_target_season', '');
-    const sigOpen   = signupAccess(getRegistration(req.session.playerRegId)).open;
-    if (sigSeason && sigOpen && !getSeasonSignup(req.session.playerRegId, sigSeason)) {
-      signupBanner = { season: sigSeason, ...pickSignupBannerMessage() };
-    }
-  }
+  // The big homepage banner: the sign-up promotion's members, leading to the app.
+  const promo = signupPromo(req);
+  const signupBanner = promo ? { season: promo.season, ...pickSignupBannerMessage(), cta: 'Open the app' } : null;
 
   const homePosts = getSetting('posts_enabled', '0') === '1' ? getPublicPosts() : [];
 
@@ -23214,11 +23217,12 @@ app.post('/register', (req, res) => {
 // steps saved as a draft as you go, Send, and the Sent screen with Edit until close. The same
 // routes serve the site (/season-signup) and the app (/app/signup); only the wrapper differs.
 // The rules live in lib/season-signup.js, the screens in views/season-signup-flow.js.
-import { signupStartScreen, signupStepScreen, signupSentScreen, signupClickScreen, signupNoticeScreen, signupHowScreen, paymentsCard } from './views/season-signup-flow.js';
+import { signupStartScreen, signupStepScreen, signupSentScreen, signupClickScreen, signupNoticeScreen, signupHowScreen, paymentsCard, signupAppOnlyScreen } from './views/season-signup-flow.js';
+import { appSignupPopup, appSignupCard, siteSignupPopup } from './views/signup-promo.js';
 import { SIZES as JERSEY_SIZES, SIZE_CHART, sizeSurcharge, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
 import { STEPS as SIGNUP_STEPS, LAST_STEP as SIGNUP_LAST, EXPECTATIONS_VERSION, PLAN_KEYS, MAX_CLICK_WITH, readStep, checkStep, checkAll, resumeStep, reviewLines, pickPose, poseByKey } from './lib/season-signup.js';
 import { playerRecord } from './lib/season-candidates.js';
-import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit, clearSeasonSignup } from './lib/portal-db.js';
+import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit, clearSeasonSignup, checkActivePlayer } from './lib/portal-db.js';
 
 // Returning-player team poll: only shown if they actually played the prior season and
 // still have a team on record.
@@ -23251,6 +23255,37 @@ function signupAccess(reg) {
   const testing = !!reg && getSetting('season_signup_test', '0') === '1' && (!!reg.is_admin || (!!reg.player_id && signupTesters().includes(String(reg.player_id))));
   return { open: testing, testing };
 }
+
+// ── Promoting the sign-up (app-only sign-ups, Paolo 2026-11-09; mockup
+// claude.ai/artifact/MJgoq4yqoP2qsCHgmvK4mH) ─────────────────────────────────────────────
+// Active members (checkActivePlayer: approved, can log in, seen within 90 days) who haven't
+// signed up see it: the app's popup and Home card, the site's popup and banners, all leading
+// to /app/signup. "Later" hides the popups for SIGNUP_PROMO_LATER_DAYS; "Not this season" hides
+// the popups, card and banners for good. Kept as app events, so the site and the app agree.
+// Members outside it can still sign up from the app's Me screen. → null, or what the pieces show
+const SIGNUP_PROMO_LATER_DAYS = 3;
+function signupPromo(req) {
+  if (req.session?.impersonating) return null;
+  const regId = req.session?.playerRegId;
+  const reg = regId ? getRegistration(regId) : null;
+  if (!reg?.player_id) return null;
+  const season = getSetting('signup_target_season', '');
+  if (!season || !signupAccess(reg).open || getSeasonSignup(regId, season)) return null;
+  if (hasAppEvent(regId, `signup_promo_never_${season}`) || !checkActivePlayer(reg.player_id).ok) return null;
+  return {
+    season, deadline: getSetting('season_signup_deadline', ''), spots: Number(getSetting('season_roster_capacity', '48')) || 48, fee: signupPrices().fee,
+    popup: !hasAppEvent(regId, `signup_promo_later_${season}`, Date.now() - SIGNUP_PROMO_LATER_DAYS * 86400000),
+  };
+}
+app.post('/season-signup/promo', express.json(), (req, res) => {
+  const regId = req.session?.playerRegId, season = getSetting('signup_target_season', ''), act = String(req.body?.act || '');
+  if (!regId || !season || !['later', 'never'].includes(act)) return res.status(400).json({ error: 'Nothing to save.' });
+  logAppEvent({ regId, playerId: req.session.playerPlayerId || '', type: `signup_promo_${act}_${season}` });
+  res.json({ ok: true });
+});
+// The site's popup on a computer: a QR code to the app's sign-up, made once.
+let signupAppQr = '';
+QRCode.toDataURL(`${SITE_ORIGIN}/app/signup`, { margin: 1, width: 240 }).then(u => { signupAppQr = u; }).catch(() => {});
 
 // Who is signing up and what the season looks like. null = not signed in.
 function signupState(req) {
@@ -23354,7 +23389,13 @@ function signupSentData(st, kind, signup) {
 }
 
 function signupStart(req, res) {
-  const kind = signupKindOf(req), st = signupState(req);
+  const kind = signupKindOf(req);
+  // The site's sign-up is the way to the app: sign-ups happen in the app only (Paolo, 2026-11-09).
+  if (kind === 'site') {
+    const season = getSetting('signup_target_season', ''), reg = req.session?.playerRegId ? getRegistration(req.session.playerRegId) : null;
+    return sendSignup(req, res, 'site', signupAppOnlyScreen({ season, deadline: getSetting('season_signup_deadline', ''), open: !!season && (getSetting('season_signup_open', '0') === '1' || signupAccess(reg).open), qr: signupAppQr }), { title: 'Sign up in the app' });
+  }
+  const st = signupState(req);
   if (signupBlocked(req, res, kind, st)) return;
   const signup = st.season ? getSeasonSignup(st.regId, st.season) : null;
   const { draft, d } = signupDraft(st);
@@ -23371,6 +23412,8 @@ function signupStart(req, res) {
 }
 app.get('/season-signup', signupStart);
 app.get('/app/signup', requireApp, signupStart);
+// The site's steps, edit, click-with and start over: all in the app now, so to the page that says so.
+app.all(['/season-signup/:n(\\d)', '/season-signup/edit', '/season-signup/click', '/season-signup/reset'], (req, res) => res.redirect(303, '/season-signup'));
 
 app.get(['/season-signup/how', '/app/signup/how'], (req, res, next) => (signupKindOf(req) === 'app' ? requireApp(req, res, next) : next()), (req, res) => {
   const kind = signupKindOf(req);

@@ -103,6 +103,24 @@
     paint();
   }
 
+  // The season sign-up popup on Home (views/signup-promo.js): Later, ✕ and "Sign up now" put it
+  // off for a few days, "Not this season" for good (POST /season-signup/promo). Sign up now is
+  // a link, so the screen change goes on as usual.
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-sp-act]');
+    if (!b) return;
+    try { fetch('/season-signup/promo', { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ act: b.getAttribute('data-sp-act') }) }); } catch (err) {}
+    // Kept on the phone too, for a saved copy of Home (initPage). 3 days, like the server's SIGNUP_PROMO_LATER_DAYS.
+    var spSeason = (b.closest('[data-sp-season]') || document.querySelector('[data-sp-season]') || { getAttribute: function () { return ''; } }).getAttribute('data-sp-season');
+    try { localStorage.setItem('wknd-sp-' + spSeason, JSON.stringify(b.getAttribute('data-sp-act') === 'never' ? { never: 1 } : { until: Date.now() + 3 * 864e5 })); } catch (err) {}
+    if (b.getAttribute('data-sp-act') === 'never') { var card = document.querySelector('.sp-card'); if (card) card.remove(); }
+    var box = b.closest('[data-sp]');
+    if (b.hasAttribute('data-sp-go')) { if (box) setTimeout(function () { box.remove(); }, 300); return; }
+    e.preventDefault();
+    if (box) box.remove();
+    if (b.getAttribute('data-sp-act') === 'never') toast('Got it. No more reminders this season.', 'ok');
+  });
+
   // Me → cover photo: shrunk on the phone first (a 12 MP photo would take ages on a weak signal),
   // then cropped wide by the server (POST /app/me/cover). Remove goes back to the latest game's.
   var coverBusy = false;
@@ -902,6 +920,14 @@
       };
       tick(); cdTimer = setInterval(tick, 30000);
     }
+
+    // The season sign-up popup and card: a saved copy of Home can still carry them after Later or
+    // "Not this season" (the server already knows; the phone remembers too until the copy refreshes).
+    try {
+      var spEl = $('[data-sp-season]'), spHide = spEl ? JSON.parse(localStorage.getItem('wknd-sp-' + spEl.getAttribute('data-sp-season')) || '{}') : {};
+      if (spHide.until > Date.now() || spHide.never) { var spBox = $('[data-sp]'); if (spBox) spBox.remove(); }
+      if (spHide.never) { var spCard = $('.sp-card'); if (spCard) spCard.remove(); }
+    } catch (e) {}
 
     // Forms: one submit at a time; remember unsaved input (see the update check)
     // (the keyboard's Go submits again even with the button busy, so a second submit is stopped)

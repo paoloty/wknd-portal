@@ -10951,3 +10951,41 @@ html.ppop-lock { overflow: hidden; }
   .pw-lock-bar { flex-wrap: wrap; margin-top: -14px; }
   .pw-lock-bar__btn { width: 100%; height: 40px; }
 }
+
+/* The season sign-up, promoted (views/signup-promo.js siteSignupPopup): a sheet from the bottom on
+   phones, a dialog with a QR code to the app on computers. Sign-ups are in the app only. */
+.spp { position: fixed; inset: 0; z-index: 999; /* under a poll popup (.ppop) */ display: flex; align-items: flex-end; justify-content: center; }
+.spp[hidden] { display: none; }
+html.spp-open { overflow: hidden; }
+.spp-scrim { position: absolute; inset: 0; background: rgba(5,7,12,.72); }
+.spp-card { position: relative; width: 100%; max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 14px; padding: 12px max(18px, env(safe-area-inset-left, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid rgba(255,255,255,.1); border-radius: 22px 22px 0 0; box-shadow: 0 -20px 60px rgba(0,0,0,.5); }
+.spp-card:focus { outline: none; }
+.spp-grab { align-self: center; width: 38px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); }
+.spp-x { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 99px; border: 1px solid rgba(255,255,255,.12); background: transparent; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1; cursor: pointer; font-family: inherit; }
+.spp-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.spp-kick { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); line-height: 1; padding-right: 40px; }
+.spp-h { margin: 0; font-size: 22px; font-weight: 800; line-height: 1.15; letter-spacing: -.01em; color: var(--text); text-wrap: balance; }
+.spp-p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+.spp-app { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.spp-logo { width: 34px; height: 34px; border-radius: 9px; overflow: hidden; flex: none; }
+.spp-logo img { display: block; width: 100%; height: 100%; }
+.spp-app b { display: block; font-size: 14px; color: var(--text); }
+.spp-app small { font-size: 12px; color: var(--text-muted); }
+.spp-btns { display: flex; flex-direction: column; gap: 8px; }
+.spp-btn { display: flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 16px; border-radius: 12px; border: 0; background: var(--amber); color: #1a1205; font: inherit; font-size: 15px; font-weight: 700; line-height: 1; text-decoration: none; cursor: pointer; }
+.spp-btn--ghost { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.spp-never { align-self: center; min-height: 40px; background: none; border: 0; font: inherit; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.spp-never:hover, .spp-x:hover { color: var(--text); }
+.spp-qr { display: none; }
+@media (min-width: 760px) {
+  .spp { align-items: center; padding: 24px; }
+  .spp-card { width: min(640px, 100%); flex-direction: row; align-items: center; gap: 24px; padding: 26px; border: 1px solid rgba(255,255,255,.12); border-radius: var(--radius-lg, 18px); box-shadow: 0 30px 80px rgba(0,0,0,.55); }
+  .spp-grab { display: none; }
+  .spp-main { flex: 1; }
+  .spp-btns { flex-direction: row; }
+  .spp-btns > * { flex: 1; }
+  .spp-never { align-self: flex-start; }
+  .spp-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: none; }
+  .spp-qr img { width: 150px; height: 150px; border-radius: 12px; background: #fff; padding: 8px; }
+  .spp-qr small { font-size: 12px; color: var(--text-muted); }
+}
