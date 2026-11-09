@@ -208,16 +208,34 @@
       var data = new URLSearchParams(new FormData(form));
       if (b && b.name) data.append(b.name, b.value);
       var bar = loadBar();
-      fetch(form.getAttribute('action'), { method: 'POST', body: data, credentials: 'same-origin', headers: { 'X-Sgn-Fetch': '1', Accept: 'text/html' } })
-        .then(function (r) { return r.text().then(function (t) { return { r: r, t: t }; }); })
+      var send = function () {
+        return fetch(form.getAttribute('action'), { method: 'POST', body: data, credentials: 'same-origin', headers: { 'X-Sgn-Fetch': '1', Accept: 'text/html' } })
+          .then(function (r) { return r.text().then(function (t) { return { r: r, t: t }; }); });
+      };
+      // A failed trip is tried once more: iPhones drop idle connections while the app is in the
+      // background, so the first request after coming back can fail on a good signal (a tester's
+      // "No connection" with internet, 2026-11-09). Saving a step twice is harmless.
+      send()
+        .catch(function () { return new Promise(function (ok) { setTimeout(ok, 700); }).then(send); })
         .then(function (x) {
-          var to = x.r.headers.get('X-Sgn-Url') || (x.r.redirected ? x.r.url : '');
-          var url = to ? new URL(to, location.href).href : '';
-          bar.done();
-          if ((x.r.ok || x.r.status === 400) && swapScreen(x.t, url)) return;
+          var url = '';
+          try {
+            var to = x.r.headers.get('X-Sgn-Url') || (x.r.redirected ? x.r.url : '');
+            url = to ? new URL(to, location.href).href : '';
+            bar.done();
+            if ((x.r.ok || x.r.status === 400) && swapScreen(x.t, url)) return;
+          } catch (err) { /* the step was saved; something here broke: load the next screen properly */ }
           location.href = url || location.href; // not a sign-up screen (signed out, an error page): load it properly
-        })
-        .catch(function () { bar.done(); reset(); gfToast('No connection. Your answers are still here. Try again.', 'err'); });
+        }, function () {
+          bar.done();
+          // Still failing but the phone says it's online: send it the plain way (a normal page load).
+          if (navigator.onLine !== false) {
+            if (b && b.name) { var h = document.createElement('input'); h.type = 'hidden'; h.name = b.name; h.value = b.value; form.appendChild(h); }
+            HTMLFormElement.prototype.submit.call(form);
+            return;
+          }
+          reset(); gfToast('No connection. Your answers are still here. Try again.', 'err');
+        });
     });
     form._sgnReset = reset;
     // Back to this screen from the browser's history: buttons as they were (one listener for
