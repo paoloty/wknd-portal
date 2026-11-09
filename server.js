@@ -207,7 +207,7 @@ import { buildLogRows, playerAuditRoute, captureConsoleErrors } from './lib/acti
 import { seasonStepState } from './lib/season-steps.js';
 import { startRefusal, startEmailState } from './lib/season-start.js';
 import { cleanTiming, summarizeTimings } from './lib/app-timing.js';
-import { cleanNominations, summarizeNominations } from './lib/season-nominations.js';
+import { cleanNominations, summarizeNominations, ratherNotTally, NOMINATION_FLAG_AT } from './lib/season-nominations.js';
 import { adminShareCardLogPage } from './views/admin/share-log.js';
 import { adminBirthdaysBody, birthdayEmailStatus } from './views/admin/birthdays.js';
 import { adminFinanceDashBody } from './views/admin/finance-dash.js';
@@ -24094,6 +24094,26 @@ function gameFaceAdmin(season) {
 
 // "Wouldn't play with again" answers as an admin may see them. An elevated admin is also a player;
 // the shared super-admin login isn't.
+// The Season page's "Rather not play with" (lib/season-nominations.js ratherNotTally): who was named
+// on step 4, how often and by whom, with mutual pairs apart; plus the counts that give it context.
+// minCount: 2 for "2+ only". → { rows: [...], answered, namedSomeone, names, flagAt }
+function seasonRatherNotAdmin(season, req, { minCount = 0 } = {}) {
+  const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const live = getSeasonSignups(season).filter(x => x.status === 'waitlisted' || x.status === 'confirmed');
+  const signedUp = new Set(live.map(x => x.player_id).filter(Boolean)), liveRegs = new Set(live.map(x => x.reg_id));
+  // Only the names on sign-ups that still stand (a withdrawn or turned-down one's names drop out).
+  const noms = getSeasonNominations(season).filter(n => liveRegs.has(n.nominator_reg_id));
+  const nameOf = n => displayPlayerName(players[n.nominator_player_id]?.name || n.nominator_full_name || '') || 'A member';
+  const tally = ratherNotTally(noms.map(n => ({ nominee_player_id: n.nominee_player_id, nominator_player_id: n.nominator_player_id || '', nominator_name: nameOf(n) })),
+    { viewerPlayerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' });
+  const teams = getAllTeams();
+  const rows = tally.filter(e => e.count >= minCount).map(e => {
+    const p = players[e.playerId] || {}, t = teams.find(x => x.id === p.team_id);
+    return { ...e, name: displayPlayerName(p.name || '') || 'A player', team: t?.name || '', color: t ? (t.color || teamColor(t.name)) : '', signedUp: signedUp.has(e.playerId) };
+  });
+  const namedSomeone = new Set(noms.map(n => n.nominator_reg_id)).size;
+  return { rows, answered: live.length, namedSomeone, names: noms.length, flagAt: NOMINATION_FLAG_AT, total: tally.length };
+}
 function seasonNominationsFor(season, req) {
   return summarizeNominations(getSeasonNominations(season).map(n => ({ nominee_player_id: n.nominee_player_id, nominator_name: displayPlayerName(n.nominator_full_name) || 'A member' })), { viewerPlayerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' });
 }
@@ -24484,7 +24504,8 @@ app.get('/admin/season', requireAuth, (req, res) => {
     body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline,
       // How the deadline reads (the countdown and reminders count to the end of that day), or null.
       deadlineReads: (ms => (ms == null ? null : manilaFormat(ms, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })))(signupDeadlineMs(deadline)),
-      portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason), noPhoto: sigSeason ? seasonNoPhotoAdmin(sigSeason) : [], saidNo: sigSeason ? seasonSaidNoAdmin(sigSeason) : [] }),
+      portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason), noPhoto: sigSeason ? seasonNoPhotoAdmin(sigSeason) : [], saidNo: sigSeason ? seasonSaidNoAdmin(sigSeason) : [],
+      ratherNot: sigSeason ? seasonRatherNotAdmin(sigSeason, req, { minCount: req.query.rn === '2' ? NOMINATION_FLAG_AT : 0 }) : null, ratherNotTwo: req.query.rn === '2' }),
   }));
 });
 

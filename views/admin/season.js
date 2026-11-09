@@ -2,7 +2,7 @@
 // The details for the season being set up, with one Save; opening sign-ups; moving on to the next
 // season. Saves through /admin/season/settings and /admin/season/start.
 import { escHtml } from '../layout.js';
-import { pageHeader, section, field, fieldGrid, button, toggleRow, needsYou, badge } from './ui.js';
+import { pageHeader, section, field, fieldGrid, button, toggleRow, needsYou, badge, avatar } from './ui.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
@@ -12,7 +12,7 @@ export function adminSeasonBody({
   seasonFormat = '', quotaAmount = '', jerseyTopPrice = '', jerseyShortPrice = '', teamCount = '4',
   jerseySurchargeStep = '50', jerseyPocketsPrice = '100', seasonRosterCapacity = '',
   allSeasons = [], jerseyCutPrice = '50', payments = null, volunteers = [], gameFace = null,
-  noPhoto = [], saidNo = [], deadlineReads = null,
+  noPhoto = [], saidNo = [], deadlineReads = null, ratherNot = null, ratherNotTwo = false,
 } = {}) {
   const started = draftStatus === 'started';
   const known = [...new Set(allSeasons.map(String))].sort((a, b) => Number(b) - Number(a));
@@ -71,6 +71,7 @@ export function adminSeasonBody({
     ${started ? '' : signupsBlock}
     ${paymentsBlock(payments)}
     ${volunteersBlock(volunteers)}
+    ${ratherNotBlock(ratherNot, ratherNotTwo)}
     ${noPhotoBlock(noPhoto)}
     ${saidNoBlock(saidNo)}
     ${gameFaceBlock(gameFace)}
@@ -110,6 +111,31 @@ function gameFaceBlock(g) {
   return section({
     id: 'season-gameface', title: 'Game Face contest', note: `· ${g.entries.length} entr${g.entries.length === 1 ? 'y' : 'ies'}`,
     bodyHtml: `<div class="aui-panel">${head}${rows}</div>`,
+  });
+}
+
+// "Rather not play with" (mockup claude.ai/artifact/LnU41XMwmmbcaFSs7z2nvH): every player named on
+// step 4, most-named first, red from flagAt names; a pair who named each other (↔) is shown but not
+// counted. Names open the player's admin page. Admins only; players are never told.
+// r: server.js seasonRatherNotAdmin; two: the "2+ only" view is on.
+function ratherNotBlock(r, two = false) {
+  if (!r || (!r.total && !r.answered)) return '';
+  const chip = (w, mutual) => `<a class="aset-chip${mutual ? ' aset-chip--mutual' : ''}" href="/admin/players/${attr(w.playerId)}"${mutual ? ' title="They named each other"' : ''}>${mutual ? '↔ ' : ''}${escHtml(w.name)}</a>`;
+  const rows = r.rows.map(e => {
+    const n = e.count + (e.mutual.length ? `<small>+${e.mutual.length} mutual</small>` : '');
+    const who = e.hidden
+      ? `<span class="aset-chip aset-chip--muted">${e.total} ${e.total === 1 ? 'person' : 'people'} (you can’t see who, since it’s you)</span>`
+      : [...e.names.map(w => chip(w, false)), ...e.mutual.map(w => chip(w, true))].join('');
+    return `<div class="aset-rn"><div class="aset-rn__who">${avatar(e.name, e.color, { size: 32, playerId: e.playerId })}
+        <div class="aset-rn__text"><a class="aui-cell__title" href="/admin/players/${attr(e.playerId)}">${escHtml(e.name)}</a><div class="aui-cell__sub">${escHtml([e.team, e.signedUp ? 'Signed up' : 'Not signed up'].filter(Boolean).join(' · '))}</div></div>
+        <span class="aset-rn__n aset-rn__n--${e.flagged ? 'red' : 'amber'}">${n}</span></div>
+      <div class="aset-chips">${who}</div></div>`;
+  }).join('') || `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__sub">${two ? `Nobody is named by ${r.flagAt} or more yet.` : 'Nobody named anyone yet.'}</div></div></div>`;
+  const summary = `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__sub"><b>${r.answered}</b> signed up · <b>${r.answered - r.namedSomeone}</b> named no one · <b>${r.namedSomeone}</b> named someone · <b>${r.names}</b> name${r.names === 1 ? '' : 's'} in all</div></div>
+    <div class="aset-next__go"><span class="aset-seg"><a href="/admin/season#season-rathernot"${two ? '' : ' class="is-on"'}>All named</a><a href="/admin/season?rn=2#season-rathernot"${two ? ' class="is-on"' : ''}>${r.flagAt}+ only</a></span></div></div>`;
+  return section({
+    id: 'season-rathernot', title: 'Rather not play with', note: `· ${r.total} player${r.total === 1 ? '' : 's'} named · admins only`,
+    bodyHtml: `<div class="aui-panel">${summary}${rows}<p class="aui-cell__sub aset-rn__note">Red from ${r.flagAt} names. ↔ means they named each other: shown, not counted.</p></div>`,
   });
 }
 

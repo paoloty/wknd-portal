@@ -3431,3 +3431,21 @@ select.aui-input { padding-left: 9px; }
 .afn-examples { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: var(--text); }
 /* Papawis teams */
 .aui-row-end { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* Season → "Rather not play with" (views/admin/season.js ratherNotBlock). */
+.aset-rn { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--aui-line, #eef0f3); }
+.aset-rn__who { display: flex; align-items: center; gap: 10px; }
+.aset-rn__text { flex: 1; min-width: 0; }
+.aset-rn__text a { color: inherit; text-decoration: none; }
+.aset-rn__n { display: inline-flex; align-items: center; gap: 4px; min-width: 30px; height: 26px; padding: 0 9px; border-radius: 999px; font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; justify-content: center; line-height: 1; }
+.aset-rn__n small { font-size: 11px; font-weight: 600; opacity: .8; }
+.aset-rn__n--red { background: #fee2e2; color: #b91c1c; }
+.aset-rn__n--amber { background: #fef3c7; color: #92400e; }
+.aset-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 42px; }
+.aset-chip { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; background: #f3f4f6; font-size: 13px; color: inherit; text-decoration: none; line-height: 1; }
+.aset-chip--mutual { background: #e0e7ff; color: #3730a3; font-weight: 600; }
+.aset-chip--muted { color: #6b7280; font-style: italic; }
+.aset-seg { display: inline-flex; border: 1px solid #e5e7eb; border-radius: 9px; overflow: hidden; }
+.aset-seg a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 11px; font-size: 13px; font-weight: 600; color: #6b7280; text-decoration: none; background: #fff; line-height: 1; }
+.aset-seg a.is-on { background: #111827; color: #fff; }
+.aset-rn__note { margin: 10px 0 0; }

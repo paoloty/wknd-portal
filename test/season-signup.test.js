@@ -124,3 +124,15 @@ test('each pose has one winner: most votes, a tie to whoever got there first', (
   assert.equal(w.too_small, undefined);
   assert.equal(w.finals_mvp, undefined);
 });
+
+import { ratherNotTally } from '../lib/season-nominations.js';
+test('rather-not tally: most named first, mutual pairs shown but not counted, own entry hidden', () => {
+  const row = (by, of) => ({ nominator_player_id: by, nominee_player_id: of, nominator_name: by.toUpperCase() });
+  const rows = [row('a', 'x'), row('b', 'x'), row('c', 'x'), row('d', 'y'), row('y', 'd'), row('e', 'y'), row('f', 'me')];
+  const t = ratherNotTally(rows, { viewerPlayerId: 'me' });
+  assert.deepEqual(t.map(e => [e.playerId, e.count, e.mutual.length]), [['x', 3, 0], ['y', 1, 1], ['me', 1, 0], ['d', 0, 1]]);
+  assert.equal(t[0].flagged, true);
+  assert.equal(t[1].flagged, false);           // 1 counted + 1 mutual: not red
+  assert.deepEqual(t[2].names, []);            // the viewer can't see who named them
+  assert.equal(t[2].hidden, true);
+});
