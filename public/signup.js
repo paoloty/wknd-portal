@@ -178,6 +178,30 @@
     });
   }
 
+  // Tapping Next, Send, Back or Save: that button spins ("Saving…"), the others fade, and a
+  // second tap (or the keyboard's Go) is ignored until the next screen is in. Not on a submit
+  // something else stopped (guardSend's "take your game face first").
+  var BUSY_LABEL = { next: 'Saving…', send: 'Sending…', later: 'Saving…' };
+  function busy(root) {
+    var form = $('#sgn-form', root); if (!form) return;
+    form.addEventListener('submit', function (e) {
+      if (e.defaultPrevented) return;
+      if (form._sending) { e.preventDefault(); return; }
+      form._sending = true;
+      var b = e.submitter; form.classList.add('is-sending');
+      if (!b) return;
+      b.classList.add('is-busy'); b.setAttribute('aria-busy', 'true');
+      b._was = b.innerHTML;
+      var label = BUSY_LABEL[b.value] || '';
+      b.innerHTML = '<span class="sgn-spin" aria-hidden="true"></span>' + (label ? '<span>' + label + '</span>' : '');
+    });
+    // Back to this screen from the browser's history: buttons as they were.
+    window.addEventListener('pageshow', function () {
+      form._sending = false; form.classList.remove('is-sending');
+      $$('.is-busy', root).forEach(function (b) { b.classList.remove('is-busy'); b.removeAttribute('aria-busy'); if (b._was != null) b.innerHTML = b._was; });
+    });
+  }
+
   // Step 4's "Anyone you'd rather not play with?": Yes shows the list, No hides it.
   function avoidAsk(root) {
     var q = $('[data-sgn-avoid]', root); if (!q) return;
@@ -332,7 +356,7 @@
     $$('[data-sgn]').forEach(function (root) {
       if (root.getAttribute('data-sgn-ready')) return;
       root.setAttribute('data-sgn-ready', '1');
-      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); avoidAsk(root); waiverLink(root); guardSend(root); gfViewer(root);
+      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); avoidAsk(root); waiverLink(root); guardSend(root); busy(root); gfViewer(root);
       var e = $('[aria-invalid="true"]', root);
       if (e && e.scrollIntoView) e.scrollIntoView({ block: 'center' });
     });
