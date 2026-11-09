@@ -6407,7 +6407,11 @@ function appSeasonState(me) {
     { icon: 'team', title: me.team ? `You're on ${me.team.name}` : 'Not on a team yet', sub: me.team ? '' : 'Teams show up once rosters are out', done: true },
   ];
   if (signupOpen || signup) {
-    rows.push(signup
+    // A tester's sent sign-up stays on To do while test mode is on: the way back to it (and
+    // Start over), since a done row isn't shown.
+    rows.push(signup && access.testing && signup.status === 'waitlisted'
+      ? { icon: 'form', title: `Signed up for Season ${season}`, sub: 'Test mode: view it or start over', pill: 'Open', href: '/app/signup', done: false }
+      : signup
       ? { icon: 'form', title: `Signed up for Season ${season}`, href: '/app/signup', done: true }
       : { icon: 'form', title: `Season ${season} sign-up`, sub: access.testing ? 'Test mode: only admins and testers see this' : 'Sign-ups are open', pill: 'Sign up', href: '/app/signup', done: false });
   }
