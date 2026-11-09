@@ -5,28 +5,58 @@
 // p: { season, deadline, spots, fee, popup }
 import { escHtml as esc } from './layout.js';
 
-const peso = n => `₱${Number(n).toLocaleString('en-PH')}`;
 // "December 15, 2026" → "Dec 15"; anything that doesn't read as a date stays as typed.
 function shortDay(s) {
   const t = Date.parse(s || '');
   return Number.isNaN(t) ? String(s || 'Soon') : new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
-const facts = p => `<div class="sp-facts">
-    <div><b>${esc(shortDay(p.deadline))}</b><span>Closes</span></div>
-    <div><b>${esc(String(p.spots))}</b><span>Spots</span></div>
-    <div><b>${esc(peso(p.fee))}+</b><span>Fee + jersey</span></div>
+
+// ── The popup's pieces (mockup claude.ai/artifact/TezEmy2yyspWF51yKLMViW, A + B) ──
+// p adds server.js signupPromoDetail: { first, photo, ring, leagueSeason, line: [{ v, l }] | null,
+// daysLeft, count (null below the threshold), friends: [{ first, photo }], inTotal, photos[] }
+// Game photos behind it all, panning and crossfading (one still photo with reduced motion), under
+// a halftone pattern, a vignette and a scrim that darkens toward the buttons.
+// The crossfade is timed for 4 (6s each): 2 or 3 photos repeat to make 4; 1 just pans.
+const fourOf = list => (list.length > 1 && list.length < 4 ? [...list, ...list, ...list].slice(0, 4) : list);
+const photoShow = p => (p.photos?.length ? `<div class="sp-photos" aria-hidden="true">${fourOf(p.photos).map((u, i) => `<i style="background-image:url('${esc(u)}');animation-delay:${i * 6}s,${i * 6}s"></i>`).join('')}</div>` : '');
+const headline = p => (p.line ? `Run it back, <em>${esc(p.first)}</em>.` : `Your Season ${esc(String(p.season))} starts here, <em>${esc(p.first)}</em>.`);
+const hero = (p, id) => `<div class="sp-hero">
+    <span class="sp-face" style="--ring:${esc(p.ring || 'var(--amber)')}"><img src="${esc(p.photo)}" alt="" width="64" height="64"></span>
+    <div><div class="sp-kick">Season ${esc(String(p.season))} · Sign-ups open</div><h2 class="sp-h" id="${id}">${headline(p)}</h2></div>
   </div>`;
+const statLine = p => (p.line ? `<div class="sp-line">${p.line.map(s => `<div><b>${esc(s.v)}</b><span>${esc(s.l)}</span></div>`).join('')}</div>` : '');
+function clock(p) {
+  if (p.daysLeft == null) return '';
+  const tone = p.daysLeft <= 2 ? ' is-red' : p.daysLeft <= 7 ? ' is-amber' : '';
+  const right = p.count != null
+    ? `<div class="sp-fill__t"><span>Signed up</span><span><b>${p.count}</b> of ${esc(String(p.spots))} spots</span></div>
+       <div class="sp-bar"><i style="width:${Math.min(100, Math.round((p.count / p.spots) * 100))}%"></i></div>
+       <small>Picked after ${esc(shortDay(p.deadline))}, not first come.</small>`
+    : `<div class="sp-fill__t"><span>Closes <b>${esc(shortDay(p.deadline))}</b></span></div>
+       <small>${esc(String(p.spots))} spots, picked after sign-ups close, not first come.</small>`;
+  return `<div class="sp-clock"><div class="sp-days${tone}"><b>${p.daysLeft}</b><span>${p.daysLeft === 1 ? 'Day left' : 'Days left'}</span></div><div class="sp-fill">${right}</div></div>`;
+}
+function friendsLine(p) {
+  const names = p.friends.slice(0, 2).map(f => f.first);
+  const others = Math.max(0, p.inTotal - names.length);
+  if (names.length) {
+    const faces = p.friends.map(f => `<img src="${esc(f.photo)}" alt="" width="26" height="26">`).join('');
+    return `<div class="sp-who"><span class="sp-faces">${faces}</span><span><b>${esc(names.join(', '))}</b>${others ? ` and ${others} other${others === 1 ? '' : 's'} are in` : names.length > 1 ? ' are in' : ' is in'}</span></div>`;
+  }
+  return p.count != null ? `<div class="sp-who"><span><b>${p.count}</b> members are in</span></div>` : '';
+}
 
 // App, over Home: once, then again every few days until they sign up.
 export function appSignupPopup(p) {
-  return `<div class="sp-take" data-sp data-sp-season="${esc(String(p.season))}" role="dialog" aria-modal="true" aria-labelledby="sp-h">
+  return `<div class="sp-take${p.photos?.length ? ' sp-take--photo' : ''}" data-sp data-sp-season="${esc(String(p.season))}" role="dialog" aria-modal="true" aria-labelledby="sp-h">
+  ${photoShow(p)}
   <button type="button" class="sp-take__x" data-sp-act="later" aria-label="Close, remind me later">&times;</button>
   <div class="sp-take__in">
-    <div class="sp-ball" aria-hidden="true"></div>
-    <div class="kick sp-kick">Season ${esc(String(p.season))} · Sign-ups open</div>
-    <h2 class="sp-take__h" id="sp-h">Count me in for Season ${esc(String(p.season))}</h2>
-    <p class="sp-take__p">${esc(String(p.spots))} spots, picked after sign-ups close. About 5 minutes, and you can stop and finish later.</p>
-    ${facts(p)}
+    <div class="sp-take__top"></div>
+    ${hero(p, 'sp-h')}
+    ${statLine(p)}
+    ${clock(p)}
+    ${friendsLine(p)}
     <div class="sp-take__grow"></div>
     <a class="btn" href="/app/signup" data-sp-act="later" data-sp-go>Sign up now</a>
     <button type="button" class="btn btn--plain" data-sp-act="later">Later</button>
@@ -49,14 +79,16 @@ export function appSignupCard(p) {
 export function siteSignupPopup(p, qr = '') {
   return `<div class="spp" data-spp hidden>
   <div class="spp-scrim" data-spp-act="later"></div>
-  <div class="spp-card" role="dialog" aria-modal="true" aria-labelledby="spp-h" tabindex="-1">
+  <div class="spp-card${p.photos?.length ? ' spp-card--photo' : ''}" role="dialog" aria-modal="true" aria-labelledby="spp-h" tabindex="-1">
+    ${photoShow(p)}
     <span class="spp-grab" aria-hidden="true"></span>
     <button type="button" class="spp-x" data-spp-act="later" aria-label="Close, remind me later">&times;</button>
     <div class="spp-main">
-      <div class="spp-kick">Season ${esc(String(p.season))} · Sign-ups open</div>
-      <h2 class="spp-h" id="spp-h">Sign up in the WKND app</h2>
-      <p class="spp-p">Season ${esc(String(p.season))} sign-ups happen in the app only. ${esc(String(p.spots))} spots${p.deadline ? `, closes ${esc(p.deadline)}` : ''}.</p>
-      <div class="spp-app"><span class="spp-logo" aria-hidden="true"><img src="/app-icon-180.png?v=2" alt="" width="34" height="34"></span><span><b>WKND Basketball</b><small>Not on your phone yet? It takes 30 seconds.</small></span></div>
+      ${hero(p, 'spp-h')}
+      ${statLine(p)}
+      ${clock(p)}
+      ${friendsLine(p)}
+      <div class="spp-app"><span class="spp-logo" aria-hidden="true"><img src="/app-icon-180.png?v=2" alt="" width="34" height="34"></span><span><b>Sign-ups are in the WKND app</b><small>Not on your phone yet? It takes 30 seconds.</small></span></div>
       <div class="spp-btns">
         <a class="spp-btn" href="/app/signup" data-spp-act="later" data-spp-go>Open the app</a>
         <button type="button" class="spp-btn spp-btn--ghost" data-spp-act="later">Later</button>

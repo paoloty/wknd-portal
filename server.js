@@ -2639,7 +2639,7 @@ function renderPage(req, opts) {
   const appBarHtml = appPlayer && !focused && /iPhone|iPad|iPod|Android/i.test(req.get('user-agent') || '') ? appUseBar() : '';
 
   const raffleBarHtml = !focused && opts.currentPath === '/' ? raffleHomeBar() : '';
-  const body = impersonatingHtml + suspendedBarHtml + lockedBarHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : (signupPromoNow?.popup && !String(opts.currentPath || '').startsWith('/season-signup') ? siteSignupPopup(signupPromoNow, signupAppQr) : '') + pollPopupFor(req, opts.currentPath));
+  const body = impersonatingHtml + suspendedBarHtml + lockedBarHtml + appBarHtml + balanceBarHtml + probationBarHtml + bannerHtml + raffleBarHtml + (opts.body || '') + (focused ? '' : (signupPromoNow?.popup && !String(opts.currentPath || '').startsWith('/season-signup') ? siteSignupPopup({ ...signupPromoNow, ...signupPromoDetail(req, signupPromoNow) }, signupAppQr) : '') + pollPopupFor(req, opts.currentPath));
 
   // Notification bell data — computed per request like everything else here (no client
   // fetch needed for the initial render). Only relevant for a logged-in player; admin-only
@@ -6817,7 +6817,7 @@ app.get('/app', requireApp, (req, res) => {
     bk = { unread: countBarkadahanUnread(me.playerId), online: on.length, faces: on.filter(id => id !== me.playerId).slice(0, 4).map(bkPerson),
       latest: last ? { name: bkPerson(last.player_id).name.split(' ')[0], body: !last.body && last.card ? (last.card.startsWith('pw:') ? 'shared a Papawis run' : 'shared a Who wins? game') : last.body.length > 80 ? `${last.body.slice(0, 80)}…` : last.body } : null };
   }
-  sendTab(res, me, { title: 'WKND', tab: 'home', body: (promo?.popup ? appSignupPopup(promo) : '') + (poll ? appPollTakeover({ poll, total: getLeaguePollVotes(poll.id).length }) : '') + appHomeFeedPage({
+  sendTab(res, me, { title: 'WKND', tab: 'home', body: (promo?.popup ? appSignupPopup({ ...promo, ...signupPromoDetail(req, promo) }) : '') + (poll ? appPollTakeover({ poll, total: getLeaguePollVotes(poll.id).length }) : '') + appHomeFeedPage({
     header: homeHeader({ phase: appPhase(), unread: me.unread, bk }) + barkadahanCard(bk),
     setupHtml: setupCard(setup), installHtml: installCard, promoHtml: promo ? appSignupCard(promo) : '',
     todos, pinned: pin ? { ...appAnnItem(pin, true), social: appSocialFor([`ann:${pin.id}`], me.playerId)?.[`ann:${pin.id}`] || null } : null, rail,
@@ -23277,6 +23277,42 @@ function signupPromo(req) {
   return {
     season, deadline: getSetting('season_signup_deadline', ''), spots: Number(getSetting('season_roster_capacity', '48')) || 48, fee: signupPrices().fee,
     popup: !hasAppEvent(regId, `signup_promo_later_${season}`, Date.now() - SIGNUP_PROMO_LATER_DAYS * 86400000),
+  };
+}
+// What the popup shows (mockup claude.ai/artifact/TezEmy2yyspWF51yKLMViW, A + B): the player's
+// last-season line, days left, how many are in and which of the people they've played with,
+// and up to 4 random game photos behind it. Only built when the popup shows.
+const SIGNUP_PROMO_COUNT_FROM = 10; // fewer than this signed up: the count stays hidden, only days left show
+function signupPromoDetail(req, p) {
+  const pid = req.session.playerPlayerId, leagueSeason = Number(p.season) - 1;
+  const me = getPlayerWithTeam(pid) || {};
+  const team = me.team_id ? getAllTeams().find(x => x.id === me.team_id) : null;
+  const rec = playerRecord(pid), tot = getPlayerSeasonStats(pid, String(leagueSeason));
+  const gp = Number(tot?.games_played) || 0;
+  const line = gp ? [
+    { v: rec?.teamGames ? `${rec.played}/${rec.teamGames}` : String(gp), l: 'Games' },
+    { v: (tot.pts / gp).toFixed(1), l: 'Points' }, { v: (tot.reb / gp).toFixed(1), l: 'Boards' },
+  ] : null;
+  const inIds = new Set(getSeasonSignups(p.season).filter(s => s.status === 'waitlisted' || s.status === 'confirmed').map(s => s.player_id).filter(Boolean));
+  const since = new Date(Date.now() - 365 * 86400000 + 8 * 3600000).toISOString().slice(0, 10);
+  const friends = sharedCourtPlayers(pid, { leagueSeason, sinceDay: since })
+    .filter(x => x.id !== pid && inIds.has(x.id))
+    .sort((a, b) => (b.teammate * 3 + b.papawis + b.opponent) - (a.teammate * 3 + a.papawis + a.opponent))
+    .slice(0, 3).map(x => ({ first: x.first_name || displayPlayerName(x.name).split(' ')[0], photo: playerPhotoUrl(x.id, 96) }));
+  // A deadline typed without a year ("Nov 30") is this year's, or next year's once it's gone by.
+  const yr = new Date().getFullYear(), raw = String(p.deadline || '');
+  const hasYear = /\d{4}/.test(raw);
+  let t = /\d/.test(raw) ? Date.parse(hasYear ? raw : `${raw}, ${yr}`) : NaN;
+  if (!hasYear && t + 86400000 < Date.now()) t = Date.parse(`${raw}, ${yr + 1}`);
+  const covered = getAllGames().filter(g => g.has_cover && !g.under_review);
+  const lastSeason = covered.filter(g => String(g.season) === String(leagueSeason));
+  return {
+    first: me.first_name || displayPlayerName(me.name || '').split(' ')[0] || 'there',
+    photo: playerPhotoUrl(pid, 192), ring: team ? (team.color || teamColor(team.name)) : '',
+    teamName: team?.name || '', leagueSeason, line,
+    daysLeft: Number.isNaN(t) ? null : Math.max(0, Math.ceil((t + 86400000 - Date.now()) / 86400000)),
+    count: inIds.size >= SIGNUP_PROMO_COUNT_FROM ? inIds.size : null, friends, inTotal: inIds.size,
+    photos: shuffled(lastSeason.length >= 4 ? lastSeason : covered).slice(0, 4).map(g => `/api/photo/${encodeURIComponent(g.id)}?w=960&v=${gameCoverVersion(String(g.id))}`),
   };
 }
 app.post('/season-signup/promo', express.json(), (req, res) => {

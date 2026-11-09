@@ -10989,3 +10989,55 @@ html.spp-open { overflow: hidden; }
   .spp-qr img { width: 150px; height: 150px; border-radius: 12px; background: #fff; padding: 8px; }
   .spp-qr small { font-size: 12px; color: var(--text-muted); }
 }
+
+/* The site popup's photo look and pieces (same design as the app's, public/app.css .sp-*):
+   game photos behind the card, a halftone pattern, a vignette, a scrim toward the buttons. */
+.spp-card--photo { overflow: hidden; background: #0a0e16; }
+.spp-card--photo > :not(.sp-photos):not(.spp-x) { position: relative; z-index: 1; }
+.spp-card--photo .spp-x { z-index: 2; }
+.spp .sp-photos { position: absolute; inset: 0; overflow: hidden; z-index: 0; pointer-events: none; }
+.spp .sp-photos i { position: absolute; inset: -6% -14%; background-size: cover; background-position: center; opacity: 0; animation: spp-fade 24s infinite, spp-pan 24s infinite linear; }
+.spp .sp-photos i:only-child { opacity: 1; animation: spp-pan 24s infinite alternate linear; }
+.spp .sp-photos::before { content: ''; position: absolute; inset: 0; z-index: 1; mix-blend-mode: multiply;
+  background-image: radial-gradient(rgba(10,14,22,.55) 1.1px, transparent 1.4px), repeating-linear-gradient(135deg, rgba(245,147,50,.07) 0 2px, transparent 2px 14px); background-size: 5px 5px, auto; }
+.spp .sp-photos::after { content: ''; position: absolute; inset: 0; z-index: 2;
+  background: radial-gradient(ellipse 120% 85% at 50% 38%, transparent 40%, rgba(0,0,0,.55) 78%, rgba(0,0,0,.85) 100%),
+    linear-gradient(180deg, rgba(10,14,22,.4) 0%, rgba(10,14,22,.6) 35%, rgba(10,14,22,.8) 62%, rgba(10,14,22,.93) 100%); }
+@keyframes spp-fade { 0% { opacity: 0; } 4% { opacity: 1; } 25% { opacity: 1; } 29% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes spp-pan { 0% { transform: translateX(-5%) scale(1.04); } 29% { transform: translateX(5%) scale(1.1); } 100% { transform: translateX(5%) scale(1.1); } }
+@media (prefers-reduced-motion: reduce) { .spp .sp-photos i { animation: none; } .spp .sp-photos i:first-child { opacity: 1; } }
+@media (min-width: 760px) { .spp .sp-photos::after { background: radial-gradient(ellipse 110% 100% at 30% 50%, transparent 35%, rgba(0,0,0,.6) 85%, rgba(0,0,0,.85) 100%), linear-gradient(90deg, rgba(10,14,22,.55) 0%, rgba(10,14,22,.82) 60%, rgba(10,14,22,.95) 100%); } }
+.spp .sp-hero { display: flex; align-items: center; gap: 12px; padding-right: 40px; }
+.spp .sp-face { width: 56px; height: 56px; flex: none; border-radius: 50%; overflow: hidden; background: #1c2333; box-shadow: 0 0 0 3px var(--ring), 0 0 0 5px rgba(10,14,22,.8); }
+.spp .sp-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.spp .sp-kick { font-family: 'Saira Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber); }
+.spp .sp-h { margin: 3px 0 0; font-size: 22px; font-weight: 800; line-height: 1.1; color: #fff; text-wrap: balance; }
+.spp .sp-h em { font-style: normal; color: var(--amber); }
+.spp .sp-h, .spp .sp-kick, .spp .sp-who { text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 18px rgba(0,0,0,.5); }
+.spp .sp-line, .spp .sp-clock { background: rgba(16,20,29,.72); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.spp .sp-line { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 9px 2px; text-align: center; }
+.spp .sp-line > div { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.spp .sp-line > div + div { border-left: 1px solid rgba(255,255,255,.1); }
+.spp .sp-line b, .spp .sp-days b, .spp .sp-fill__t b { font-family: 'Saira Condensed', 'Arial Narrow', sans-serif; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+.spp .sp-line b { font-size: 20px; line-height: 1.05; }
+.spp .sp-line span, .spp .sp-days span { font-family: 'Saira Condensed', 'Arial Narrow', sans-serif; font-weight: 600; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: #a3abba; }
+.spp .sp-clock { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 12px; }
+.spp .sp-days { display: flex; flex-direction: column; align-items: center; padding-right: 12px; border-right: 1px solid rgba(255,255,255,.1); }
+.spp .sp-days b { font-size: 42px; line-height: .85; }
+.spp .sp-days.is-amber b { color: var(--amber); }
+.spp .sp-days.is-red b { color: #f87171; }
+.spp .sp-days span { margin-top: 5px; }
+.spp .sp-fill { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.spp .sp-fill__t { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; color: #a3abba; }
+.spp .sp-fill__t b { font-size: 16px; }
+.spp .sp-fill small { font-size: 12px; line-height: 1.35; color: #a3abba; }
+.spp .sp-bar { height: 7px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
+.spp .sp-bar i { display: block; height: 100%; border-radius: 4px; background: var(--amber); }
+.spp .sp-who { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: #a3abba; }
+.spp .sp-who b { color: #fff; font-weight: 600; }
+.spp .sp-faces { display: flex; flex: none; }
+.spp .sp-faces img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 2px solid #0a0e16; background: #2c3548; }
+.spp .sp-faces img + img { margin-left: -8px; }
+.spp-card--photo .spp-app { background: rgba(22,28,41,.75); }
+.spp-card--photo .spp-btn--ghost { background: rgba(22,28,41,.85); }
+.spp-card--photo .spp-never, .spp-card--photo .spp-x { color: #c3c9d4; }
