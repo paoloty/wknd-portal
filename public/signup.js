@@ -234,16 +234,16 @@
     requestAnimationFrame(function () { el.classList.add('is-on'); });
     return { done: function () { el.classList.add('is-done'); setTimeout(function () { el.remove(); }, 300); } };
   }
-  // Put the answer's sign-up screen where this one is (with the test-mode bar beside it), move the
+  // Put the answer's sign-up screen where this one is, move the
   // address on when it's a new screen, and set it up. → false when the answer isn't one.
   function swapScreen(html, url) {
     var doc = new DOMParser().parseFromString(html, 'text/html');
     var fresh = doc.querySelector('[data-sgn]'), cur = document.querySelector('[data-sgn]');
     if (!fresh || !cur || !cur.parentNode) return false;
     var host = cur.parentNode;
-    $$('.sgn-testbar, [data-sgn]', host).forEach(function (n) { if (n.parentNode === host) n.remove(); });
+    $('[data-sgn]', host).forEach(function (n) { if (n.parentNode === host) n.remove(); });
     var bits = [];
-    $$('.sgn-testbar, [data-sgn]', fresh.parentNode).forEach(function (n) { if (n.parentNode === fresh.parentNode) bits.push(document.importNode(n, true)); });
+    $('[data-sgn]', fresh.parentNode).forEach(function (n) { if (n.parentNode === fresh.parentNode) bits.push(document.importNode(n, true)); });
     var first = host.firstChild;
     bits.forEach(function (n) { host.insertBefore(n, first); });
     if (doc.title) document.title = doc.title;
@@ -276,13 +276,12 @@
   }
 
   // Send: no game face yet is the one thing worth stopping for here (the server checks the rest),
-  // unless "Add it later" is ticked. Not in test mode (the amber bar), where nothing is required.
+  // unless "Add it later" is ticked.
   function guardSend(root) {
     var form = $('#sgn-form', root), gf = $('[data-sgn-gf]', root);
     if (!form || !gf) return;
     var later = $('[data-sgn-photo-later]', gf), note = $('[data-sgn-photo-later-note]', gf);
     if (later && note) later.addEventListener('change', function () { note.hidden = !later.checked; });
-    if (document.querySelector('.sgn-testbar')) return;
     form.addEventListener('submit', function (e) {
       var b = e.submitter;
       if (!b || b.value !== 'send' || gf.getAttribute('data-photo') || (later && later.checked)) return;

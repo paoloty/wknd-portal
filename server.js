@@ -6401,13 +6401,9 @@ function appSeasonState(me) {
     { icon: 'team', title: me.team ? `You're on ${me.team.name}` : 'Not on a team yet', sub: me.team ? '' : 'Teams show up once rosters are out', done: true },
   ];
   if (signupOpen || signup) {
-    // A tester's sent sign-up stays on To do while test mode is on: the way back to it (and
-    // Start over), since a done row isn't shown.
-    rows.push(signup && access.testing && signup.status === 'waitlisted'
-      ? { icon: 'form', title: `Signed up for Season ${season}`, sub: 'Test mode: view it or start over', pill: 'Open', href: '/app/signup', done: false }
-      : signup
+    rows.push(signup
       ? { icon: 'form', title: `Signed up for Season ${season}`, href: '/app/signup', done: true }
-      : { icon: 'form', title: `Season ${season} sign-up`, sub: access.testing ? 'Test mode: only admins and testers see this' : 'Sign-ups are open', pill: 'Sign up', href: '/app/signup', done: false });
+      : { icon: 'form', title: `Season ${season} sign-up`, sub: 'Sign-ups are open', pill: 'Sign up', href: '/app/signup', done: false });
     // Sent without a game face: asked for until it's in (while sign-ups are open).
     if (signup && signupOpen && !['rejected', 'withdrawn'].includes(signup.status) && signupNeedsPhoto(me.reg.id, season)) {
       const by = getSetting('season_signup_deadline', '');
@@ -9756,10 +9752,10 @@ app.get('/app/me', requireApp, (req, res) => {
   const open = appOpenPicks(me);
   if (open.length) todos.unshift({ icon: 'picks', title: open.length === 1 ? '1 game to pick' : `${open.length} games to pick`, sub: 'Who wins?', pill: 'Pick', href: '/app/picks', solid: true });
   // Signed up and still waiting to be picked, sign-ups open: the way back to it (to change it or
-  // pick who you click with). Here only, not on the badge. Test mode has its own row.
+  // pick who you click with). Here only, not on the badge.
   {
-    const season = getSetting('signup_target_season', ''), acc = signupAccess(me.reg), mine = season ? getSeasonSignup(me.reg.id, season) : null;
-    if (mine?.status === 'waitlisted' && acc.open && !acc.testing) {
+    const season = getSetting('signup_target_season', ''), mine = season ? getSeasonSignup(me.reg.id, season) : null;
+    if (mine?.status === 'waitlisted' && signupAccess(me.reg).open) {
       const by = getSetting('season_signup_deadline', '');
       todos.push({ icon: 'form', title: `You’re signed up for Season ${season}`, sub: by ? `Change it until ${by}` : 'You can still change it', pill: 'View', href: '/app/signup' });
     }
@@ -23300,7 +23296,7 @@ import { appSignupPopup, appSignupCard, siteSignupPopup } from './views/signup-p
 import { SIZES as JERSEY_SIZES, SIZE_CHART, sizeSurcharge, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
 import { STEPS as SIGNUP_STEPS, LAST_STEP as SIGNUP_LAST, EXPECTATIONS_VERSION, PLAN_KEYS, MAX_CLICK_WITH, readStep, checkStep, checkAll, resumeStep, reviewLines, pickPose, poseByKey } from './lib/season-signup.js';
 import { playerRecord } from './lib/season-candidates.js';
-import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit, clearSeasonSignup, checkActivePlayer, getPlayerPapawisSummary, getLastNotificationAt, countAppEvents, deleteAppEventsOfType, getAppEventRegs } from './lib/portal-db.js';
+import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit, checkActivePlayer, getPlayerPapawisSummary, getLastNotificationAt, countAppEvents, deleteAppEventsOfType, getAppEventRegs } from './lib/portal-db.js';
 
 // Returning-player team poll: only shown if they actually played the prior season and
 // still have a team on record.
@@ -23315,7 +23311,6 @@ const SIGNUP_BASE = { site: '/season-signup', app: '/app/signup' };
 const signupKindOf = req => (req.path.startsWith('/app/') ? 'app' : 'site');
 
 function sendSignup(req, res, kind, body, { title = 'Season sign-up', status = 200 } = {}) {
-  if (signupState(req)?.testing) body = `<div class="sgn-testbar" role="status"><b>Test mode.</b> Only admins and testers can sign up right now. Nothing is required.</div>${body}`;
   // Sign-ups are app-only: in any browser (a computer too) the app's install screen stands in for
   // the form; on a computer it shows a QR code to the phone (views/app/layout.js installWall 'all').
   if (kind === 'app') return res.status(status).send(appPage({ ver: APP_VER, installWall: 'all', installQr: signupAppQr, test: appTestLabel(req), ga: buildAppGaSnippet(req), title: `${title} · WKND`, bare: true, body }));
@@ -23326,14 +23321,9 @@ function sendSignup(req, res, kind, body, { title = 'Season sign-up', status = 2
   }));
 }
 
-// Test mode (Season → Set up → Sign-ups): while sign-ups are closed, admins and the picked
-// players can sign up for real, on the site and in the app. Nobody else sees a thing, and the
-// "sign-ups are open" nudges only go out once they really open.
-const signupTesters = () => { try { const a = JSON.parse(getSetting('season_signup_testers', '[]')); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } };
-function signupAccess(reg) {
-  if (getSetting('season_signup_open', '0') === '1') return { open: true, testing: false };
-  const testing = !!reg && getSetting('season_signup_test', '0') === '1' && (!!reg.is_admin || (!!reg.player_id && signupTesters().includes(String(reg.player_id))));
-  return { open: testing, testing };
+// Whether sign-ups are open (Season → Set up → Sign-ups → Open to members). → { open }
+function signupAccess() {
+  return { open: getSetting('season_signup_open', '0') === '1' };
 }
 
 // ── Promoting the sign-up (app-only sign-ups, Paolo 2026-11-09; mockup
@@ -23363,19 +23353,16 @@ function signupPromo(req) {
   const reg = regId ? getRegistration(regId) : null;
   if (!reg?.player_id) return null;
   const season = getSetting('signup_target_season', '');
-  const access = signupAccess(reg);
-  if (!season || !access.open || getSeasonSignup(regId, season)) return null;
-  // Test mode (Paolo, 2026-11-09): testers get the popup every time, whatever Later or "Not this
-  // season" said and whether or not they count as active, so it can be checked over and over.
+  if (!season || !signupAccess().open || getSeasonSignup(regId, season)) return null;
   // Sign-ups are in the app: nobody it isn't open to yet is sent there (Fable audit, 2026-11-09).
   if (!appAllowedReg(reg)) return null;
   // Past the deadline day: nothing more to say, even before an admin closes sign-ups.
   const end = signupDeadlineMs(getSetting('season_signup_deadline', ''));
   if (end != null && end < Date.now()) return null;
-  if (!access.testing && (hasAppEvent(regId, `signup_promo_never_${season}`) || !checkActivePlayer(reg.player_id, { allowBanKinds: SIGNUP_MONEY_BANS }).ok)) return null;
+  if (hasAppEvent(regId, `signup_promo_never_${season}`) || !checkActivePlayer(reg.player_id, { allowBanKinds: SIGNUP_MONEY_BANS }).ok) return null;
   return {
     season, deadline: getSetting('season_signup_deadline', ''), spots: Number(getSetting('season_roster_capacity', '48')) || 48, fee: signupPrices().fee, jerseyFrom: signupPrices().topPrice,
-    popup: access.testing || signupPromoPopupDue(regId, season, getSetting('season_signup_deadline', '')), testing: access.testing,
+    popup: signupPromoPopupDue(regId, season, getSetting('season_signup_deadline', '')),
   };
 }
 // What the popup shows (mockup claude.ai/artifact/TezEmy2yyspWF51yKLMViW, A + B): the player's
@@ -23465,7 +23452,7 @@ function signupState(req) {
   return {
     regId, reg, season, playerId: reg.player_id || '',
     approved: reg.status === 'approved',
-    open: !!season && access.open, testing: !!season && access.testing,
+    open: !!season && access.open,
     deadline: getSetting('season_signup_deadline', ''),
     // Suspended for money (an unpaid balance or an overdue fine) still signs up, like anyone
     // owing: the Start screen says they can't be picked until it's paid. An admin's ban stops it.
@@ -23552,7 +23539,7 @@ function signupSentData(st, kind, signup) {
   const players = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
   return {
     base: SIGNUP_BASE[kind], season: st.season, deadline: st.deadline, signup, open: st.open,
-    canEdit: st.open && signup.status === 'waitlisted', canReset: st.testing && signup.status === 'waitlisted',
+    canEdit: st.open && signup.status === 'waitlisted',
     noPhoto: st.open && !['rejected', 'withdrawn'].includes(signup.status) && signupNeedsPhoto(st.regId, st.season),
     // Still owing: the Sent screen says so (they can't be picked until it's paid), with Settle.
     owing: st.playerId ? Math.max(0, Math.round(Number(getPlayerFinancials(st.playerId)?.current_balance || 0))) : 0,
@@ -23581,13 +23568,12 @@ function signupStart(req, res) {
     base: SIGNUP_BASE[kind], season: st.season, deadline: st.deadline, spots: Number(getSetting('season_roster_capacity', '48')) || 48,
     ...p, record: ctx.record, recordSeason: ctx.leagueSeason, owing: ctx.owing, payFirst: ctx.payFirst,
     draftStep: draft ? resumeStep(d, ctx) : 0,
-    canReset: st.testing && (signup ? signup.status === 'waitlisted' : !!draft),
   }));
 }
 app.get('/season-signup', signupStart);
 app.get('/app/signup', requireApp, signupStart);
 // The site's steps, edit, click-with and start over: all in the app now, so to the page that says so.
-app.all(['/season-signup/:n(\\d)', '/season-signup/edit', '/season-signup/click', '/season-signup/reset', '/season-signup/photo'], (req, res) => res.redirect(303, '/season-signup'));
+app.all(['/season-signup/:n(\\d)', '/season-signup/edit', '/season-signup/click', '/season-signup/photo'], (req, res) => res.redirect(303, '/season-signup'));
 
 app.get(['/season-signup/how', '/app/signup/how'], (req, res, next) => (signupKindOf(req) === 'app' ? requireApp(req, res, next) : next()), (req, res) => {
   const kind = signupKindOf(req);
@@ -23624,8 +23610,7 @@ function signupStep(req, res) {
   const { draft, d } = signupDraft(st);
   if (signup && (!draft || signup.status !== 'waitlisted')) return res.redirect(base);
   const ctx = signupCtx(st);
-  // Test mode: every step opens, filled in or not.
-  const reach = st.testing ? SIGNUP_LAST : resumeStep(d, ctx);
+  const reach = resumeStep(d, ctx);
   if (n > reach) return res.redirect(`${base}/${reach}`);
   sendSignup(req, res, kind, signupStepScreen(kind, signupStepData(st, kind, n, d, ctx)), { title: SIGNUP_STEPS[n - 1].title });
 }
@@ -23669,17 +23654,14 @@ function signupPostStep(req, res) {
   };
 
   if (go === 'send' && n === SIGNUP_LAST) {
-    // Test mode: nothing is required, the game face photo included (no photo, no contest entry).
-    const first = st.testing ? null : checkAll(d, ctx);
+    const first = checkAll(d, ctx);
     if (first) return again(first.step, checkStep(first.step, d, ctx));
     const photo = getLivenessCapture(st.regId, st.season);
     // No game face yet: fine with "Add it later" ticked (Home asks for it until it's in, and
     // admins can ask too); its contest entry waits for the photo.
-    if ((!photo || photo.via === 'activation') && !st.testing && d.photo_later !== '1') {
+    if ((!photo || photo.via === 'activation') && d.photo_later !== '1') {
       return again(SIGNUP_LAST, [{ step: SIGNUP_LAST, field: 'photo', message: 'Take your game face first, or tick “Add it later”.' }]);
     }
-    // A tester's blank answers never overwrite the contact details and waiver on file.
-    if (st.testing) for (const k of ['emergency_name', 'emergency_phone', 'birthday']) if (!String(d[k] || '').trim()) d[k] = st.reg[k] || '';
     const reg = st.reg;
     // Contact details: saved to the profile; a change from what was on file is flagged for admins.
     const changes = [];
@@ -23699,12 +23681,12 @@ function signupPostStep(req, res) {
     return res.redirect(base);
   }
 
-  const errors = st.testing ? [] : checkStep(n, d, ctx);
+  const errors = checkStep(n, d, ctx);
   if (errors.length) return again(n, errors);
   const next = Math.min(n + 1, SIGNUP_LAST);
   // Next from the page's script (public/signup.js busy): the next step in this same answer, one
   // trip instead of a redirect and a second request; X-Sgn-Url says where it is.
-  if (req.get('X-Sgn-Fetch') === '1' && next <= (st.testing ? SIGNUP_LAST : resumeStep(d, ctx))) {
+  if (req.get('X-Sgn-Fetch') === '1' && next <= resumeStep(d, ctx)) {
     res.set('X-Sgn-Url', `${base}/${next}`);
     return sendSignup(req, res, kind, signupStepScreen(kind, signupStepData(st, kind, next, d, ctx)), { title: SIGNUP_STEPS[next - 1].title });
   }
@@ -23742,23 +23724,6 @@ app.get('/app/signup/photo', requireApp, (req, res) => {
     poseText: pose?.prompt || 'Your pose shows here', poseLabel: pose?.label || '',
   }), { title: 'Add your game face' });
 });
-
-// Test mode's "Start over": a tester's waitlisted sign-up (and its Game Face post) is deleted,
-// so the whole flow can be run again from step 1.
-function signupReset(req, res) {
-  const kind = signupKindOf(req), st = signupState(req);
-  if (signupBlocked(req, res, kind, st)) return;
-  const signup = st.testing ? getSeasonSignup(st.regId, st.season) : null;
-  if (signup && signup.status !== 'waitlisted') return res.redirect(SIGNUP_BASE[kind]);
-  if (st.testing) {
-    if (signup?.contest_post_id) deleteAppAnnouncement(signup.contest_post_id);
-    clearSeasonSignup(st.regId, st.season);
-    insertAdminLog({ actor: st.reg.full_name || st.reg.email, actorType: 'player', method: 'POST', path: '/season-signup/reset', details: { event: 'season_signup_test_reset', season: st.season } });
-  }
-  res.redirect(SIGNUP_BASE[kind]);
-}
-app.post('/season-signup/reset', signupReset);
-app.post('/app/signup/reset', requireApp, signupReset);
 
 // "Who do you click with?" (Sent screen): up to MAX_CLICK_WITH active players, team building only.
 function clickPeople(st) {
@@ -24517,10 +24482,9 @@ app.get('/admin/season', requireAuth, (req, res) => {
     currentPath: '/admin/season',
     settings: seasonNudgesPanel(),
     body: adminSeasonBody({ draftStatus: getSetting('season_draft_status', ''), sigSeason, sigOpen, deadline,
-      testMode: getSetting('season_signup_test', '0') === '1', testers: signupTesters(),
       // How the deadline reads (the countdown and reminders count to the end of that day), or null.
       deadlineReads: (ms => (ms == null ? null : manilaFormat(ms, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })))(signupDeadlineMs(deadline)),
-      testerOptions: getAllPlayers().filter(p => p.status !== 'inactive').map(p => ({ id: p.id, name: displayPlayerName(p.name) })).sort((a, b) => a.name.localeCompare(b.name)), portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason), noPhoto: sigSeason ? seasonNoPhotoAdmin(sigSeason) : [], saidNo: sigSeason ? seasonSaidNoAdmin(sigSeason) : [] }),
+      portalSeason, autoSeason, count, confirmedCount, seasonFormat, quotaAmount, jerseyTopPrice, jerseyShortPrice, teamCount, jerseySurchargeStep, jerseyPocketsPrice, seasonRosterCapacity, allSeasons, jerseyCutPrice: getSetting('jersey_nba_cut_price', '50'), payments: sigSeason ? seasonPaymentsAdmin(sigSeason) : null, volunteers: sigSeason ? seasonVolunteerGroups(sigSeason) : [], gameFace: gameFaceAdmin(sigSeason), noPhoto: sigSeason ? seasonNoPhotoAdmin(sigSeason) : [], saidNo: sigSeason ? seasonSaidNoAdmin(sigSeason) : [] }),
   }));
 });
 
@@ -24851,17 +24815,10 @@ app.post('/admin/season/settings', requireAuth, express.json(), (req, res) => {
     'season_signup_open', 'season_signup_deadline', 'portal_season',
     'season_format', 'season_quota_amount', 'season_team_count',
     'jersey_top_price', 'jersey_short_price',
-    'jersey_surcharge_step', 'jersey_pockets_price', 'season_roster_capacity', 'jersey_nba_cut_price', 'season_signup_test',
+    'jersey_surcharge_step', 'jersey_pockets_price', 'season_roster_capacity', 'jersey_nba_cut_price',
   ];
   for (const key of allowed) {
     if (key in (req.body || {})) setSetting(key, String(req.body[key]));
-  }
-  // Opening sign-ups ends test mode (its switch hides while they're open), so once they close
-  // again admins and testers are closed out like everyone else.
-  if ('season_signup_open' in (req.body || {}) && ['1', 'true'].includes(String(req.body.season_signup_open))) setSetting('season_signup_test', '0');
-  if (Array.isArray(req.body?.season_signup_testers)) {
-    const ids = new Set(getAllPlayers().map(p => String(p.id)));
-    setSetting('season_signup_testers', JSON.stringify([...new Set(req.body.season_signup_testers.map(String))].filter(id => ids.has(id))));
   }
   res.json({ ok: true });
 });

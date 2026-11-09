@@ -66,7 +66,7 @@ function friendsLine(p) {
 
 // App, over Home: once, then again every few days until they sign up.
 export function appSignupPopup(p) {
-  return `<div class="sp-take${p.photos?.length ? ' sp-take--photo' : ''}" data-sp data-sp-season="${esc(String(p.season))}"${p.testing ? ' data-sp-test' : ''} role="dialog" aria-modal="true" aria-labelledby="sp-h">
+  return `<div class="sp-take${p.photos?.length ? ' sp-take--photo' : ''}" data-sp data-sp-season="${esc(String(p.season))}" role="dialog" aria-modal="true" aria-labelledby="sp-h">
   ${photoShow(p)}
   <button type="button" class="sp-take__x" data-sp-act="later" aria-label="Close, remind me later">&times;</button>
   <div class="sp-take__in">
@@ -86,7 +86,7 @@ export function appSignupPopup(p) {
 // App Home, at the top (it stands in for the To do row while it shows).
 export function appSignupCard(p) {
   const r = p.resume;
-  return `<div class="card sp-card" data-sp-season="${esc(String(p.season))}"${p.testing ? ' data-sp-test' : ''}>
+  return `<div class="card sp-card" data-sp-season="${esc(String(p.season))}">
   <span class="sp-chip">Season ${esc(String(p.season))}</span>
   <b class="sp-card__h">${r ? `Your Season ${esc(String(p.season))} sign-up isn’t sent yet` : `Season ${esc(String(p.season))} sign-ups are open`}</b>
   <p class="sp-card__p">${r ? `${r.done} of ${r.of} steps done. Pick up at step ${r.step}: ${esc(r.title)}.` : `${esc(String(p.spots))} spots. Takes about 5 minutes.`}${p.deadline ? ` Sign up by ${esc(p.deadline)}.` : ''}</p>
