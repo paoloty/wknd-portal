@@ -23345,6 +23345,8 @@ function signupSentData(st, kind, signup) {
   return {
     base: SIGNUP_BASE[kind], season: st.season, deadline: st.deadline, signup, open: st.open,
     canEdit: st.open && signup.status === 'waitlisted', canReset: st.testing && signup.status === 'waitlisted',
+    // Still owing: the Sent screen says so (they can't be picked until it's paid), with Settle.
+    owing: st.playerId ? Math.max(0, Math.round(Number(getPlayerFinancials(st.playerId)?.current_balance || 0))) : 0,
     clickWith: ids.map(id => players[id]).filter(Boolean),
     payments: signup.status === 'confirmed' ? paymentsCard(kind, seasonPaymentsFor(signup)) : '',
     contest: signup.contest_opt_in ? { href: GF_BASE[kind], sub: { entries: 'See every entry', voting: 'Voting is open', over: 'See the winners' }[contestPhase(gameFaceTimes(st.season))] } : null,

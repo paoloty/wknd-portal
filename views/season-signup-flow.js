@@ -426,6 +426,13 @@ export function signupSentScreen(kind, x) {
       <span class="sgn-done__ic sgn-done__ic--${st.tone}">${st.tone === 'ok' ? ic.check : ic.info}</span>
       <h1>${esc(st.title)}</h1><p class="sgn-sub">${esc(st.sub)}</p>
     </div>
+    ${x.owing >= 100 && waiting ? `<div class="sgn-owe" role="alert">
+      <div class="sgn-lbl">Unpaid balance</div>
+      <div class="sgn-owe__amt"><span class="sgn-num">${peso(x.owing)}</span><span>from before</span></div>
+      <p>You’re on the list, but <b>you can’t be picked until it’s paid.</b>${x.deadline ? ` Settle it before sign-ups close on ${esc(x.deadline)}.` : ''}</p>
+      <a class="sgn-btn" href="${esc(L.settle)}">Settle ${peso(x.owing)}</a>
+      <p class="sgn-owe__fine">Already paid? It can take a day to show. Message an admin if it doesn’t.</p>
+    </div>` : ''}
     ${x.payments || ''}
     ${waiting ? `<div><div class="sgn-lbl sgn-sec">What happens next</div>
     <div class="sgn-card">${steps.map(([t, s], i) => `<div class="sgn-st"><span class="sgn-sn${i === 0 ? ' sgn-sn--on' : ''}">${i + 1}</span><span class="sgn-ct">${esc(t)}${s ? `<small>${esc(s)}</small>` : ''}</span></div>`).join('')}</div></div>` : ''}
