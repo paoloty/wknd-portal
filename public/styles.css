@@ -11046,3 +11046,7 @@ html.spp-open { overflow: hidden; }
 .spp-card--photo .spp-app { background: rgba(22,28,41,.75); }
 .spp-card--photo .spp-btn--ghost { background: rgba(22,28,41,.85); }
 .spp-card--photo .spp-never, .spp-card--photo .spp-x { color: #c3c9d4; }
+
+/* The site popup's "Not this season", with its Undo (views/signup-promo.js). */
+.spp-toast { position: fixed; z-index: 1001; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 6px; max-width: calc(100% - 32px); padding: 6px 6px 6px 16px; border-radius: 999px; background: #1b2131; border: 1px solid rgba(255,255,255,.1); color: var(--text); font-size: 14px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.4); white-space: nowrap; }
+.spp-toast button { min-height: 36px; padding: 0 14px; border-radius: 999px; background: none; border: 0; font: inherit; font-weight: 700; color: var(--amber); cursor: pointer; }

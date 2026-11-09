@@ -127,9 +127,10 @@ var sa=matchMedia('(display-mode: standalone)').matches||navigator.standalone===
 var ios=/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1),android=/Android/.test(ua);
 if(sa||!(ios||android))return;
 d.classList.add('needs-install',/FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|MessengerForiOS|Line\\//.test(ua)?'iw-inapp':ios?'iw-ios':'iw-android',ios?'iw-is-ios':'iw-is-android');}catch(e){}})();</script>`;
-// installWall 'all' (the season sign-up, app-only): walled on a computer too, where the wall
-// shows a QR code to open it on the phone instead of the install steps.
-const INSTALL_DETECT_ALL = INSTALL_DETECT.replace('if(sa||!(ios||android))return;', "if(sa)return;if(!(ios||android)){d.classList.add('needs-install','iw-desktop');return;}");
+// installWall 'all' (the season sign-up, app-only): walled on a computer too, even the app
+// installed there from Chrome (Paolo, 2026-11-09: sign up on the phone), where the wall shows a
+// QR code to open it on the phone instead of the install steps.
+const INSTALL_DETECT_ALL = INSTALL_DETECT.replace('if(sa||!(ios||android))return;', "if(!(ios||android)){d.classList.add('needs-install','iw-desktop');return;}if(sa)return;");
 
 const shareGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/></svg>';
 const dotsGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';

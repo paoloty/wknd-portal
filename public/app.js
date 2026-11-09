@@ -103,22 +103,38 @@
     paint();
   }
 
-  // The season sign-up popup on Home (views/signup-promo.js): Later, ✕ and "Sign up now" put it
-  // off for a few days, "Not this season" for good (POST /season-signup/promo). Sign up now is
-  // a link, so the screen change goes on as usual.
+  // The season sign-up popup on Home (views/signup-promo.js): Later and ✕ put it off for a few
+  // days, "Sign up now" (go) for a day, "Not this season" for good, with an Undo for a few
+  // seconds (POST /season-signup/promo). Sign up now is a link, so the screen change goes on.
+  var spPost = function (act) { try { fetch('/season-signup/promo', { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ act: act }) }); } catch (err) {} };
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-sp-act]');
     if (!b) return;
-    try { fetch('/season-signup/promo', { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ act: b.getAttribute('data-sp-act') }) }); } catch (err) {}
-    // Kept on the phone too, for a saved copy of Home (initPage). 3 days, like the server's SIGNUP_PROMO_LATER_DAYS.
+    var act = b.getAttribute('data-sp-act');
+    spPost(act);
+    // Kept on the phone too, for a saved copy of Home (initPage): 3 days after a Later (the
+    // server's SIGNUP_PROMO_LATER_DAYS), a day after Sign up.
     var spSeason = (b.closest('[data-sp-season]') || document.querySelector('[data-sp-season]') || { getAttribute: function () { return ''; } }).getAttribute('data-sp-season');
-    try { localStorage.setItem('wknd-sp-' + spSeason, JSON.stringify(b.getAttribute('data-sp-act') === 'never' ? { never: 1 } : { until: Date.now() + 3 * 864e5 })); } catch (err) {}
-    if (b.getAttribute('data-sp-act') === 'never') { var card = document.querySelector('.sp-card'); if (card) card.remove(); }
+    var key = 'wknd-sp-' + spSeason;
+    try { localStorage.setItem(key, JSON.stringify(act === 'never' ? { never: 1 } : { until: Date.now() + (act === 'go' ? 1 : 3) * 864e5 })); } catch (err) {}
+    var card = act === 'never' ? document.querySelector('.sp-card') : null;
+    if (card) card.hidden = true;
     var box = b.closest('[data-sp]');
     if (b.hasAttribute('data-sp-go')) { if (box) setTimeout(function () { box.remove(); }, 300); return; }
     e.preventDefault();
     if (box) box.remove();
-    if (b.getAttribute('data-sp-act') === 'never') toast('Got it. No more reminders this season.', 'ok');
+    if (act !== 'never') return;
+    // "Not this season", with a way back for a few seconds.
+    $$('.app-toast').forEach(function (t) { t.remove(); });
+    var t = document.createElement('div'); t.className = 'app-toast app-toast--ok app-toast--undo'; t.setAttribute('role', 'status');
+    t.innerHTML = '<i>✓</i><span>No more reminders this season.</span><button type="button">Undo</button>';
+    document.body.appendChild(t);
+    var gone = setTimeout(function () { t.remove(); if (card) card.remove(); }, 6000);
+    $('button', t).addEventListener('click', function () {
+      clearTimeout(gone); t.remove(); spPost('undo');
+      try { localStorage.removeItem(key); } catch (err) {}
+      if (card) card.hidden = false;
+    });
   });
 
   // Me → cover photo: shrunk on the phone first (a 12 MP photo would take ages on a weak signal),

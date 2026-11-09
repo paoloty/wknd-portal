@@ -3330,3 +3330,9 @@ html.iw-ios .iw-only-ios-browser:not(.iw-after) .iw-steps li:nth-child(2) .iw-n 
 html.iw-ios .iw-only-ios-browser:not(.iw-after) .iw-steps li:nth-child(3) .iw-n { animation-delay: 4s; }
 @keyframes iw-turn { 0%, 30% { transform: scale(1.18); box-shadow: 0 0 0 6px color-mix(in srgb, var(--amber) 28%, transparent); } 34%, 100% { transform: none; box-shadow: none; } }
 @media (prefers-reduced-motion: reduce) { html.iw-ios .iw-only-ios-browser .iw-steps li .iw-n { animation: none; } }
+
+/* "Not this season" with its Undo (public/app.js, the sign-up popup). */
+.app-toast--undo { padding-right: 6px; }
+.app-toast--undo button { min-height: 36px; padding: 0 14px; border-radius: 999px; background: none; border: 0; font: inherit; font-weight: 700; color: var(--amber-text); }
+/* The sign-up popup holds the page still behind it. */
+html:has(.sp-take) body { overflow: hidden; }

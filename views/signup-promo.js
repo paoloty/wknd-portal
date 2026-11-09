@@ -76,7 +76,7 @@ export function appSignupPopup(p) {
     ${clock(p)}
     ${friendsLine(p)}
     ${chips(p)}
-    <a class="btn" href="${esc(signupHref(p))}" data-sp-act="later" data-sp-go>${p.resume ? 'Finish my sign-up' : 'Sign up now'}</a>
+    <a class="btn" href="${esc(signupHref(p))}" data-sp-act="go" data-sp-go>${p.resume ? 'Finish my sign-up' : 'Sign up now'}</a>
     <button type="button" class="btn btn--plain" data-sp-act="later">Later</button>
     <button type="button" class="sp-never" data-sp-act="never">Not this season</button>
   </div>
@@ -110,7 +110,7 @@ export function siteSignupPopup(p, qr = '') {
       ${chips(p)}
       <div class="spp-app"><span class="spp-logo" aria-hidden="true"><img src="/app-icon-180.png?v=2" alt="" width="34" height="34"></span><span><b>Sign-ups are in the WKND app</b><small>Not on your phone yet? It takes 30 seconds.</small></span></div>
       <div class="spp-btns">
-        <a class="spp-btn" href="${esc(signupHref(p))}" data-spp-act="later" data-spp-go>${p.resume ? 'Finish in the app' : 'Open the app'}</a>
+        <a class="spp-btn" href="${esc(signupHref(p))}" data-spp-act="go" data-spp-go>${p.resume ? 'Finish in the app' : 'Open the app'}</a>
         <button type="button" class="spp-btn spp-btn--ghost" data-spp-act="later">Later</button>
       </div>
       <button type="button" class="spp-never" data-spp-act="never">Not this season</button>
@@ -123,12 +123,21 @@ export function siteSignupPopup(p, qr = '') {
   var root = document.querySelector('[data-spp]'); if (!root) return;
   root.hidden = false; document.documentElement.classList.add('spp-open');
   function close() { root.remove(); document.documentElement.classList.remove('spp-open'); }
+  function post(act) { try { fetch('/season-signup/promo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ act: act }), keepalive: true }); } catch (err) {} }
   root.addEventListener('click', function (e) {
     var b = e.target.closest('[data-spp-act]'); if (!b) return;
-    var go = b.hasAttribute('data-spp-go');
+    var go = b.hasAttribute('data-spp-go'), act = b.getAttribute('data-spp-act');
     if (!go) e.preventDefault();
-    try { fetch('/season-signup/promo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ act: b.getAttribute('data-spp-act') }), keepalive: true }); } catch (err) {}
-    if (!go) close();
+    post(act);
+    if (go) return;
+    close();
+    if (act !== 'never') return;
+    // "Not this season", with a way back for a few seconds.
+    var t = document.createElement('div'); t.className = 'spp-toast'; t.setAttribute('role', 'status');
+    t.innerHTML = '<span>No more reminders this season.</span><button type="button">Undo</button>';
+    document.body.appendChild(t);
+    var gone = setTimeout(function () { t.remove(); }, 6000);
+    t.querySelector('button').addEventListener('click', function () { clearTimeout(gone); t.remove(); post('undo'); });
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && root.isConnected) { root.querySelector('[data-spp-act="later"]').click(); } });
   var c = root.querySelector('.spp-card'); if (c) c.focus();

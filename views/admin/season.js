@@ -12,7 +12,7 @@ export function adminSeasonBody({
   seasonFormat = '', quotaAmount = '', jerseyTopPrice = '', jerseyShortPrice = '', teamCount = '4',
   jerseySurchargeStep = '50', jerseyPocketsPrice = '100', seasonRosterCapacity = '',
   allSeasons = [], jerseyCutPrice = '50', payments = null, volunteers = [], gameFace = null,
-  testMode = false, testers = [], testerOptions = [], noPhoto = [],
+  testMode = false, testers = [], testerOptions = [], noPhoto = [], saidNo = [], deadlineReads = null,
 } = {}) {
   const started = draftStatus === 'started';
   const known = [...new Set(allSeasons.map(String))].sort((a, b) => Number(b) - Number(a));
@@ -44,7 +44,9 @@ export function adminSeasonBody({
       ${field({ label: 'Pockets add-on', name: 'jersey_pockets_price', type: 'money', value: jerseyPocketsPrice })}
       ${field({ label: 'NBA cut', name: 'jersey_nba_cut_price', type: 'money', value: jerseyCutPrice, help: 'On the top only.' })}
       ${field({ label: 'Size surcharge', name: 'jersey_surcharge_step', type: 'money', value: jerseySurchargeStep, help: 'Per size, from 2XL up.' })}
-      ${field({ label: 'Sign-up deadline', name: 'season_signup_deadline', value: deadline, placeholder: 'e.g. February 14, 2027', help: 'Optional.' })}
+      ${field({ label: 'Sign-up deadline', name: 'season_signup_deadline', value: deadline, placeholder: 'e.g. February 14, 2027',
+        help: !deadline ? 'Optional.' : deadlineReads ? `Reads as ${deadlineReads}. The countdown and reminders run to the end of that day.` : '',
+        error: deadline && !deadlineReads ? 'Can’t read this as a date, so there’s no countdown or reminders. Write it like “December 15, 2026”.' : '' })}
       ${field({ label: 'Season shown on the site', name: 'portal_season', type: 'select', value: portalSeason, options: [['', `Automatic (Season ${autoSeason})`], ...known.map(s => [s, `Season ${s}`])] })}
     `)}
     <div class="aset-form__save">${button('Save', { kind: 'primary', type: 'submit' })}</div>
@@ -76,6 +78,7 @@ export function adminSeasonBody({
     ${paymentsBlock(payments)}
     ${volunteersBlock(volunteers)}
     ${noPhotoBlock(noPhoto)}
+    ${saidNoBlock(saidNo)}
     ${gameFaceBlock(gameFace)}
     ${section({ id: 'season-details', title: 'Details', note: sigSeason ? `· Season ${sigSeason}` : '', bodyHtml: details })}
     ${nextBlock}
@@ -126,6 +129,14 @@ function noPhotoBlock(list) {
     <div class="aset-next__go"><form data-json-action="/admin/season/game-face-ask"><input type="hidden" name="id" value="${attr(x.id)}">${button(x.asked ? 'Ask again' : 'Ask for it', { kind: x.asked ? 'secondary' : 'primary', type: 'submit' })}</form></div></div>`).join('');
   const all = list.length > 1 ? `<form class="aset-next" data-json-action="/admin/season/game-face-ask" data-confirm data-confirm-title="Ask all ${list.length}?" data-confirm-body="Each gets a bell and a push asking for their game face." data-confirm-send="Ask all"><div class="aset-next__text"><div class="aui-cell__sub">Each gets a bell and a push that opens their photo screen.</div></div><div class="aset-next__go">${button(`Ask all ${list.length}`, { kind: 'secondary', type: 'submit' })}</div></form>` : '';
   return section({ id: 'season-nophoto', title: 'Sign-ups without a game face', note: `· ${list.length}`, bodyHtml: `<div class="aui-panel">${rows}${all}</div>` });
+}
+
+// Tapped "Not this season" on the sign-up popup (and not signed up since): they get no more
+// popups, banners or reminders, so here admins can see who to follow up with. list: [{ name, at }]
+function saidNoBlock(list) {
+  if (!list?.length) return '';
+  const rows = list.map(x => `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__title">${escHtml(x.name)}</div><div class="aui-cell__sub">Said so ${shortWhen(x.at)}</div></div></div>`).join('');
+  return section({ id: 'season-saidno', title: 'Said not this season', note: `· ${list.length} · no more reminders`, bodyHtml: `<div class="aui-panel">${rows}</div>` });
 }
 
 const peso = n => `₱${Math.round(Number(n) || 0).toLocaleString('en-US')}`;

@@ -219,8 +219,13 @@
         })
         .catch(function () { bar.done(); reset(); gfToast('No connection. Your answers are still here. Try again.', 'err'); });
     });
-    // Back to this screen from the browser's history: buttons as they were.
-    window.addEventListener('pageshow', reset);
+    form._sgnReset = reset;
+    // Back to this screen from the browser's history: buttons as they were (one listener for
+    // the page, whichever screen is in it now).
+    if (!window.__sgnPageshow) {
+      window.__sgnPageshow = true;
+      window.addEventListener('pageshow', function () { var f = document.getElementById('sgn-form'); if (f && f._sgnReset) f._sgnReset(); });
+    }
   }
   // The thin amber bar across the top while a step is on its way.
   function loadBar() {
