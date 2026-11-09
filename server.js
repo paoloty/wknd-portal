@@ -23238,7 +23238,9 @@ const signupKindOf = req => (req.path.startsWith('/app/') ? 'app' : 'site');
 
 function sendSignup(req, res, kind, body, { title = 'Season sign-up', status = 200 } = {}) {
   if (signupState(req)?.testing) body = `<div class="sgn-testbar" role="status"><b>Test mode.</b> Only admins and testers can sign up right now. Nothing is required.</div>${body}`;
-  if (kind === 'app') return res.status(status).send(appPage({ ver: APP_VER, installWall: appInstallRequired(), test: appTestLabel(req), ga: buildAppGaSnippet(req), title: `${title} · WKND`, bare: true, body }));
+  // Sign-ups are app-only: in any browser (a computer too) the app's install screen stands in for
+  // the form; on a computer it shows a QR code to the phone (views/app/layout.js installWall 'all').
+  if (kind === 'app') return res.status(status).send(appPage({ ver: APP_VER, installWall: 'all', installQr: signupAppQr, test: appTestLabel(req), ga: buildAppGaSnippet(req), title: `${title} · WKND`, bare: true, body }));
   res.status(status).send(renderPage(req, {
     title: `${title} — WKND Basketball`, currentPath: '/season-signup', minimalHeader: true, noindex: true,
     metaTags: `<link rel="stylesheet" href="/signup.css?v=${SIGNUP_VER}">`,

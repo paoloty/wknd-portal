@@ -469,7 +469,15 @@ html[data-nav="tab"]::view-transition-new(root)  { animation: nav-fade-in .16s e
 .install-wall { display: none; }
 html.needs-install main.app, html.needs-install nav.tabbar, html.needs-install .update-bar { display: none !important; }
 html.needs-install .install-wall { display: flex; flex-direction: column; gap: 14px; min-height: 100dvh; max-width: 560px; margin: 0 auto; padding: calc(28px + var(--safe-t)) 18px calc(96px + var(--safe-b)); }
-.iw-only-inapp, .iw-only-ios-browser, .iw-only-android-browser, .iw-only-ios, .iw-only-android { display: none; }
+.iw-only-inapp, .iw-only-ios-browser, .iw-only-android-browser, .iw-only-ios, .iw-only-android, .iw-only-desktop { display: none; }
+/* A computer on the season sign-up (installWall 'all'): only the QR card, no install steps. */
+html.iw-desktop .iw-only-desktop { display: flex; flex-direction: column; align-items: center; text-align: center; margin-top: 8vh; padding: 28px 24px; }
+.iw-only-desktop .iw-alt { font-size: 14px; }
+.iw-only-desktop .iw-alt b { color: var(--text); }
+html.iw-desktop .install-wall > :not(.iw-only-desktop) { display: none; }
+.iw-only-desktop h1 { margin: 8px 0 6px; font-size: 26px; font-weight: 700; line-height: 1.15; }
+.iw-only-desktop p { margin: 0 auto; max-width: 40ch; font-size: 15px; line-height: 1.5; color: var(--muted); }
+.iw-qr { display: block; margin: 18px auto 12px; width: 200px; height: 200px; border-radius: 14px; background: #fff; padding: 10px; }
 html.iw-inapp .iw-only-inapp, html.iw-ios .iw-only-ios-browser, html.iw-android .iw-only-android-browser { display: block; }
 html.iw-is-ios .iw-only-ios, html.iw-is-android .iw-only-android { display: inline; }
 .iw-top { text-align: center; padding-top: 8px; }

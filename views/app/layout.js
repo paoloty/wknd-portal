@@ -127,13 +127,23 @@ var sa=matchMedia('(display-mode: standalone)').matches||navigator.standalone===
 var ios=/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1),android=/Android/.test(ua);
 if(sa||!(ios||android))return;
 d.classList.add('needs-install',/FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|MessengerForiOS|Line\\//.test(ua)?'iw-inapp':ios?'iw-ios':'iw-android',ios?'iw-is-ios':'iw-is-android');}catch(e){}})();</script>`;
+// installWall 'all' (the season sign-up, app-only): walled on a computer too, where the wall
+// shows a QR code to open it on the phone instead of the install steps.
+const INSTALL_DETECT_ALL = INSTALL_DETECT.replace('if(sa||!(ios||android))return;', "if(sa)return;if(!(ios||android)){d.classList.add('needs-install','iw-desktop');return;}");
 
 const shareGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 11v9h14v-9"/></svg>';
 const dotsGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
 const moreGlyph = '<svg class="iw-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
 
-function installWallHtml() {
+function installWallHtml(qr = '') {
   return `<section class="install-wall" aria-label="Install the WKND app">
+  <div class="iw-card iw-only-desktop">
+    <div class="kick">Season sign-ups are in the app</div>
+    <h1>Sign up on your phone</h1>
+    <p>Sign-ups happen in the WKND app, which runs on your phone. Scan this with your phone's camera, then add WKND to your home screen.</p>
+    ${qr ? `<img class="iw-qr" src="${esc(qr)}" alt="QR code that opens the sign-up on your phone" width="200" height="200">` : ''}
+    <p class="iw-alt">Or open <b>wkndbasketball.com/app</b> on your phone.</p>
+  </div>
   <div class="iw-top">
     <span class="iw-icon"><img src="/app-icon-180.png?v=2" alt="" width="72" height="72"></span>
     <h1>Install the<br><em>WKND app</em></h1>
@@ -194,7 +204,7 @@ function installWallHtml() {
 const FONT_PRELOADS = ['sairacondensed-EJRLQgErUN8XuHNEtX81i9TmEkrnfc9Q962f', 'sairacondensed-EJRLQgErUN8XuHNEtX81i9TmEkrnGc5Q962f', 'archivo-k3k8o8UDI-1M0wlSfdzyIEkpwTM29hr-8mTYIRyOSVz60_PG_HAotCdrD08']
   .map(f => `<link rel="preload" href="/fonts/${f}.woff2" as="font" type="font/woff2" crossorigin>`).join('\n  ');
 
-export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, badges = {}, who = '', test = '', ga = '', bk = '' }) {
+export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver = '', bodyClass = '', installWall = false, installQr = '', badges = {}, who = '', test = '', ga = '', bk = '' }) {
   const badge = key => {
     const n = Number(badges[key]) || 0;
     return n ? `<span class="tab__badge tab__badge--${key === 'me' ? 'err' : 'warn'}" aria-label="${n} waiting">${n > 9 ? '9+' : n}</span>` : '';
@@ -224,7 +234,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   <link rel="icon" href="/favicon-32.png?v=2" type="image/png" sizes="32x32">
   <link rel="icon" href="/favicon-16.png?v=2" type="image/png" sizes="16x16">
   <script>try{var t=localStorage.getItem('wknd-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
-  ${installWall ? INSTALL_DETECT : ''}
+  ${installWall === 'all' ? INSTALL_DETECT_ALL : installWall ? INSTALL_DETECT : ''}
   <link rel="preload" href="/fonts/fonts.css" as="style">
   ${FONT_PRELOADS}
   <link rel="stylesheet" href="/fonts/fonts.css">
@@ -232,7 +242,7 @@ export function appPage({ title = 'WKND', tab = '', body = '', bare = false, ver
   ${ga}
 </head>
 <body class="${esc(bodyClass)}">
-  ${installWall ? installWallHtml() : ''}
+  ${installWall ? installWallHtml(installQr) : ''}
   ${test ? `<div class="test-pill" role="status">${esc(test)}</div>` : ''}
   <main class="app${bare ? ' app--bare' : ''}">${body}</main>
   ${tabbar}
