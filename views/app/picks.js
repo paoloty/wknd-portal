@@ -50,8 +50,26 @@ function stakes(g) {
   return `<div class="pick__stakes"><span>You're <b>${esc(st.now)}</b> on <b>${esc(st.net)}</b></span><span class="up">${g.myPick ? 'Right' : 'Call it'} → ${esc(st.right)}</span><span class="dn">${g.myPick ? 'Wrong' : 'Miss'} → ${esc(st.wrong)}</span></div>`;
 }
 
+// Finals Game 1's tiebreaker (the winning-margin guess). g.marginGuess = { mine, seed } | null.
+// The card carries the guess so public/app.js can open the guess sheet right after a pick
+// (and after every switch: the old number was for the other team). mgAttrs goes on the card.
+export function mgAttrs(g) {
+  const mg = g.marginGuess;
+  return mg && !g.closed ? ` data-mg data-mg-mine="${mg.mine ?? ''}" data-mg-seed="${esc(mg.seed || 5)}"` : '';
+}
+// The line under the pick bars: a hint before you pick, "Tiebreaker · BLUE by 8 · Edit ›" after
+// (opens the sheet), your frozen guess once picks close.
+export function marginLine(g) {
+  const mg = g.marginGuess;
+  if (!mg) return '';
+  const team = g.myPick ? (g.myPick === 'a' ? g.a : g.b).name : '';
+  if (g.closed) return g.myPick && mg.mine != null ? `<p class="pick__note mg-done">Your tiebreaker guess: <b>${esc(team)} by <span class="num">${mg.mine}</span></b></p>` : '';
+  if (!g.myPick) return '<p class="pick__note">Finals tiebreaker: pick a side, then guess the winning margin.</p>';
+  return `<button type="button" class="mg-line" data-mg-open data-mg-team="${esc(team)}"><span class="kick">Tiebreaker</span><span class="mg-line__t">${esc(team)} by <b class="num">${mg.mine ?? '–'}</b></span><span class="mg-line__go">${mg.mine == null ? 'Add guess' : 'Edit'}${chev}</span></button>`;
+}
+
 export function pickCard(g) {
-  return `<section class="card pick" id="g-${esc(g.id)}" data-pick-game="${esc(g.id)}" data-pick-a="${esc(g.a.name)}" data-pick-b="${esc(g.b.name)}" data-close-label="${esc(g.closeLabel)}">
+  return `<section class="card pick" id="g-${esc(g.id)}" data-pick-game="${esc(g.id)}" data-pick-a="${esc(g.a.name)}" data-pick-b="${esc(g.b.name)}" data-close-label="${esc(g.closeLabel)}"${mgAttrs(g)}>
     <div class="pick__top"><span class="kick">${esc(g.title)}</span>
       ${g.closed ? '<span class="pick__close is-closed">Picks closed</span>' : g.closeAt ? `<span class="pick__close" data-close-at="${g.closeAt}"></span>` : ''}</div>
     <div class="pick__day">${esc(g.dayLabel)}</div>
@@ -65,7 +83,7 @@ export function pickCard(g) {
     <div class="pick__opts">${pickOption(g, 'a')}${pickOption(g, 'b')}</div>
     ${faces(g)}
     ${stakes(g)}
-    ${g.marginGuess ? '<p class="pick__note">Finals tiebreaker (guess the winning margin) <span class="tag-muted">Soon</span></p>' : ''}
+    ${marginLine(g)}
     <p class="pick__msg" data-pick-msg hidden></p>
     ${appSocialBar(g.social)}
   </section>`;

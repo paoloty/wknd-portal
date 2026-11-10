@@ -155,7 +155,7 @@ import {
   toggleGameReaction, getGameReactionState, getGameReactors, getPlayersWithAccounts,
   getGameCommentCounts, getGameReactionCounts, getReactedGameIdsForPlayer,
   getLatestCommentsForGames, getGameCommenterIds, getThreadPlayerIds, getTeamPlayerIdsWithAccounts, findUnreadNotification, refreshNotification,
-  setGamePick, setGamePickMargin, getGamePickCounts, getPlayerGamePicks,
+  setGamePick, setGamePickMargin, getGamePickMargin, getGamePickCounts, getPlayerGamePicks,
   getAllGamePicks, getGamePicksWithPlayers, getAllGamePickSettings, setGamePickClosed, setGamePickHideOdds, claimGamePickSettle,
   getGamePreview, saveGamePreview, getGamePreviewIds,
   getPapawisSignupById, markPapawisSignupPaid, markPapawisSignupUnpaid, getUnlinkedPapawisPayments, getSameDayOtherPayments, fileTxUnderPapawis, getPendingRunPayments,
@@ -7986,7 +7986,9 @@ function bkPickCard(id, me, ctx) {
   }
   return { kind: 'pick', id, game: g, label: [manilaDayLabel(pg.ymd), !played && tip].filter(Boolean).join(' · '),
     closed: played ? 'Final' : closed ? 'Picks closed' : '', closeAt: !closed && closeAt ? Date.parse(closeAt) : 0, score, result,
-    marginGuess: !played && pg.type === 'finals' && finalsGame1Id(ctx.all, pg.season) === id,
+    // Finals Game 1's tiebreaker: your guess + where the sheet starts (same as openPicks).
+    marginGuess: !played && pg.type === 'finals' && finalsGame1Id(ctx.all, pg.season) === id
+      ? { mine: myPick ? getGamePickMargin(id, me.playerId) : null, seed: Math.max(1, Math.round(Math.abs(odds?.margin || 0))) || 5 } : null,
     href: played ? `/app/games/${encodeURIComponent(id)}` : `/app/picks#g-${encodeURIComponent(id)}` };
 }
 // { key: html } for this player.
@@ -9827,7 +9829,7 @@ function appPickGame(o, g = {}, colorOf) {
     odds: o.odds ? { pctA: o.odds.pctA, pctB: o.odds.pctB } : null,
     myPick: o.myPick, counts: o.counts || { a: 0, b: 0 },
     faces: (o.faces || []).map(f => ({ ini: f.ini, color: f.color || '', me: !!f.me })),
-    stakes: o.stakes, marginGuess: !!o.marginGuess,
+    stakes: o.stakes, marginGuess: o.marginGuess ? { mine: o.marginGuess.mine, seed: o.marginGuess.seed } : null,
   };
 }
 const appColorOf = teams => name => { const t = teams.find(x => x.name === name); return t ? (t.color || teamColor(t.name)) : teamColor(name); };

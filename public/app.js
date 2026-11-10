@@ -1122,6 +1122,11 @@
       var jp = justPicked, done = $('[data-pick-game="' + jp.id + '"]');
       justPicked = null;
       if (done && $('.pick__fill', done)) pickReveal(done, jp.from, true);
+      // Finals Game 1: the guess sheet follows every pick and switch (an old "BLUE by 8" was
+      // for the other team), starting at your saved number or the odds' margin.
+      if (done && done.hasAttribute('data-mg') && jp.side) {
+        marginSheet({ id: jp.id, team: done.getAttribute('data-pick-' + jp.side), mine: done.getAttribute('data-mg-mine'), seed: done.getAttribute('data-mg-seed') }, function () { var c = $('[data-pick-game="' + jp.id + '"]'); if (c) pickCardRefresh(c); else refreshScreen(); });
+      }
     }
     pickGrowOnView();
     var clocks = $$('[data-close-at]');
@@ -1160,13 +1165,81 @@
             var label = card.getAttribute('data-close-label');
             toast('Picked ' + card.getAttribute('data-pick-' + side) + (label ? ' · change until ' + label : ''));
             settle();
-            justPicked = { id: card.getAttribute('data-pick-game'), from: from };
-            var block = card.closest('[data-block-src]');
-            if (block) { loadBlock(block, true); refreshNav(); } else refreshScreen();
+            justPicked = { id: card.getAttribute('data-pick-game'), from: from, side: side };
+            pickCardRefresh(card);
           }, function () { undo('No connection. Your pick wasn\'t saved.'); });
       });
     });
   }
+  function pickCardRefresh(card) {
+    var block = card.closest('[data-block-src]');
+    if (block) { loadBlock(block, true); refreshNav(); } else refreshScreen();
+  }
+
+  // ════ Finals tiebreaker (Finals Game 1's winning-margin guess) ════
+  // A sheet after the pick: −/+ around a big number, quick numbers, Save / Not now. Saves
+  // through the site's own POST /games/:id/pick/margin (1–60, picks open, needs a pick).
+  // o = { id, team, mine ('' = none), seed }; done() redraws the card. Barkadahan cards use it
+  // too (window.wkndMarginSheet), so the chat, Home rail and Who wins? screen behave the same.
+  var MG_MAX = 60, MG_QUICK = [3, 5, 8, 10, 15];
+  function marginSheet(o, done) {
+    var saved = o.mine === '' || o.mine == null ? null : Number(o.mine);
+    var val = saved != null ? saved : Math.min(MG_MAX, Math.max(1, Number(o.seed) || 5));
+    var el = admSheet('Finals tiebreaker',
+      '<div class="mg-sh">' +
+        '<p class="mg-sh__q">How much does <b>' + admEsc(o.team) + '</b> win by?</p>' +
+        '<p class="mg-sh__sub">Optional. If the Pickmaster race ends in a tie, the closest guess wins it.</p>' +
+        '<div class="mg-sh__step"><button type="button" class="mg-sh__pm" data-mg-step="-1" aria-label="Lower">−</button>' +
+          '<div class="mg-sh__val"><b class="num" data-mg-val aria-live="polite"></b><small>Points</small></div>' +
+          '<button type="button" class="mg-sh__pm" data-mg-step="1" aria-label="Higher">+</button></div>' +
+        '<div class="mg-sh__chips">' + MG_QUICK.map(function (n) { return '<button type="button" class="mg-sh__chip num" data-mg-n="' + n + '">' + n + '</button>'; }).join('') + '</div>' +
+        '<p class="msg msg--err mg-sh__msg" data-mg-msg hidden></p>' +
+        '<button type="button" class="btn" data-mg-save>Save guess</button>' +
+        '<button type="button" class="btn btn--plain mg-sh__skip" data-mg-skip>' + (saved != null ? 'Keep ' + admEsc(o.team) + ' by ' + saved : 'Not now') + '</button>' +
+        (saved != null ? '<button type="button" class="btn btn--plain mg-sh__clear" data-mg-clear>Clear my guess</button>' : '') +
+      '</div>');
+    var out = $('[data-mg-val]', el), msg = $('[data-mg-msg]', el), busy = false;
+    var paint = function () {
+      out.textContent = val;
+      $$('[data-mg-n]', el).forEach(function (c) { c.classList.toggle('is-on', Number(c.getAttribute('data-mg-n')) === val); });
+      $('[data-mg-step="-1"]', el).disabled = val <= 1;
+      $('[data-mg-step="1"]', el).disabled = val >= MG_MAX;
+    };
+    var send = function (margin) {
+      if (busy) return;
+      msg.hidden = true;
+      if (!navigator.onLine) { msg.textContent = 'You\'re offline. Your guess needs a connection, so nothing was sent.'; msg.hidden = false; return; }
+      busy = true; $$('.btn', el).forEach(function (b) { b.disabled = true; });
+      fetch('/games/' + encodeURIComponent(o.id) + '/pick/margin', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ margin: margin }) })
+        .then(function (r) { if (r.status === 401) { location.href = '/app/login'; throw ''; } return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok || !j.ok) throw j.error || 'Couldn\'t save your guess. Try again.'; return j; }); },
+          function () { throw 'No connection. Your guess wasn\'t saved.'; })
+        .then(function (j) {
+          closeSheet();
+          toast(j.margin == null ? 'Tiebreaker guess cleared' : 'Tiebreaker saved · ' + o.team + ' by ' + j.margin);
+          if (done) done();
+        }).catch(function (e) {
+          busy = false; $$('.btn', el).forEach(function (b) { b.disabled = false; });
+          if (e) { msg.textContent = e; msg.hidden = false; }
+        });
+    };
+    el.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('button'); if (!b || b.disabled) return;
+      if (b.hasAttribute('data-mg-step')) { val = Math.min(MG_MAX, Math.max(1, val + Number(b.getAttribute('data-mg-step')))); paint(); }
+      else if (b.hasAttribute('data-mg-n')) { val = Number(b.getAttribute('data-mg-n')); paint(); }
+      else if (b.hasAttribute('data-mg-save')) send(val);
+      else if (b.hasAttribute('data-mg-clear')) send(null);
+      else if (b.hasAttribute('data-mg-skip')) closeSheet();
+    });
+    paint();
+    return el;
+  }
+  window.wkndMarginSheet = marginSheet;
+  // "Tiebreaker · BLUE by 8 · Edit ›" on a card (Barkadahan's cards handle their own).
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-mg-open]'); if (!b || b.closest('[data-bk-pick]')) return;
+    var card = b.closest('[data-mg]'); if (!card) return;
+    marginSheet({ id: card.getAttribute('data-pick-game'), team: b.getAttribute('data-mg-team'), mine: card.getAttribute('data-mg-mine'), seed: card.getAttribute('data-mg-seed') }, function () { pickCardRefresh(card); });
+  });
 
   // ════ Papawis (views/app/papawis.js) ════
   // Join, leave and the free run go through the site's own endpoints, so its rules decide

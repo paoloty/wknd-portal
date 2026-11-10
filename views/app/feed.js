@@ -3,7 +3,7 @@
 // page at a time (/app/feed/items → JSON { html, next }), each page carrying the day of its
 // last item so a day header isn't repeated across pages.
 import { esc, appAvatar, icons, backChev, chev, soonTag, lazyList } from './layout.js';
-import { pickOption, pickCard } from './picks.js';
+import { pickOption, pickCard, mgAttrs, marginLine } from './picks.js';
 import { appSocialBar, appThreadPanel } from './comments.js';
 import { papawisAction } from './papawis.js';
 import { todoCard } from './home.js';
@@ -300,10 +300,11 @@ const pickedLine = g => {
 // A pick card for the rail: same buttons and data as views/app/picks.js (public/app.js
 // initPicks saves them), plus Preview ›.
 function railPickCard(g) {
-  return `<section class="rc pick" data-pick-game="${esc(g.id)}" data-pick-a="${esc(g.a.name)}" data-pick-b="${esc(g.b.name)}" data-close-label="${esc(g.closeLabel)}">
+  return `<section class="rc pick" data-pick-game="${esc(g.id)}" data-pick-a="${esc(g.a.name)}" data-pick-b="${esc(g.b.name)}" data-close-label="${esc(g.closeLabel)}"${mgAttrs(g)}>
     <div class="rc__top"><span class="kick">${esc([g.title, g.tip].filter(Boolean).join(' · '))}</span>${g.closeAt ? `<span class="rc__clock" data-close-at="${g.closeAt}"></span>` : ''}</div>
     ${matchup(g)}
     <div class="pick__opts">${pickOption(g, 'a')}${pickOption(g, 'b')}</div>
+    ${marginLine(g)}
     <div class="rc__foot"><span>${pickedLine(g)}</span><a href="/app/games/${encodeURIComponent(g.id)}?from=home">Preview ›</a></div>
     <p class="pick__msg" data-pick-msg hidden></p>
   </section>`;

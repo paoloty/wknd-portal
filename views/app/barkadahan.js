@@ -3,7 +3,7 @@
 // bundle (server.js /app/barkadahan): the last messages, me, the online count, the reactions and
 // the people for @mentions. Full screen (no tab bar), like a chat app, so the keyboard has room.
 import { esc, backChev, appAvatar, icons, chev } from './layout.js';
-import { pickOption } from './picks.js';
+import { pickOption, mgAttrs, marginLine } from './picks.js';
 
 export function appBarkadahanPage({ bundle }) {
   const json = JSON.stringify(bundle).replace(/</g, '\\u003c');
@@ -143,11 +143,14 @@ export function bkCardHtml(c) {
   const foot = c.result
     ? `<span class="${c.result.got === true ? 'bkc__win' : ''}">${esc(c.result.text)}</span>`
     : `<span><b class="num">${total}</b> pick${total === 1 ? '' : 's'}${!c.closed && g.myPick ? ' · tap the other side to switch' : ''}</span>`;
-  return `<div class="bkc bkc--pick" data-bk-pick="${esc(g.id)}" data-pick-a="${esc(g.a.name)}" data-pick-b="${esc(g.b.name)}">
+  // Finals Game 1 picks like any game; the tiebreaker line (and the sheet after a pick) adds the guess.
+  const mgG = { ...g, closed: !!c.closed, marginGuess: c.marginGuess };
+  return `<div class="bkc bkc--pick" data-bk-pick="${esc(g.id)}" data-pick-a="${esc(g.a.name)}" data-pick-b="${esc(g.b.name)}"${mgAttrs(mgG)}>
     <div class="bkc__top bkc__top--pick"><span class="bkc__k"><span class="bkc__ww">Who wins?</span> · ${esc(c.label)}</span>${clock}</div>
     ${c.score ? `<div class="bkc__score num">${esc(c.score)}</div>` : ''}
-    <div class="pick__opts bkc__opts">${pickOption(c.marginGuess ? { ...g, closed: true } : g, 'a')}${pickOption(c.marginGuess ? { ...g, closed: true } : g, 'b')}</div>
-    <div class="bkc__foot">${c.marginGuess && !c.closed ? '<span>Finals Game 1: pick with your margin guess</span>' : foot}${more(c.href, c.marginGuess && !c.closed ? 'Pick' : c.result ? 'Recap' : 'Details')}</div>
+    <div class="pick__opts bkc__opts">${pickOption(g, 'a')}${pickOption(g, 'b')}</div>
+    ${c.marginGuess ? `<div class="bkc__mg">${marginLine(mgG)}</div>` : ''}
+    <div class="bkc__foot">${foot}${more(c.href, c.result ? 'Recap' : 'Details')}</div>
   </div>`;
 }
 

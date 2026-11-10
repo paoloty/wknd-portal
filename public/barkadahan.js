@@ -535,7 +535,12 @@
       post('/games/' + encodeURIComponent(card.getAttribute('data-bk-pick')) + '/pick', { side: side }).then(function () {
         toast('Picked ' + card.getAttribute('data-pick-' + side), 'ok');
         fetchCards([key]);
+        // Finals Game 1: the tiebreaker sheet follows every pick and switch (public/app.js).
+        if (card.hasAttribute('data-mg')) mgSheet(card, key, card.getAttribute('data-pick-' + side));
       }, function (err) { toast(err.message, 'err'); fetchCards([key]); });
+    }
+    function mgSheet(card, key, team) {
+      if (window.wkndMarginSheet) window.wkndMarginSheet({ id: card.getAttribute('data-bk-pick'), team: team, mine: card.getAttribute('data-mg-mine'), seed: card.getAttribute('data-mg-seed') }, function () { fetchCards([key]); });
     }
     // The menu opens when the finger lifts after a hold, not while it's still down: opened
     // under the finger, the lift landed on the sheet and pressed whatever was there (Report, or
@@ -624,6 +629,7 @@
       var sayb = t.closest('[data-bk-say]'); if (sayb && input) { input.value = sayb.getAttribute('data-bk-say'); input.dispatchEvent(new Event('input')); input.focus(); return; }
       var pwb = t.closest('[data-bk-pw]'); if (pwb && !pwb.disabled) return papawisAct(pwb);
       var pkb = t.closest('[data-bk-pick] .pick__opt'); if (pkb) return pickAct(pkb);
+      var mgb = t.closest('[data-bk-pick] [data-mg-open]'); if (mgb) return mgSheet(mgb.closest('[data-bk-pick]'), mgb.closest('[data-bk-card]').getAttribute('data-bk-card'), mgb.getAttribute('data-mg-team'));
       var sn = t.closest('[data-bk-seen]'); if (sn && byId[sn.getAttribute('data-bk-seen')]) return openWho(byId[sn.getAttribute('data-bk-seen')], 'seen');
       if (t.closest('[data-bk-share]')) return openShare();
       var sp = t.closest('[data-bk-share-pick]');
