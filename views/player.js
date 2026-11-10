@@ -1780,7 +1780,7 @@ function prfCoachCard(coachNote) {
         <span class="prf-coach__play">${PRF_ICON.play}</span>
         <span><span class="prf-k">WATCH · ${escHtml(label.toUpperCase())}</span><span class="prf-coach__title">${escHtml(video.title)}</span></span>
       </a>` : ''}
-      ${dateStr ? `<span class="prf-small">Based on stats through ${escHtml(dateStr)} · updates the next time your averages change. Only you see this.</span>` : ''}
+      ${dateStr ? `<span class="prf-small">Based on your career stats (every season, playoffs included) through ${escHtml(dateStr)}${coachNote.stale ? ', before your latest games: it updates soon' : ' · updates the next time your averages change'}. Only you see this.</span>` : ''}
     </div>
   </div>`;
 }

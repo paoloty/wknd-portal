@@ -109,7 +109,7 @@ import {
   getMvpBallot, getMvpBonusBallot, countMvpBallots, saveMvpBallot, listMvpBallots, listMvpBonusBallots, dismissMvpBar, isMvpBarDismissed, countMvpBarDismissed,
   getDpoyWriteup, getDpoyWriteupsForSeason, setDpoyWriteup, deleteDpoyWriteupForPlayer, clearDpoyWriteupSeason,
   getMvpCandidates, getFinalsMvpCandidates, getTotalSeasonGamesForMvp, getFinalsSeriesResult,
-  getSetting, setSetting,
+  getSetting, setSetting, clearSettingsLike,
   insertSeasonSignup, getSeasonSignup, getSeasonSignupById, getSeasonSignups, updateSeasonSignupStatus, updateSignupTeamPref, countSeasonSignups, countConfirmedSeasonSignups, withdrawSeasonSignup, removeFromSeasonRoster,
   upsertLivenessCapture, getLivenessCaptureByRegId, getLivenessCaptureById, getAllLivenessCaptures, deleteLivenessCapture,
   updateRegistrationContact,
@@ -191,7 +191,7 @@ import { leaderMinGames, awardMinGames, qualifiesPerGame, meetsLeaderRule, CAREE
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
 import { keyPlayRows, keyPlayFacts, keyPlayProblems, keyPlayCopy, keyPlayCards, qName as keyPlayQ } from './lib/key-plays.js';
-import { runWriter, numberProblems, claimProblems, bannedProblems, storyProblems, shorthandProblems, zeroStatProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
+import { runWriter, numberProblems, claimProblems, finalScoreProblems, unpairRunningScores, bannedProblems, storyProblems, shorthandProblems, zeroStatProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary, oddsPoints } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
 import { adminLoginBody } from './views/admin/login.js';
@@ -8493,6 +8493,14 @@ app.post('/api/score/:id/finish', express.json(), (req, res) => {
 // approver. Not while a re-track is under way: replace with it or throw it away first.
 // The note an approver writes on the site compare when finalizing (what was fixed, why). Kept as a
 // history on the game (settings.statsNotes, newest last); admins see it on the Scoring tab, never players.
+// A game's cached AI writeups (Top performers, Team stats on the game page) were written from
+// the old box score: emptied when Replace or Undo swaps it, so they're written again from the
+// new one (the Nov 8 page kept "Chucky's 20 Point Effort" against a box score of 19). Key plays
+// key on the play log and rewrite themselves.
+function forgetGameWriteups(gameId) {
+  const n = clearSettingsLike(`section_summary_game_%:${gameId}`);
+  if (n) console.log(`[writeups] cleared ${n} game-page writeup(s) for game=${gameId}`);
+}
 function addStatsNote(gameId, req, action) {
   const text = String(req.body?.note || '').trim().slice(0, 500);
   if (!text) return;
@@ -9463,7 +9471,11 @@ app.post('/admin/games/:id/scoring/replace', requireAuth, express.json(), (req, 
       out.body.message = `${out.body.message} The old one is kept: Undo the replace puts it back.`;
     }
   }
-  if (out.status === 200) addStatsNote(game.id, req, 'replaced');
+  if (out.status === 200) {
+    addStatsNote(game.id, req, 'replaced');
+    forgetGameWriteups(game.id);
+    out.body.message = `${out.body.message} The recap and Player of the Game were written from the old box score: regenerate them.`;
+  }
   res.status(out.status).json(out.body);
   if (out.after) out.after();
 });
@@ -9482,6 +9494,7 @@ app.post('/admin/games/:id/scoring/undo-replace', requireAuth, express.json(), (
     if (out.error) return res.status(409).json({ error: out.error });
     setGameReviewLocked(game.id, false);
     saveScoreGame(game.id, { settings: { ...getScoreGame(game.id).settings, replaced: null } });
+    forgetGameWriteups(game.id);
     return res.json({ ok: true, message: 'Undone: the old box score is back. Your re-track is kept.' });
   }
   const snap = publishSnapshotAt(game.id, rp.snapAt);
@@ -9503,6 +9516,7 @@ app.post('/admin/games/:id/scoring/undo-replace', requireAuth, express.json(), (
     return res.status(500).json({ error: 'Undo failed: ' + err.message });
   }
   console.log(`[scorer] replace undone game=${game.id} by ${me.name}`);
+  forgetGameWriteups(game.id);
   res.json({ ok: true, message: 'Undone: the old box score is back. Your re-track is kept, to fix and replace again.' });
   afterGameImport(game, snap.stats.map(s => s.player_id));
   liveChanged(game.id);
@@ -13294,6 +13308,13 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
 
   // Per-award-type stat emphasis for the prompt
   function buildContextLine(e, type) {
+    // Finals MVP: the Finals games' numbers, said as such (they were labelled regular season).
+    if (type === 'finals_mvp') {
+      const f = getFinalsMvpCandidates(season).find(c => (c.player_id || c.id) === e.player_id);
+      if (f) e = { ...e, ...Object.fromEntries(['games_played', 'pts', 'ast', 'reb', 'stl', 'blk', 'turnover', 'fg2m', 'fg3m', 'fg4m', 'fg2m_miss', 'fg3m_miss', 'fg4m_miss', 'ftm', 'ft_miss'].filter(k => f[k] != null).map(k => [k, f[k]])) };
+      const s = buildStatLine(e);
+      return `${s.ppg} PPG, ${s.rpg} RPG, ${s.apg} APG, ${s.spg} SPG, ${s.bpg} BPG over ${s.gp} Finals ${s.gp === 1 ? 'game' : 'games'}${f ? '' : ' (regular season: no Finals box scores on record)'}`.replace(/ over (\d+) Finals games? \(regular season: no Finals box scores on record\)/, ' over $1 regular-season games (no Finals box scores on record)');
+    }
     const s = buildStatLine(e);
     const base = `${s.ppg} PPG, ${s.rpg} RPG, ${s.apg} APG`;
     const shooting = [
@@ -13349,7 +13370,7 @@ app.post('/admin/awards/generate-article', requireAuth, express.json(), async (r
     const threes = [...leaders].sort((a, b) => (b.fg3m || 0) - (a.fg3m || 0));
     const t3 = threes.findIndex(p => p.id === pid);
     if (t3 !== -1 && t3 < 3 && (me.fg3m || 0) > 0) out.push(`- ${ord(t3 + 1)} in the league in threes made (${me.fg3m})`);
-    return out.length ? `League ranks among ${leaders.length} players with 3+ games:\n${out.join('\n')}` : '';
+    return out.length ? `Regular-season league ranks among the ${leaders.length} players who qualify for the leaderboards:\n${out.join('\n')}` : '';
   }
 
   let prompt, facts;
@@ -14534,7 +14555,8 @@ app.get('/games/:ref', (req, res) => {
       // A finished game is an archive: a missing writeup is written on the first page view
       // (any season — at most 2 in flight, so a crawler only queues them), then kept as written
       // (keep). Admin Regenerate is the only rewrite.
-      sections: sectionSummaries(gameSectionFacts(game, { stats, dc, won }), { keep: true }),
+      // ...unless the box score was saved again after it was written (a re-track Replace).
+      sections: sectionSummaries(gameSectionFacts(game, { stats, dc, won }), { keep: true, staleBefore: Number(getScoreGame(game.id)?.published_at) || 0 }),
     }),
   }));
 });
@@ -15240,7 +15262,7 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
   }
   const facts = [
     `MATCHUP: ${teamA.name} vs ${teamB.name}${upcoming ? ` on ${gameYmd(upcoming.date)}` : ''}`,
-    `Season ${season} records: ${teamA.name} ${recordLine(standA)} | ${teamB.name} ${recordLine(standB)}`,
+    `Season ${season} regular-season records: ${teamA.name} ${recordLine(standA)} | ${teamB.name} ${recordLine(standB)}`,
     `Head-to-head, ALL SEASONS (not this season's record): ${h2hLine}`,
     `${teamA.name} top scorers this season: ${topPlayers(teamA.id) || 'no data'}`,
     `${teamB.name} top scorers this season: ${topPlayers(teamB.id) || 'no data'}`,
@@ -15252,7 +15274,9 @@ app.post('/admin/posts/generate-preview', requireAuth, express.json(), async (re
   const voice = pickVoice('home', { date: manilaTodayStr() });
   const flavor = voiceFlavor(voice, [teamA.id, teamB.id].sort().join('|'), 300);
   const prompt = [
-    `You are a local recreational basketball league writer previewing an upcoming playoff/finals matchup — a community observer, not a broadcaster.`,
+    // What kind of game it is comes from the facts (the storyline's PLAYOFF SITUATION line);
+    // this used to call every pairing a playoff/finals matchup.
+    `You are a local recreational basketball league writer previewing an upcoming ${upcoming && (upcoming.game_type === 'playoff' || upcoming.game_type === 'finals') ? (upcoming.game_type === 'finals' ? 'Finals' : 'playoff') : 'league'} matchup — a community observer, not a broadcaster.`,
     `Write a matchup preview post for WKND Basketball that builds anticipation without hype-speak.`,
     `VOICE — ${voice.name}: ${voice.guide}`,
     flavor,
@@ -16221,6 +16245,76 @@ function playoffHighSeed(game) {
   return ia !== -1 && ib !== -1 ? (ia < ib ? game.team_a_id : game.team_b_id) : null;
 }
 
+// What kind of game it was and what the result means, in words, for every game writer (recap,
+// POTG, homepage headlines). A playoff game is about the series: regular-season standings,
+// records and streaks don't apply (Paolo, 2026-11-11: a recap of Black eliminating Maroon 2-0
+// read like a regular game, "forcing a deciding game" and "as for the standings").
+// short: one clause for a list line ("Semifinal 2, Game 2: Black won the series 2-0 and reach the Finals").
+function gameSituation(game, { short = false } = {}) {
+  const T = titleCase;
+  const sA = Number(game.team_a_score), sB = Number(game.team_b_score);
+  if (game.game_type !== 'playoff' && game.game_type !== 'finals') return short ? '' : `SITUATION: Season ${game.season} regular-season game.`;
+  if (sA === sB) return '';
+  const aWon = sA > sB;
+  const W = T(aWon ? game.team_a_name : game.team_b_name), L = T(aWon ? game.team_b_name : game.team_a_name);
+  const wId = aWon ? game.team_a_id : game.team_b_id;
+  const high = game.game_type === 'playoff' ? playoffHighSeed(game) : null;
+  const rec = getSeriesRecordForGame(game, high);
+  if (!rec) return '';
+  const wWins = wId === game.team_a_id ? rec.teamAWins : rec.teamBWins, lWins = wId === game.team_a_id ? rec.teamBWins : rec.teamAWins;
+  const gameNo = rec.teamAWins + rec.teamBWins;
+  let stage, format, after;
+  if (game.game_type === 'finals') {
+    stage = `the Finals, Game ${gameNo}`;
+    format = 'best of 3';
+    after = rec.decided ? `${W} won the Finals ${wWins}-${lWins} and are the Season ${game.season} champions; ${L}'s season is over.`
+      : wWins === lWins ? `the Finals are tied ${wWins}-${lWins}; the next game decides the title.`
+      : `${W} lead the Finals ${wWins}-${lWins}; one more win takes the title.`;
+  } else {
+    const standings = getSeasonStandings(game.season);
+    const seeds = computeSeeds(standings, buildSeasonH2HMap(standings, game.season));
+    const rank = id => seeds.findIndex(s => s.id === id) + 1;
+    const ra = rank(game.team_a_id), rb = rank(game.team_b_id);
+    const semi = Math.min(ra, rb) === 1 ? 1 : Math.min(ra, rb) === 2 ? 2 : 0;
+    const H = high ? T(high === game.team_a_id ? game.team_a_name : game.team_b_name) : '';
+    stage = `${semi ? `Semifinal ${semi}` : 'the semifinals'}, Game ${gameNo}`;
+    format = H ? `twice to beat: ${H} (the higher seed) needs 1 win, the other team needs 2` : 'twice to beat';
+    // The higher seed losing Game 1 then winning Game 2 is 1-1 on paper: say it won the decider.
+    // Seeds that can't be placed: say only what is certain (never "forced a decider").
+    if (!high) after = `${W} won Game ${gameNo} of the semifinal.`;
+    else after = rec.decided ? `${W} ${gameNo > 1 && wWins === lWins ? `won the deciding Game ${gameNo}` : `won the semifinal${gameNo > 1 ? ` ${wWins}-${lWins}` : ''}`} and reach the Finals; ${L} are eliminated and their season is over.`
+      : `${W} beat twice-to-beat ${L} to force a deciding Game ${gameNo + 1}.`;
+  }
+  if (short) return `${stage.replace(/^the /, '').replace(/^./, c => c.toUpperCase())}: ${after}`;
+  return `SITUATION: Season ${game.season} playoffs, ${stage} (${format}). After this game: ${after} This is a playoff game: regular-season standings, records and win/loss streaks do not apply here; write about the series.`;
+}
+
+// The same, before tip-off (storylines, Who wins?, Coming up, the picks email): the round, the
+// game number, the series so far and what this game decides. '' for a regular-season game.
+function gameSituationBefore(game) {
+  if (game.game_type !== 'playoff' && game.game_type !== 'finals') return '';
+  const T = titleCase;
+  const A = T(game.team_a_name), B = T(game.team_b_name);
+  const high = game.game_type === 'playoff' ? playoffHighSeed(game) : null;
+  // Counts only finished games up to this one, so an unplayed game sees the series before it.
+  const rec = getSeriesRecordForGame(game, high) || { teamAWins: 0, teamBWins: 0 };
+  const a = rec.teamAWins, b = rec.teamBWins, gameNo = a + b + 1;
+  if (game.game_type === 'finals') {
+    const state = !a && !b ? 'the series starts here' : a === b ? `the series is tied ${a}-${b}, so this game decides the title` : `${a > b ? A : B} lead the series ${Math.max(a, b)}-${Math.min(a, b)}${Math.max(a, b) === 1 ? ' and a win takes the title' : ''}`;
+    return `PLAYOFF SITUATION: the Finals, Game ${gameNo} (best of 3, first to 2 wins is champion): ${state}.`;
+  }
+  const H = high ? T(high === game.team_a_id ? game.team_a_name : game.team_b_name) : '';
+  const L = high ? (H === A ? B : A) : '';
+  const standings = getSeasonStandings(game.season);
+  const seeds = computeSeeds(standings, buildSeasonH2HMap(standings, game.season));
+  const top = Math.min(...[game.team_a_id, game.team_b_id].map(id => seeds.findIndex(s => s.id === id) + 1).filter(n => n > 0));
+  const semi = top === 1 ? 'Semifinal 1' : top === 2 ? 'Semifinal 2' : 'Semifinal';
+  if (!H) return `PLAYOFF SITUATION: ${semi}, Game ${gameNo}.`;
+  return gameNo === 1
+    ? `PLAYOFF SITUATION: ${semi}, Game 1. ${H} are the higher seed and twice to beat: a ${H} win ends the series and sends them to the Finals; ${L} need to win twice.`
+    : `PLAYOFF SITUATION: ${semi}, Game ${gameNo}, winner take all: ${L} won Game 1 to force it, and the winner goes to the Finals while the loser's season ends.`;
+}
+
 // Highlights of a finished game. subject = player id for a player's, team name or a game key
 // otherwise; POTG spotlights take their player's, recaps take them all.
 function gameHighlights(game, stats) {
@@ -16316,7 +16410,12 @@ function gameHighlights(game, stats) {
     const rec = getSeriesRecordForGame(game, high);
     if (rec && !rec.decided && game.game_type === 'playoff' && high && wId !== high) {
       // The lower seed beat the twice-to-beat team: the semifinal goes to a deciding game.
-      add('major', 82, `${W}:series`, `UPSET: ${T(W)} beat twice-to-beat ${T(L)} to force a deciding game in the semifinal.`, [teamAlts(W), [/decid|game 2|twice[- ]to[- ]beat|force|do-or-die|rubber|winner[-\s]take|alive/i]]);
+      // "Upset" only when the pre-game odds favoured the loser: by seed alone, "Black Upsets
+      // Maroon" ran while the page said "Odds called it · Black 65%" (Fable audit, 2026-11-11).
+      const pv = getGamePreview(game.id);
+      const fav = pv?.odds?.fav ? (pv.odds.fav === 'a' ? game.team_a_id : game.team_b_id) : null;
+      const upset = fav === lId;
+      add('major', 82, `${W}:series`, `${upset ? 'UPSET' : 'SERIES ALIVE'}: ${T(W)} beat twice-to-beat ${T(L)} to force a deciding game in the semifinal${upset ? `, against the odds (${T(L)} were favoured)` : ''}.`, [teamAlts(W), [/decid|game 2|twice[- ]to[- ]beat|force|do-or-die|rubber|winner[-\s]take|alive/i]]);
     } else if (rec?.decided && rec.winnerTeamId === wId) {
       const wWins = wId === game.team_a_id ? rec.teamAWins : rec.teamBWins, lWins = wId === game.team_a_id ? rec.teamBWins : rec.teamAWins;
       if (game.game_type === 'finals') add('major', 99, `${W}:series`, `CHAMPIONS: ${T(W)} won the Finals series ${wWins}-${lWins} and are the Season ${game.season} champions.`, [teamAlts(W), [/champion|title|crown/i]]);
@@ -16337,7 +16436,9 @@ function previewHighlights(m) {
   const T = titleCase;
   const game = m.game;
   const sides = [[game.team_a_id, m.a], [game.team_b_id, m.b]];
-  for (const [id, name] of sides) {
+  // Streaks are a regular-season story (getTeamStreak mixes in playoff games): a semifinal
+  // storyline led with "Black rides a 3-game winning streak" (Fable audit, 2026-11-11).
+  for (const [id, name] of game.game_type === 'regular' ? sides : []) {
     const s = getTeamStreak(id, game);
     if (s.type === 'W' && s.streak >= 3) add(s.streak >= 4 ? 'major' : 'notable', 65, `${name}:streak`, `STREAK: ${T(name)} come in on a ${s.streak}-game winning streak.`, [teamAlts(name), numberAlts(s.streak), HL_KW.streak]);
     if (s.type === 'L' && s.streak >= 3) add(s.streak >= 4 ? 'major' : 'notable', 60, `${name}:streak`, `SKID: ${T(name)} come in on a ${s.streak}-game losing streak.`, [teamAlts(name), numberAlts(s.streak), HL_KW.streak]);
@@ -16349,7 +16450,7 @@ function previewHighlights(m) {
     const lastHl = cachedGameHighlights(last)
       .filter(h => h.tier === 'major' && /^(LEAGUE RECORD|TIED LEAGUE RECORD|TRIPLE-DOUBLE|BIG NIGHT|HOT HAND)/.test(h.text));
     const best = lastHl.sort((x, y) => y.rank - x.rank)[0];
-    if (best) add('major', 70, 'last-meeting', `LAST TIME THEY MET (${shortDay(gameYmd(last.date))}): ${best.text}`, best.must);
+    if (best) add('major', 70, 'last-meeting', `LAST TIME THEY MET (${shortDay(gameYmd(last.date))}, an earlier game, not this one; say "last time"): ${best.text}`, best.must);
   }
 
   if (game.game_type === 'regular') {
@@ -16368,7 +16469,8 @@ function previewHighlights(m) {
     // Playoff series state going in, and who can close it out.
     const high = playoffHighSeed(game);
     const rec = getSeriesRecordForGame(game, high);
-    if (rec && rec.teamAWins + rec.teamBWins > 0) {
+    // Game 1 too: the twice-to-beat seed can close it out right away.
+    if (rec) {
       const need = id => (game.game_type === 'finals' ? 2 : id === high ? 1 : 2);
       const winsOf = id => (id === game.team_a_id ? rec.teamAWins : rec.teamBWins);
       // Either side (or both, at 1-1 in the Finals or a decider) can close it out tonight.
@@ -16454,6 +16556,13 @@ function potgStoryHooks(game, stats, p) {
   return hooks;
 }
 
+// A recap or POTG written before the stats are official is shown with this note: a re-track can
+// still change the numbers (the Replace message then says to regenerate).
+const unofficialNote = game => {
+  const sg = getScoreGame(game.id);
+  const st = sg ? statsState(sg) : '';
+  return st === 'unofficial' || st === 'review' ? [`written from ${st === 'review' ? 'stats under review' : 'Unofficial stats'}: if a re-track changes them, regenerate this`] : [];
+};
 app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (req, res) => {
   if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
   const game = getGameById(req.params.id);
@@ -16489,8 +16598,10 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
   }
   const notableDnps = dnpPlayers
     .map(d => {
-      const totals = getPlayerSeasonStats(d.id, game.season);
-      if (!totals || !meetsLeaderRule(totals.games_played, recapTeamGames[d.team_id])) return null;
+      // As of this game: regenerating an early game later counted the games played after it.
+      const log = getPlayerGameLog(d.id).filter(g => g.status === 'played' && String(g.season) === String(game.season) && g.id !== game.id && (g.date < game.date || (g.date === game.date && g.id < game.id)));
+      const totals = { games_played: log.length, pts: log.reduce((t, g) => t + (Number(g.pts) || 0), 0) };
+      if (!totals.games_played || !meetsLeaderRule(totals.games_played, recapTeamGames[d.team_id])) return null;
       const ppg = totals.games_played > 0 ? totals.pts / totals.games_played : 0;
       const isTopScorer = (teamTopScorers[d.team_id] || []).includes(d.id);
       // A 1.4 PPG absence isn't a story (it was listed once and written up as a loss).
@@ -16594,6 +16705,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     .filter(Boolean).slice(0, 5);
 
   const voice      = pickVoice('recap', { date: game.date });
+  const isRegular  = game.game_type !== 'playoff' && game.game_type !== 'finals';
   // Highlights carry the records, career highs and blowouts now; the story hooks keep the
   // play-by-play detail only they have (runs, leads, ahead-for-good, halftime, nail-biter).
   const storyHooks = recapStoryHooks(game, stats).filter(h => !/^(MILESTONE|TIED CAREER HIGH|ROUT)/.test(h));
@@ -16612,24 +16724,31 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     scoreA !== scoreB ? `RESULT: ${scoreA > scoreB ? game.team_a_name : game.team_b_name} WON, ${Math.max(scoreA, scoreB)}-${Math.min(scoreA, scoreB)}. ${scoreA > scoreB ? game.team_b_name : game.team_a_name} LOST.` : 'RESULT: a tie.',
     `Date: ${game.date}  |  Season ${game.season}  |  ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : game.game_type === 'finals' ? 'FINALS' : 'Regular Season'}${isOT ? '  |  OVERTIME' : ''}`,
     `Final margin: ${Math.abs(scoreA - scoreB)} pts${Math.abs(scoreA - scoreB) <= 6 ? ' (CLOSE GAME — emphasize late-game events)' : ''}`,
+    // What the game was and what the result means (the series, for a playoff game).
+    gameSituation(game),
     ``,
-    `TEAM RECORDS (entering this game):`,
-    recordLineA || `${game.team_a_name}: record unavailable`,
-    recordLineB || `${game.team_b_name}: record unavailable`,
-    ...(game.game_type === 'regular' && recA && recB ? [
-      `TEAM RECORDS (after this game — use these, do not do the math yourself):`,
-      `${game.team_a_name}: ${recA.wins + (scoreA > scoreB ? 1 : 0)}-${recA.losses + (scoreA < scoreB ? 1 : 0)}`,
-      `${game.team_b_name}: ${recB.wins + (scoreB > scoreA ? 1 : 0)}-${recB.losses + (scoreB < scoreA ? 1 : 0)}`,
+    // Records, streaks and standings belong to the regular season only: a playoff recap that
+    // got them wrote "as for the standings" and a 4-game winning streak.
+    ...(isRegular ? [
+      `TEAM RECORDS (entering this game):`,
+      recordLineA || `${game.team_a_name}: record unavailable`,
+      recordLineB || `${game.team_b_name}: record unavailable`,
+      ...(recA && recB ? [
+        `TEAM RECORDS (after this game — use these, do not do the math yourself):`,
+        `${game.team_a_name}: ${recA.wins + (scoreA > scoreB ? 1 : 0)}-${recA.losses + (scoreA < scoreB ? 1 : 0)}`,
+        `${game.team_b_name}: ${recB.wins + (scoreB > scoreA ? 1 : 0)}-${recB.losses + (scoreB < scoreA ? 1 : 0)}`,
+      ] : []),
+      [streakLine(game.team_a_name, streakA, scoreA > scoreB), streakLine(game.team_b_name, streakB, scoreB > scoreA)].filter(Boolean).join('\n') || '(no notable streaks)',
+      standingsLine,
     ] : []),
-    [streakLine(game.team_a_name, streakA, scoreA > scoreB), streakLine(game.team_b_name, streakB, scoreB > scoreA)].filter(Boolean).join('\n') || '(no notable streaks)',
-    standingsLine,
     ``,
     prevMatch
       // Winner first, in words: "MAROON 80 – 95 BLUE" was read as a Maroon win.
       ? `PREVIOUS MATCHUP: ${(() => { const aw = Number(prevMatch.team_a_score) > Number(prevMatch.team_b_score); const [w, l, ws, ls] = aw ? [prevMatch.team_a_name, prevMatch.team_b_name, prevMatch.team_a_score, prevMatch.team_b_score] : [prevMatch.team_b_name, prevMatch.team_a_name, prevMatch.team_b_score, prevMatch.team_a_score]; return `${w} beat ${l} ${ws}-${ls}`; })()} on ${shortDay(gameYmd(prevMatch.date))}` +
         (String(prevMatch.season) !== String(game.season)
           ? ` (PREVIOUS SEASON — Season ${prevMatch.season}${prevMatch.game_type !== 'regular' ? ` ${prevMatch.game_type}` : ''}; does not affect this season's records)`
-          : '')
+          : !isRegular && prevMatch.game_type === game.game_type ? ' (an earlier game in this same series)'
+          : !isRegular ? ' (a regular-season game)' : '')
       : 'PREVIOUS MATCHUP: First meeting or no prior matchup found.',
     ``,
     `QUARTER-BY-QUARTER (running score):`,
@@ -16670,7 +16789,9 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
       ? `- OPEN the recap with the biggest MAJOR HIGHLIGHT, then cover every other MAJOR HIGHLIGHT somewhere in the recap, each with its number and the word that makes it special (record, career high, streak…). Weave in story hooks where they fit. Do not list them.`
       : `- Pick the single most compelling hook and OPEN the recap with it. Weave in one or two others if they fit. Do not list them.`,
     potgLine ? `- ${potgShared ? 'Both Players of the Game get their own numbers in the body; say once that the award is shared' : 'The Player of the Game gets a real paragraph with their own numbers'}.` : '',
-    `- Cover the result, the standout performers, and what it means for the standings (use the STANDINGS lines as given — never work out ranks or games back yourself).`,
+    isRegular
+      ? `- Cover the result, the standout performers, and what it means for the standings (use the STANDINGS lines as given — never work out ranks or games back yourself).`
+      : `- Cover the result, the standout performers, and what it means for the series, exactly as the SITUATION line says (who goes to the Finals, who is eliminated, who won the title, or what the next game decides). Never mention standings, regular-season records or win/loss streaks in a playoff recap.`,
     `- It is a story, not a list: use at most three of the OTHER HIGHLIGHTS, and never recite every career high or previous best. 220-320 words in all.`,
     `- Team names in title case (Blue, Maroon), never all caps; player names as "Vin Salenga".`,
     `- Records: only call something a league or team record if a LEAGUE RECORD or TEAM RECORD highlight says so, and say "since Season 3" or "on record" — never "ever" or "in league history".`,
@@ -16687,8 +16808,8 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
     `- Output format: a one-line headline, then 3 paragraphs (4 for close or playoff games). No fixed paragraph order — let the story decide.`,
     `- Do NOT narrate the game quarter by quarter ("In the first quarter… in the second…"). Use quarter scores only to support the story you are telling.`,
     `- Vary sentence length. The first sentence should make someone want to read the second.`,
-    `- HEADLINE RULES: Name the winning team${topMust ? ` and carry the biggest MAJOR HIGHLIGHT (${topMust.text.split(':')[0].toLowerCase()})` : ' and something specific and factual from THIS game — a stat line, the margin, a blown lead, an OT finish, a streak broken'}. Max 12 words. Do NOT use a generic description of the game type. No "today", "tonight" or "yesterday" anywhere (the recap is read days later). Do NOT start with "In a," "A," or the date.`,
-    `- Banned words/phrases: ${CLICHE_BAN}. Also rejected in code: ${BANNED_HINT}.`,
+    `- HEADLINE RULES: Name the winning team${!isRegular ? ' and what the result means for the series (from the SITUATION line: into the Finals, champions, forces a deciding game)' : ''}${topMust ? ` and carry the biggest MAJOR HIGHLIGHT (${topMust.text.split(':')[0].toLowerCase()})` : ' and something specific and factual from THIS game — a stat line, the margin, a blown lead, an OT finish, a streak broken'}. Max 12 words. Do NOT use a generic description of the game type. No "today", "tonight" or "yesterday" anywhere (the recap is read days later). Do NOT start with "In a," "A," or the date.`,
+    `- Banned words/phrases: ${CLICHE_BAN}. Also avoid (a draft that uses one is sent back to be rewritten): ${BANNED_HINT}.`,
     recentTitles.length
       ? `- HEADLINES ALREADY USED IN RECENT RECAPS (do NOT repeat these patterns or use similar phrasing):\n${recentTitles.map(t => `  "${t}"`).join('\n')}`
       : '',
@@ -16715,7 +16836,9 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
         // One-line headline, then a blank line ("Black Wins\n 95-90 Behind…" split the headline).
         t => { const [, second] = t.split('\n'); return second && second.trim() ? ['the headline must be one line, followed by a blank line, then the paragraphs'] : []; },
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
-        t => numberProblems(t, facts, { pairs: false }),
+        // Running scores in the play-by-play can't stand in for the result ("83-78 victory").
+        t => numberProblems(t, unpairRunningScores(facts), { pairs: false }),
+        t => finalScoreProblems(t, scoreA, scoreB),
         t => claimProblems(t, facts),
         t => storyProblems(t, facts, { dated: true }),
         { style: true, fn: t => bannedProblems(t) },
@@ -16725,7 +16848,7 @@ app.post('/admin/games/:id/generate-recap', requireAuth, express.json(), async (
         { costly: true, fn: t => factCheckCopy(facts, t) },
       ],
     });
-    res.json({ writeup: out.draft, missed: out.problems });
+    res.json({ writeup: out.draft, missed: [...out.problems, ...unofficialNote(game)] });
   } catch (err) {
     console.error('generate-recap error:', err.message);
     res.status(502).json({ error: err.message });
@@ -16755,7 +16878,10 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
 
   // ── Analysis (as of this game: regenerating an old game must not see later ones) ──
   const before = getPlayerGameLog(potgId).filter(g => g.status === 'played' && g.id !== game.id && (g.date < game.date || (g.date === game.date && g.id < game.id)));
-  const seasonBefore = before.filter(g => String(g.season) === String(game.season));
+  // A playoff spotlight averages over the playoff games only and says so: mixed with the regular
+  // season, "13.0 points per game this season" matched nothing on /leaders (Fable audit).
+  const postseason = game.game_type === 'playoff' || game.game_type === 'finals';
+  const seasonBefore = before.filter(g => String(g.season) === String(game.season) && (!postseason || g.game_type === 'playoff' || g.game_type === 'finals'));
   // This season's games only: an old July game ("he had 0 points in July?") isn't context.
   const gameLogs = seasonBefore.slice(0, 6);
   const seasonGp = seasonBefore.length + 1;
@@ -16784,7 +16910,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
     .map(t => { const w = parseWriteup(t); return (`${w.title} ${w.body}`.split(/(?<=[.!?])\s/)[0] || '').trim().slice(0, 100); })
     .filter(Boolean);
 
-  const seasonLine = `Season averages through this game (${seasonGp}GP): ${seasonAvg('pts').toFixed(1)}pts / ${seasonAvg('reb').toFixed(1)}reb / ${seasonAvg('ast').toFixed(1)}ast`;
+  const seasonLine = `${postseason ? `Season ${game.season} playoff averages (playoff games only) through this game` : 'Season averages through this game'} (${seasonGp}GP): ${seasonAvg('pts').toFixed(1)}pts / ${seasonAvg('reb').toFixed(1)}reb / ${seasonAvg('ast').toFixed(1)}ast`;
 
   const prevLines = gameLogs.map(g => {
     const isTeamA = g.player_team_id === g.team_a_id;
@@ -16795,14 +16921,16 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
   // ── Brief: the facts (all the checks read these), then the rules ──
   const facts = [
     `GAME: ${game.team_a_name} ${scoreA}-${scoreB} ${game.team_b_name}  |  ${game.date}  |  Season ${game.season}  |  ${game.game_type === 'playoff' ? `PLAYOFF${game.playoff_round ? ' – ' + game.playoff_round : ''}` : game.game_type === 'finals' ? 'FINALS' : 'Regular Season'}`,
+    // What the game meant (a playoff spotlight should know its team just reached the Finals).
+    gameSituation(game),
     `PLAYER: ${displayPlayerName(potgStat.name)} (${potgStat.team_name}) — the team ${playerTeamWon ? 'WON' : 'LOST'}.`,
     `This game: ${potgStat.pts}pts / ${potgStat.reb}reb / ${potgStat.ast}ast / ${potgStat.stl}stl / ${potgStat.blk}blk${fgPct ? ' / ' + fgPct : ''}${shootingLine(potgStat)}`,
     // A fact only — the instruction lives with the rules, so there's nothing here to echo
     // ("kaya the spotlight stays mostly on Vin, no?").
     sharedStat ? `SHARED AWARD: ${displayPlayerName(potgStat.name)} and teammate ${displayPlayerName(sharedStat.name)} (${sharedStat.pts}pts / ${sharedStat.reb}reb / ${sharedStat.ast}ast) are co-Players of the Game.` : '',
-    leagueRank ? `League rank in scoring: ${leagueRank}${leagueRank === 1 ? 'st' : leagueRank === 2 ? 'nd' : leagueRank === 3 ? 'rd' : 'th'} in the league` : '',
+    leagueRank && game.game_type !== 'playoff' && game.game_type !== 'finals' ? `League rank in scoring: ${leagueRank}${leagueRank === 1 ? 'st' : leagueRank === 2 ? 'nd' : leagueRank === 3 ? 'rd' : 'th'} in the league` : '',
     seasonLine,
-    prevLines.length ? `This season's games before this one:\n${prevLines.join('\n')}` : 'This season\'s games before this one: none.',
+    prevLines.length ? `${postseason ? 'Playoff games' : 'This season\'s games'} before this one:\n${prevLines.join('\n')}` : `${postseason ? 'Playoff games' : 'This season\'s games'} before this one: none.`,
     highlights.length ? highlightsBlock(highlights, musts) : '',
     storyHooks.length ? `STORY HOOKS (verified):\n${storyHooks.map(h => `- ${h}`).join('\n')}` : '',
   ].filter(Boolean).join('\n');
@@ -16823,10 +16951,13 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
       : `- Open with the most compelling hook.`,
     sharedStat ? `- Say once, in passing, that the award is shared with ${displayPlayerName(sharedStat.name)}; every other sentence is about ${displayPlayerName(potgStat.name)}'s own game. Write about the game only, never about this write-up.` : '',
     `- Do not open with the player's name, and do not open with a stat-line formula like "A 22-point, 9-rebound..." — vary the first sentence.`,
+    game.game_type === 'playoff' || game.game_type === 'finals'
+      ? `- A playoff game: tie the performance to what it meant for the series, as the SITUATION line says (reaching the Finals, the title, forcing a deciding game). Never mention standings, regular-season records, league ranks or win/loss streaks.`
+      : '',
     `- Two or three telling numbers, not the whole stat line; never mention a stat that is 0 ("0 steals") or a miss count that says nothing.`,
     `- Only call something a record, career high or season high if a highlight says so. A TIED one matched a previous best — never write that it was new. Never do math of your own (no totals or differences). Only this game and the lines above: no other game, no "today" or "tonight".`,
     recentOpenings.length ? `- Recent spotlights opened like this — yours must not resemble them:\n${recentOpenings.map(t => `  "${t}"`).join('\n')}` : '',
-    `- Do NOT mention PER, advanced metrics, or formula names. Do NOT reference the crowd or atmosphere. No "led the way". Banned (rejected in code): ${BANNED_HINT}.`,
+    `- Do NOT mention PER, advanced metrics, or formula names. Do NOT reference the crowd or atmosphere. No "led the way". Banned (a draft that uses one is sent back to be rewritten): ${BANNED_HINT}.`,
     ``,
     `VOICE — ${voice.name}: ${voice.guide}`,
     voiceFlavor(voice, `${game.id}|${potgId}`, 70),
@@ -16846,6 +16977,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
       checks: [
         t => missingHighlights(t, musts).map(m => `it leaves out a MAJOR HIGHLIGHT: ${m}`),
         t => numberProblems(t, facts),
+        t => finalScoreProblems(t, scoreA, scoreB),
         t => claimProblems(t, facts),
         t => storyProblems(t, facts, { dated: true }),
         { style: true, fn: t => bannedProblems(t) },
@@ -16856,7 +16988,7 @@ app.post('/admin/games/:id/generate-potg', requireAuth, express.json(), async (r
         { costly: true, fn: t => factCheckCopy(facts, t, 'player of the game spotlight') },
       ],
     });
-    res.json({ writeup: out.draft, missed: out.problems });
+    res.json({ writeup: out.draft, missed: [...out.problems, ...unofficialNote(game)] });
   } catch (err) {
     console.error('generate-potg error:', err.message);
     res.status(502).json({ error: err.message });
@@ -17255,8 +17387,9 @@ function buildMatchup(game, ctx) {
     return (aWin ? g.team_a_name : g.team_b_name) === name;
   }).length;
   const seasonGames = ctx.played.filter(g => String(g.season) === String(ctx.season));
+  // Regular season only, like the standings (a playoff win added in read "5-2" against 4-2).
   const recordOf = name => {
-    const mine = seasonGames.filter(g => g.team_a_name === name || g.team_b_name === name);
+    const mine = seasonGames.filter(g => (g.game_type || 'regular') === 'regular' && (g.team_a_name === name || g.team_b_name === name));
     const w = mine.filter(g => (g.team_a_name === name) === (Number(g.team_a_score) > Number(g.team_b_score))).length;
     return { w, l: mine.length - w };
   };
@@ -17430,7 +17563,7 @@ function buildSeasonTiles(seasonPlayed, playerMap) {
 // Same pattern as the homepage summaries: facts reduce to a key, the stored story (setting
 // games_matchup_story_<gameId>) only shows while the key still matches, a stale/missing one
 // is written in the background, never awaited by the page. Every number must appear in
-// the facts, banned words are rejected in code, then a temperature-0 fact check.
+// the facts, banned words send a draft back for a rewrite, then a temperature-0 fact check.
 // v2: comparisons are checked in code (lib/story-checks.js) — bumping regenerates every stored story.
 // v3 (2026-10-10): player-number check — rewrites the stored storylines once.
 // v4 (2026-10-20): major highlights (previewHighlights) must be mentioned; key carries them.
@@ -17475,16 +17608,20 @@ function matchupStoryFacts(m) {
   const scorerLines = m.scorers.filter(Boolean).map(s => `${s.name} (${T(s.team)}) ${s.ppg.toFixed(1)} points per game against ${T(s.opp)} over ${s.games} games, scoring ${s.series.join(', ')} in those games, oldest first`);
   const basis = m.firstMeeting
     ? `The two teams have not met before. Per-game averages below are each team's Season ${m.season} games against anyone.`
-    : `Head to head since Season 3: ${m.meetings} meetings, ${T(m.a)} has won ${m.winsA}, ${T(m.b)} has won ${m.winsB}.\nMost recent meetings, newest first: ${meetLines.join('; ')}.\nPer-game averages in their meetings${m.boxMeetings < m.meetings ? ` (box-score stats exist for ${m.boxMeetings} of the ${m.meetings} meetings; points cover all of them)` : ''}:`;
-  const facts = `Upcoming game: ${T(m.a)} vs ${T(m.b)}, Season ${m.season}.
-Season ${m.season} records so far: ${T(m.a)} ${m.recordA.w}-${m.recordA.l}, ${T(m.b)} ${m.recordB.w}-${m.recordB.l}.
+    : `Head to head since Season 3 (every meeting: regular season and playoffs, earlier games of this series included; this is not the series score): ${m.meetings} meetings, ${T(m.a)} has won ${m.winsA}, ${T(m.b)} has won ${m.winsB}.\nMost recent meetings, newest first: ${meetLines.join('; ')}.\nPer-game averages in their meetings${m.boxMeetings < m.meetings ? ` (box-score stats exist for ${m.boxMeetings} of the ${m.meetings} meetings; points cover all of them)` : ''}:`;
+  // What the game is (the round, the game number, what it decides): a semifinal used to read
+  // exactly like a regular-season game. Records are the regular season's.
+  const situation = gameSituationBefore(m.game);
+  const facts = `Upcoming game: ${T(m.a)} vs ${T(m.b)}, Season ${m.season}${situation ? '' : ', regular season'}.${situation ? `
+${situation}` : ''}
+Season ${m.season} ${situation ? 'regular-season records' : 'records so far'}: ${T(m.a)} ${m.recordA.w}-${m.recordA.l}, ${T(m.b)} ${m.recordB.w}-${m.recordB.l}.
 ${basis}
 ${statLines.join('\n')}${scorerLines.length ? `\nTop scorers in this matchup: ${scorerLines.join('; ')}.` : ''}`;
   // Major highlights: up to 2 the storyline must mention (60–90 words has room for two).
   const highlights = cachedPreviewHighlights(m);
   const musts = mustMentions(highlights, 2);
   const hlBlock = highlightsBlock(highlights, musts);
-  const key = `v${MATCHUP_STORY_VERSION}|${m.game.id}|${m.recordA.w}-${m.recordA.l}|${m.recordB.w}-${m.recordB.l}|${m.lastMeetings.map(x => `${x.id}:${x.scoreA}-${x.scoreB}`).join(',')}|${m.meetings}|h${sig(highlights.map(h => h.text))}`;
+  const key = `v${MATCHUP_STORY_VERSION}|${m.game.id}|${situation ? `s${sig([situation])}|` : ''}${m.recordA.w}-${m.recordA.l}|${m.recordB.w}-${m.recordB.l}|${m.lastMeetings.map(x => `${x.id}:${x.scoreA}-${x.scoreB}`).join(',')}|${m.meetings}|h${sig(highlights.map(h => h.text))}`;
   return {
     key, facts: hlBlock ? `${facts}\n\n${hlBlock}` : facts, section: 'matchup preview', musts,
     // For other writers (the picks email): the facts with the highlights as plain lines, no
@@ -17897,7 +18034,9 @@ function openPicks(games, pctx, viewerId) {
     const { closed, odds } = upcomingPickState(g, pctx);
     const myPick = mine[g.id] || null;
     const isFinalsG1 = pg.type === 'finals' && finalsGame1Id(pctx.all, pg.season) === g.id;
-    const seasonPlayed = pctx.played.filter(x => x.season === pg.season);
+    // Regular season only, like the standings: with playoff wins in, White–Black read "5-2 vs
+    // 5-3" against standings of 4-2 and 3-3 (Fable audit, 2026-11-11).
+    const seasonPlayed = pctx.played.filter(x => x.season === pg.season && x.type === 'regular');
     const recordOf = t => {
       const list = seasonPlayed.filter(x => x.a === t || x.b === t);
       const w = list.filter(x => (x.a === t) === (x.sa > x.sb)).length;
@@ -18871,21 +19010,41 @@ app.get('/picks/:ref', (req, res) => {
 app.post('/admin/games/matchup-story/regenerate', requireAuth, express.json(), async (req, res) => {
   if (!aiAvailable()) return res.status(400).json({ error: 'No AI API key configured.' });
   const games = byDate(getAllGames());
-  const game = getUpcomingGames(games).find(g => g.id === String(req.body?.gameId || ''));
-  if (!game) return res.status(400).json({ error: 'That game is not upcoming.' });
-  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
-  const f = matchupStoryFacts(matchupAsOf(game, games, playerMap));
+  // Any game: a finished game's frozen storyline can be rewritten too (matchupAsOf only sees
+  // the games before it, so the facts are the pre-game ones).
+  const game = games.find(g => g.id === String(req.body?.gameId || ''));
+  if (!game) return res.status(400).json({ error: 'Game not found.' });
   try {
-    await generateMatchupStory(game.id, f);
-    // Picks already closed: the preview is frozen, so the new storyline goes into it directly.
-    const p = getGamePreview(game.id);
-    if (p?.frozen) saveGamePreview({ gameId: game.id, ymd: p.ymd, matchup: p.matchup, story: storedMatchupStory(game.id, f.key), odds: p.odds, frozen: true });
+    await rewriteMatchupStory(game, games);
     res.json({ ok: true });
   } catch (err) {
     console.error(`Matchup story (${game.id}) regenerate failed:`, err.message);
     writerError(res, err);
   }
 });
+async function rewriteMatchupStory(game, games = byDate(getAllGames())) {
+  const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
+  const f = matchupStoryFacts(matchupAsOf(game, games, playerMap));
+  await generateMatchupStory(game.id, f);
+  // Picks already closed: the preview is frozen, so the new storyline goes into it directly.
+  const p = getGamePreview(game.id);
+  if (p?.frozen) saveGamePreview({ gameId: game.id, ymd: p.ymd, matchup: p.matchup, story: storedMatchupStory(game.id, f.key), odds: p.odds, frozen: true });
+}
+// One time after the 2026-11-11 fix: the current season's playoff storylines were frozen before
+// they knew the round or the series ("Black rides a 3-game winning streak into this matchup"
+// for a winner-take-all semifinal). Rewritten once, one at a time, in the background.
+setTimeout(async () => {
+  if (getSetting('playoff_stories_rewrite_v1', '') === 'done' || !aiAvailable()) return;
+  const season = String(getPortalCurrentSeason());
+  const games = byDate(getAllGames());
+  const list = games.filter(g => String(g.season) === season && (g.game_type === 'playoff' || g.game_type === 'finals') && getGamePreview(g.id)?.frozen);
+  let ok = 0;
+  for (const g of list) {
+    try { await rewriteMatchupStory(g, games); ok++; } catch (err) { console.error(`Playoff storyline rewrite (${g.id}) failed:`, err.message); }
+  }
+  if (ok === list.length) setSetting('playoff_stories_rewrite_v1', 'done');
+  console.log(`[stories] playoff storylines rewritten: ${ok} of ${list.length}`);
+}, 90 * 1000);
 
 app.get('/highlights', (req, res) => {
   const playerMap = Object.fromEntries(getAllPlayers().map(p => [p.id, p]));
@@ -18930,7 +19089,7 @@ app.get('/standings', (req, res) => {
     }
     summary = stored
       ? { kicker: stored.kicker, headlineHtml: escHtml(stored.headline).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>'), body: String(stored.body || '').replace(/\*\*/g, '') }
-      : { kicker: isCurrent && week ? `The race · after week ${week}` : `Season ${season} · final standings`, headlineHtml: race.headline, body: '' };
+      : { kicker: isCurrent && week && !isPlayoffStarted(season) ? `The race · after week ${week}` : `Season ${season} · final standings`, headlineHtml: race.headline, body: '' };
   }
 
   res.send(renderPage(req, {
@@ -19692,14 +19851,20 @@ function mvpSectionFacts({ season, week, playoffsStarted, top, race: raceKey = '
     facts: [head, 'Top 5:', ...top.slice(0, 5).map((x, i) => line(x, i + 1)),
       `#1 leads #2 by ${one(a.mvpScore - b.mvpScore)} ${race.unit}${c ? `; #2 leads #3 by ${one(b.mvpScore - c.mvpScore)}` : ''}.`,
       leaders.length > 1 ? `Leader of the race after each week: ${leaders.map(l => `week ${l.week} ${l.name}`).join(', ')}.` : ''].filter(Boolean).join('\n'),
-    focus: `Sum up the ${race.nameLower}: who leads and by how much, who climbed or slipped this week, and how the top spot has changed hands over the weeks. Name at most three players and don't recite stat lines. The facts don't say how any gap changed since last week, so never say a gap closed, narrowed, shrank or widened.`,
+    // The final standings are not "this week": once the regular season is over the copy tells
+    // how the race ended (the week-5 copy said "jumped up to #4 this week" on reveal day).
+    focus: playoffsStarted
+      ? `Sum up how the ${race.nameLower} finished over the regular season: who finished on top and by how much, and how the top spot changed hands over the weeks. Never say "this week". Name at most three players and don't recite stat lines.`
+      : `Sum up the ${race.nameLower}: who leads and by how much, who climbed or slipped this week, and how the top spot has changed hands over the weeks. Name at most three players and don't recite stat lines. The facts don't say how any gap changed since last week, so never say a gap closed, narrowed, shrank or widened.`,
   };
   if (top.length > 3) {
     out.chase = {
       kicker: `The chase · ${asOf}`, section: `The chase (${race.nameLower} places #4 to #10)`, where,
       facts: [head, `#3 is ${displayPlayerName(c.player.name)} on ${race.scoreArticle} ${race.scoreLabel} of ${one(c.mvpScore)}.`, 'Places #4 to #10:',
         ...top.slice(3).map((x, i) => `${line(x, i + 4)}; ${one(c.mvpScore - x.mvpScore)} ${race.unit} behind #3`)].join('\n'),
-      focus: 'Pick the one or two most interesting stories among places #4 to #10: who is closest to the top three, and who climbed or slipped this week. Don\'t go through every player. The facts don\'t say how any gap changed since last week, so never say anyone closed in, closed a gap or fell further back.',
+      focus: playoffsStarted
+        ? 'Pick the one or two most interesting stories among places #4 to #10 in the final regular-season standings: who finished closest to the top three. Never say "this week". Do not go through every player.'
+        : 'Pick the one or two most interesting stories among places #4 to #10: who is closest to the top three, and who climbed or slipped this week. Don\'t go through every player. The facts don\'t say how any gap changed since last week, so never say anyone closed in, closed a gap or fell further back.',
     };
   }
   return sectionFactsMap(raceKey, season, out);
@@ -19767,6 +19932,50 @@ async function mapWithConcurrency(items, limit, fn) {
 
 function isPlayoffStarted(season) {
   return getPlayoffGames(String(season)).length > 0;
+}
+
+// Where a season is, in words, for every season-level AI writer (homepage and /standings
+// blocks, /teams, Who wins?, the picks email): the Fable audit (2026-11-11) found the homepage
+// still selling "the race" and upcoming semifinals after Blue and Maroon were out, because
+// none of them were told the playoffs had started.
+// → { phase: 'regular' | 'semis' | 'finals' | 'done', line, key, asOf }
+//   line: one fact block ("SEASON PHASE: …"); key: changes with every playoff result, so
+//   cached copy rewrites itself; asOf: the kicker label once the regular season is over.
+function seasonPhaseFacts(season) {
+  season = String(season);
+  const pd = playoffsSectionData(season);
+  const games = pd.games || [];
+  const played = g => (g.status === 'complete' || g.status === 'final') && (Number(g.team_a_score) + Number(g.team_b_score)) > 0;
+  if (!games.length) return { phase: 'regular', line: '', key: 'regular', asOf: '' };
+  const m = playoffsModel({ standings: pd.standings, games, h2h: pd.h2h });
+  const T = titleCase;
+  const beat = g => { const aw = Number(g.team_a_score) > Number(g.team_b_score); return `${T(aw ? g.team_a_name : g.team_b_name)} beat ${T(aw ? g.team_b_name : g.team_a_name)} ${Math.max(g.team_a_score, g.team_b_score)}-${Math.min(g.team_a_score, g.team_b_score)}`; };
+  const series = (label, hi, lo, st) => {
+    if (!hi || !lo) return `${label}: not set yet.`;
+    const ps = (st.played || []).filter(played);
+    const head = `${label}, ${T(hi.name)} (the higher seed${label === 'Finals' ? '' : ', twice to beat'}) vs ${T(lo.name)}`;
+    if (!ps.length) return `${head}: not played yet.`;
+    const res = ps.map((g, i) => `Game ${i + 1}: ${beat(g)}`).join('; ');
+    if (st.winner) {
+      const loser = st.winner.id === hi.id ? lo : hi;
+      const w = st.winner.id === hi.id ? st.hw : st.lw, l = st.winner.id === hi.id ? st.lw : st.hw;
+      return `${head}: ${res}. ${T(st.winner.name)} won the series ${w}-${l}${label === 'Finals' ? ` and are the Season ${season} champions` : ' and reach the Finals'}; ${T(loser.name)} ${label === 'Finals' ? 'lost the Finals' : 'are eliminated'}.`;
+    }
+    return `${head}: ${res}. Series still going: ${T(hi.name)} ${st.hw}, ${T(lo.name)} ${st.lw}${label === 'Finals' ? ' (first to 2 wins)' : ` (${T(hi.name)}, the higher seed, needs 1 win; ${T(lo.name)} need 2)`}.`;
+  };
+  const phase = m.champ ? 'done' : m.finalsGames.length ? 'finals' : 'semis';
+  const nextFinal = m.finalsGames.find(g => !played(g));
+  const lines = [
+    `SEASON PHASE: Season ${season}'s regular season is over and its final standings are settled; ${phase === 'done' ? 'the playoffs are over' : phase === 'finals' ? 'the Finals are on' : 'the semifinals are on'}. Regular-season standings, records and streaks are history now: never write about a "race", a "playoff picture" or upcoming semifinals.`,
+    series('Semifinal 1', m.s1, m.s4, m.st1),
+    series('Semifinal 2', m.s2, m.s3, m.st2),
+    m.fHigh && m.fLow ? series('Finals', m.fHigh, m.fLow, m.fin) : 'Finals: waiting on the semifinals.',
+    nextFinal && !m.champ ? `Next Finals game: ${summaryDay(nextFinal.date)} (best of 3).` : '',
+    m.champ ? `${T(m.champ.name)} are the Season ${season} champions.` : '',
+  ].filter(Boolean);
+  const key = `${phase}|${games.filter(played).map(g => `${g.id}:${g.team_a_score}-${g.team_b_score}`).join(',')}`;
+  const asOf = phase === 'done' ? `Season ${season} · final` : phase === 'finals' ? `Season ${season} · the Finals` : `Season ${season} · the playoffs`;
+  return { phase, line: lines.join('\n'), key, asOf };
 }
 
 // ── Homepage "Coming up" section ─────────────────────────────────────────────
@@ -20075,7 +20284,11 @@ function picksSummaryFacts(w) {
       return title(g.counts.a > g.counts.b ? g.a : g.b);
     };
     const lines = w.games.map(g => {
-      const parts = [`${title(g.a)} (${g.recA.w}-${g.recA.l} this season) vs ${title(g.b)} (${g.recB.w}-${g.recB.l} this season)`];
+      const full = getGameById(g.id);
+      const sit = full ? gameSituationBefore(full).replace(/^PLAYOFF SITUATION: /, '') : '';
+      const parts = [`${title(g.a)} (${g.recA.w}-${g.recA.l} in the regular season) vs ${title(g.b)} (${g.recB.w}-${g.recB.l} in the regular season)`];
+      if (sit) parts.unshift(sit.replace(/\.$/, ''));
+      if (g.marginGuess) parts.push('Finals Game 1 also asks pickers to guess the winning margin (the Pickmaster tiebreaker)');
       parts.push(g.h2h.meetings ? `all-time head to head ${title(g.a)} ${g.h2h.a}, ${title(g.b)} ${g.h2h.b}` : 'first ever meeting');
       if (g.odds?.fav) parts.push(`the odds favour ${title(g.odds.fav === 'a' ? g.a : g.b)} at ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%`);
       const lean = leanOf(g);
@@ -20117,7 +20330,14 @@ function comingUpSummaryFacts(nextUp) {
   for (const c of nextUp.cards) {
     const d = c.data;
     if (c.kind === 'league') {
-      if (d.mode === 'upcoming') lines.push(`- Next league game day, ${summaryDay(d.date)}: ${d.games.map(g => `${title(g.a)}${g.recA ? ` (${g.recA})` : ''} vs ${title(g.b)}${g.recB ? ` (${g.recB})` : ''}${g.type === 'playoff' ? ' (playoffs)' : ''}`).join('; ')}. Records are this season's.`);
+      // A playoff or Finals game says which one and what it decides (the Finals were called
+      // nothing at all before); records are the regular season's.
+      const sitOf = g => {
+        if (g.type !== 'playoff' && g.type !== 'finals') return '';
+        const full = getAllGames().find(x => String(x.date).slice(0, 10) === d.date && x.team_a_name === g.a && x.team_b_name === g.b);
+        return full ? ` (${gameSituationBefore(full).replace(/^PLAYOFF SITUATION: /, '').replace(/\.$/, '')})` : g.type === 'finals' ? ' (the Finals)' : ' (playoffs)';
+      };
+      if (d.mode === 'upcoming') lines.push(`- Next league game day, ${summaryDay(d.date)}: ${d.games.map(g => `${title(g.a)}${g.recA ? ` (${g.recA})` : ''} vs ${title(g.b)}${g.recB ? ` (${g.recB})` : ''}${sitOf(g)}`).join('; ')}. Records are the regular season's.`);
       else lines.push(`- No league games scheduled yet. Latest results, ${summaryDay(d.date)}: ${d.games.map(g => (g.scoreA > g.scoreB ? `${title(g.a)} beat ${title(g.b)} ${g.scoreA}-${g.scoreB}` : `${title(g.b)} beat ${title(g.a)} ${g.scoreB}-${g.scoreA}`)).join('; ')}.`);
     } else if (c.kind === 'papawis') {
       if (d.empty) lines.push('- Papawis (open pickup runs): no run scheduled yet.');
@@ -20157,7 +20377,8 @@ function homeSummaryFacts(block, ctx) {
       const t = parseWriteup(g.game_writeup || '').title;
       const aWin = Number(g.team_a_score) > Number(g.team_b_score);
       const [w, l, ws, ls] = aWin ? [g.team_a_name, g.team_b_name, g.team_a_score, g.team_b_score] : [g.team_b_name, g.team_a_name, g.team_b_score, g.team_a_score];
-      return `- ${title(w)} beat ${title(l)} ${ws}-${ls}${g.game_type === 'playoff' ? ' (playoffs)' : ''}${t ? ` (recap headline: "${t}")` : ''}`;
+      const sit = gameSituation(g, { short: true });
+      return `- ${title(w)} beat ${title(l)} ${ws}-${ls}${sit ? ` (${sit})` : ''}${t ? ` (recap headline: "${t}")` : ''}`;
     });
     const records = ctx.standings?.teams?.map(t => `${title(t.name)} ${t.wins}-${t.losses}${t.flag ? ` (${t.flag.toLowerCase()})` : ''}`).join(', ');
     // The day's major highlights (records, big nights, drama), so a league record reaches the
@@ -20165,11 +20386,12 @@ function homeSummaryFacts(block, ctx) {
     const dayHl = dayGames.flatMap(g => cachedGameHighlights(g)).filter(h => h.tier === 'major');
     const musts = mustMentions(dayHl, 2);
     return {
-      key: `v${HOME_SUMMARY_VERSION}|h|${day}|${dayGames.map(g => `${g.id}:${g.team_a_score}-${g.team_b_score}`).join(',')}|h${sig(dayHl.map(h => h.text))}`,
+      key: `v${HOME_SUMMARY_VERSION}|h|${day}|${dayGames.map(g => `${g.id}:${g.team_a_score}-${g.team_b_score}`).join(',')}|h${sig([...dayHl.map(h => h.text), ...lines])}`,
       kicker: `The story · After ${dayLabel} games`,
       section: 'Game headlines',
       // Two sentences can't hold the day's ten career highs: the musts plus three others.
-      facts: `Results on ${day}:\n${lines.join('\n')}${records ? `\nTeam records now: ${records}` : ''}${dayHl.length ? `\n\n${highlightsBlock(dayHl, musts, { maxRest: 3 })}` : ''}`,
+      // A playoff day is about the series: no regular-season records.
+      facts: `Results on ${day}:\n${lines.join('\n')}${records && dayGames.every(g => g.game_type === 'regular') ? `\nTeam records now: ${records}` : ''}${dayHl.length ? `\n\n${highlightsBlock(dayHl, musts, { maxRest: 3 })}` : ''}`,
       musts,
       focus: `Sum up what happened on this game day, leading with ${musts.length ? 'the biggest MAJOR HIGHLIGHT' : 'the most important result'}. Each game is a separate event — never connect one game\x27s result to another team\x27s streak or record.`,
     };
@@ -20180,6 +20402,19 @@ function homeSummaryFacts(block, ctx) {
     const lines = teams.map(t => `- ${t.rank}. ${title(t.name)} ${t.wins}-${t.losses}, ${t.gb > 0 ? `${t.gb} games back` : 'first place'}, point differential ${t.diff > 0 ? '+' : ''}${t.diff}, last results ${t.form.join('') || 'none'}${t.flag ? `, ${t.flag.toLowerCase()}` : ''}`);
     // Settled standings are said as such, so the block doesn't sell a race that's over.
     const lock = seasonLockLine(ctx.season);
+    // Once the playoffs start the block says so (and its key rolls with every result), instead
+    // of selling the race and "upcoming" semifinals through the Finals and the off-season.
+    const ph = seasonPhaseFacts(ctx.season);
+    if (ph.phase !== 'regular') return {
+      key: `v${HOME_SUMMARY_VERSION}|s|${ctx.season}|${ph.key}`,
+      kicker: ph.phase === 'done' ? `Season ${ctx.season} · Champions` : ph.phase === 'finals' ? 'The Finals · Best of 3' : 'The playoffs · Semifinals',
+      section: 'Season (where it stands)',
+      facts: `${ph.line}\nFinal regular-season standings (history now):\n${lines.join('\n').replace(/, last results [A-Z]+/g, '')}`,
+      focus: ph.phase === 'done'
+        ? 'The season is over: say who won the title and how the playoffs went. Mention the regular season only as how the teams got there.'
+        : 'The regular season is over: say where the playoffs stand (who is through, who is out, what the next game decides). Mention the regular season only as how the teams got there; never a race or "games back".',
+      notesFor: teams.map(t => title(t.name)),
+    };
     return {
       key: `v${HOME_SUMMARY_VERSION}|s|${ctx.season}|${teams.map(t => `${t.name}:${t.wins}-${t.losses}:${t.diff}`).join(',')}${lock ? '|locked' : ''}`,
       kicker: `The race · ${after}`,
@@ -20260,7 +20495,7 @@ async function writeHeadlineCopy(f, opts = {}) {
       : '- Never call anything a record, a first, a best-ever or a career high unless a highlight in the facts says so, in its words.',
     `- Season totals (record, point differential, per-game averages) describe the whole season; never attach them to a single game.`,
     `- Write finished copy only: no questions to yourself, no corrections, no notes or alternatives.`,
-    `- Banned (rejected in code): ${BANNED_HINT}.`,
+    `- Banned (a draft that uses one is sent back to be rewritten): ${BANNED_HINT}.`,
     `- Write numbers as digits, copied from the facts.`,
     opts.strict ? `- Never claim one stat causes or explains another (no "because", "explains", "drives", "thanks to", "fuels" — and no "kasi" or "kaya" between two stats either). State the numbers side by side and let the reader connect them.\n- Write every number as digits, never as a word.` : '',
     ...(opts.rules || []),
@@ -20399,7 +20634,9 @@ Go through the copy sentence by sentence and list every statement the facts do n
 - "a Season 3 record" when the facts say "the most since Season 3";
 - a career high described as "matching" a previous best when the facts give a NEW one (or the other way round), or a career/season high, record or first place the facts don't state;
 - a stat given to the wrong player or team, wrong numbers or scores, or numbers calculated rather than copied;
-- a play the play-by-play doesn't show, or details copied from a style example rather than the facts.
+- a play the play-by-play doesn't show, or details copied from a style example rather than the facts;
+- what the result means for a playoff series (into the Finals, eliminated, champions, a deciding game still to come) differing from the SITUATION line, or regular-season standings, records or streaks brought into a playoff game;
+- a final score that isn't the GAME line's (a running score from the play-by-play is not the result).
 Not problems: opinions, tone, slang, voice and wording; "league record" / "record" for what the facts call the most since Season 3 (box scores start there), as long as the copy doesn't say "ever" or "all-time"; a season average "through this game" next to a lower average "coming in" (both are true). Only list a statement whose content the facts contradict or don't contain. If everything is supported, return accurate=true and an empty problems list.`;
   const schema = {
     type: 'object',
@@ -20408,8 +20645,8 @@ Not problems: opinions, tone, slang, voice and wording; "league record" / "recor
   };
   const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 600, openaiModel: model || FACT_CHECK_MODEL });
   if (data?.accurate) return [];
-  const raw = (data?.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
-  const problems = realFactProblems(raw);
+  const raw = (data?.problems || []).map(p => String(p)).filter(Boolean);
+  const problems = realFactProblems(raw).map(p => p.slice(0, 200)); // filtered whole, cut after
   // Every complaint was an omission → the copy is accurate.
   if (raw.length && !problems.length) return [];
   return problems.length ? problems.map(p => `fact check: ${p}`) : ['fact check: unspecified inaccuracy'];
@@ -20432,7 +20669,8 @@ function writerError(res, err) {
 const OMISSION_COMPLAINT = /\b(not mentioned|isn'?t mentioned|is not mentioned|no mention|does(?: not|n'?t) (?:mention|clarify|specify|include|state|say|note|explain|address|reference)|without (?:specifying|mentioning|clarifying|noting|stating|including)|fails? to (?:mention|include|specify|note|clarify)|omit(?:s|ted|ting)?|leaves? out|left out|missing from the copy|not (?:stated|included|specified|clarified) in the copy|could (?:also )?(?:mention|include))\b/i;
 // Complaints that admit the statement is right, or only object to wording, tone or opinion
 // ("Correct, but the phrasing is subjective", "accurate, but it lacks context").
-const NOT_AN_ERROR = /\b(correct,? but|is (?:accurate|correct)(?:,| but)|accurate,? but|subjective|lacks? context|without context|could be (?:seen as )?misleading|is misleading|may be misleading|implies|phrasing|tone|opinion|not a factual statement|vague)\b/i;
+// "…which is supported by the facts" (the checker listing a line it agrees with) is not a problem either.
+const NOT_AN_ERROR = /\b(is supported by the facts|are supported by the facts|which is supported|is (?:accurate|correct) (?:as per|according to|based on|per) the facts|is (?:accurate|correct)[.;]?$|correct,? but|is (?:accurate|correct)(?:,| but)|accurate,? but|subjective|lacks? context|without context|could be (?:seen as )?misleading|is misleading|may be misleading|implies|phrasing|tone|opinion|not a factual statement|vague)\b/i;
 function realFactProblems(list) {
   return list.filter(p => !OMISSION_COMPLAINT.test(p) && !NOT_AN_ERROR.test(p));
 }
@@ -20461,8 +20699,8 @@ Not problems: opinions, tone, slang and wording; leaving a fact out (short copy 
   };
   const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 500, openaiModel: FACT_CHECK_MODEL });
   if (data.accurate) return [];
-  const raw = (data.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
-  const problems = realFactProblems(raw);
+  const raw = (data.problems || []).map(p => String(p)).filter(Boolean);
+  const problems = realFactProblems(raw).map(p => p.slice(0, 200)); // filtered whole, cut after
   if (raw.length && !problems.length) return [];
   return problems.length ? problems : ['unspecified inaccuracy'];
 }
@@ -21952,7 +22190,15 @@ async function renderRacePage(req, res, raceKey) {
         photo: mvpPhoto(season, c.player.id, photoMeta[c.player.id]),
       })),
       leagueSize: total,
-      sections: sectionSummaries(mvpSectionFacts({ season, week, playoffsStarted, top: scored, race: raceKey }), { keep: playoffsStarted }),
+      // Kept once the regular season is over, but only a copy written from the final standings:
+      // one written before the last regular-season game day is rewritten once.
+      sections: sectionSummaries(mvpSectionFacts({ season, week, playoffsStarted, top: scored, race: raceKey }), {
+        keep: playoffsStarted,
+        staleBefore: playoffsStarted ? (() => {
+          const last = getAllGames().filter(g => String(g.season) === String(season) && g.game_type === 'regular').map(g => gameYmd(g.date)).sort().pop();
+          return last ? Date.parse(`${last}T23:59:59+08:00`) : 0;
+        })() : 0,
+      }),
       season,
       week,
       totalGames,
@@ -22448,20 +22694,24 @@ function teamsIndexSummaryFacts(d) {
   const title = s => titleCase(s);
   const played = d.teams.filter(t => t.gp > 0);
   if (!played.length) return null;
-  const after = d.week ? `AFTER WEEK ${d.week}` : `SEASON ${d.season}`;
+  // Once the playoffs start: the regular season's final numbers, said as such, plus where the
+  // playoffs stand (White "dropped its last 2 games" while it was in the Finals).
+  const ph = d.isCurrent ? seasonPhaseFacts(d.season) : { phase: 'regular', line: '' };
+  const post = ph.phase !== 'regular';
+  const after = post ? 'REGULAR SEASON FINAL' : d.week ? `AFTER WEEK ${d.week}` : `SEASON ${d.season}`;
   const catLabel = { pts: 'scoring', opp: 'points allowed (fewest)', reb: 'rebounding', ast: 'assists', stl: 'steals', to: 'turnovers (fewest)', fg: 'field goal percentage', tp: 'three-point percentage' };
   const lines = played.map(t => {
     const best = d.cats.filter(c => c.rankOf[t.id] === 1).map(c => `${catLabel[c.id]} (${c.rows[0].value})`);
     const worst = d.cats.filter(c => c.rankOf[t.id] === c.rows.length).map(c => `${catLabel[c.id]} (${c.rows[c.rows.length - 1].value})`);
     const parts = [`${t.rank}. ${title(t.name)} ${t.wins}-${t.losses}`, `scores ${t.ppg} and allows ${t.opp} per game`, `point differential ${t.diffTotal > 0 ? '+' : ''}${t.diffTotal} for the season`];
-    if (t.streak) parts.push(`${t.streak.won ? 'won' : 'lost'} its last ${t.streak.count === 1 ? 'game' : `${t.streak.count} games`}`);
+    if (t.streak) parts.push(`${t.streak.won ? 'won' : 'lost'} its last ${t.streak.count === 1 ? `${post ? 'regular-season ' : ''}game` : `${t.streak.count} ${post ? 'regular-season ' : ''}games`}`);
     if (best.length) parts.push(`1st in the league in ${best.join(', ')}`);
     if (worst.length) parts.push(`last in ${worst.join(', ')}`);
     if (t.stars[0]) parts.push(`top scorer ${t.stars[0].name} ${t.stars[0].ppg}`);
     if (t.chip) parts.push(`reigning ${t.chip.replace(/^S(\d+) /, 'Season $1 ')}`);
     return `- ${parts.join(', ')}`;
   });
-  const facts = `Season ${d.season} teams, per game averages, standings order:\n${lines.join('\n')}`;
+  const facts = `Season ${d.season} teams, ${post ? 'final regular-season ' : ''}per game averages, standings order:\n${lines.join('\n')}${post ? `\n${ph.line}` : ''}`;
   return {
     key: factsKey('index', facts), kicker: `The teams · ${after}`, section: 'Teams (one card per team)', where: 'Teams page', facts,
     focus: 'This sits on the Teams page, not the standings: tell what makes one or two teams stand out — what each is best or worst at — rather than recapping the standings order.',
@@ -22470,7 +22720,8 @@ function teamsIndexSummaryFacts(d) {
 
 function teamsStackupSummaryFacts(d) {
   if (d.cats.length < 3) return null;
-  const after = d.week ? `AFTER WEEK ${d.week}` : `SEASON ${d.season}`;
+  const post = d.isCurrent && isPlayoffStarted(d.season);
+  const after = post ? 'REGULAR SEASON FINAL' : d.week ? `AFTER WEEK ${d.week}` : `SEASON ${d.season}`;
   const facts = `Season ${d.season} team rankings, per game, best first:\n${d.cats.map(c => `- ${c.fact}: ${c.rows.map(r => `${titleCase(r.team)} ${r.value}`).join(', ')}`).join('\n')}`;
   return {
     key: factsKey('stackup', facts), kicker: `How they stack up · ${after}`, section: 'How they stack up (team stat rankings)', where: 'Teams page', facts,
@@ -22761,6 +23012,10 @@ function teamPageSummaryFacts(d) {
   if (d.leaders.length) lines.push(`Team leaders per game: ${d.leaders.map(c => `${c.name} ${c.value} ${c.key}`).join(', ')}.`);
   lines.push(`Roster: ${d.roster.length} players${d.back ? `, ${d.back} of them from the Season ${d.lastChamp.season} championship team` : ''}${d.newCount ? `, ${d.newCount} new this season` : ''}.`);
   if (d.titles.length) lines.push(`${T} won the championship in Season ${d.titles.map(t => t.season).join(' and Season ')}.`);
+  // The playoffs: where they stand, and what the next game decides (it read as a regular week).
+  const ph = d.isCurrent ? seasonPhaseFacts(d.season) : { phase: 'regular', line: '' };
+  if (ph.phase !== 'regular') lines.push(ph.line.replace(/\n/g, ' '));
+  if (d.upcomingGame && gameSituationBefore(d.upcomingGame)) lines.push(gameSituationBefore(d.upcomingGame));
   if (d.upcomingGame) {
     const r = teamResult(d.upcomingGame, d.team.id);
     const h = d.h2h.find(x => x.opp === r.oppName);
@@ -22769,7 +23024,7 @@ function teamPageSummaryFacts(d) {
   }
   const facts = `${T}, Season ${d.season}:\n${lines.map(l => `- ${l}`).join('\n')}`;
   return {
-    key: factsKey(`team:${d.team.id}`, facts), kicker: `${T} · ${week ? `AFTER WEEK ${week}` : `SEASON ${d.season}`}`, section: `${T} (team page)`, where: 'team page', facts,
+    key: factsKey(`team:${d.team.id}`, facts), kicker: `${T} · ${ph.phase !== 'regular' ? 'THE PLAYOFFS' : week ? `AFTER WEEK ${week}` : `SEASON ${d.season}`}`, section: `${T} (team page)`, where: 'team page', facts,
     focus: 'Sum up this team\'s season so far for its own page: where it stands, what it does best, who carries it, and what is next. Lead with the most telling fact.',
   };
 }
@@ -22852,13 +23107,15 @@ const sectionFactsKey = (block, facts) => `s${SECTION_SUMMARY_VERSION}|${block}|
 // keep=true is for archives (finished games, past seasons): once written, the stored copy —
 // kicker, headline and body — stays as it was even if the facts later change (a stat
 // correction, a newer career high). Only an admin Regenerate replaces it.
-function sectionSummaries(factsMap, { keep = false } = {}) {
+// staleBefore: a kept archive written before this time is rewritten (its stats were replaced).
+function sectionSummaries(factsMap, { keep = false, staleBefore = 0 } = {}) {
   const out = {};
   for (const [name, f] of Object.entries(factsMap || {})) {
     if (!f) continue;
     const settingKey = `section_summary_${f.block}`;
     let stored = null;
     try { stored = JSON.parse(getSetting(settingKey, '') || 'null'); } catch {}
+    if (stored && keep && staleBefore && Number(stored.at || 0) < staleBefore && stored.key !== f.key) stored = null;
     if (stored && (keep || stored.key === f.key)) {
       // The writer sometimes drops the **name** markers; then team names get the amber
       // highlight anyway, like the teams panels.
@@ -23006,7 +23263,7 @@ ${facts}`;
       (copy, d) => keyPlayProblems(d, rows),
       copy => numberProblems(copy, numbersFacts),
       copy => claimProblems(copy, facts),
-      { style: true, fn: copy => bannedProblems(copy) },
+      copy => bannedProblems(copy),
       { costly: true, fn: async (copy, d) => (await factCheckCopy(checkFacts(d), forCheck(d), 'list of key plays (each card is a title and a line about the play it sits on; a line may describe the stretch around that play)', { model: KEY_PLAYS_CHECK_MODEL })).filter(p => !agreed.test(p)) },
     ],
   });
@@ -23044,7 +23301,12 @@ function standingsSectionFacts(sd) {
   // Title-cases just the team names inside a sentence the view built (tiebreak notes, week headlines).
   const teamsTc = s => m.table.reduce((x, t) => x.split(t.name).join(T(t.name)), String(s));
   const rec = t => `${t.wins}-${t.losses}`;
-  const asOf = sd.isCurrent ? `After week ${m.week}` : `Season ${sd.season} · final`;
+  // Once the playoffs start, the current season's sections are the regular season's final word,
+  // told as history, and their facts say so (so the cached copy rewrites itself).
+  const ph = sd.isCurrent ? seasonPhaseFacts(sd.season) : { phase: 'regular', line: '' };
+  const post = ph.phase !== 'regular';
+  const asOf = sd.isCurrent && !post ? `After week ${m.week}` : `Season ${sd.season} · regular season final`;
+  const over = post ? '\nThe regular season is over and these numbers are final; the playoffs are on. Write about it in the past tense, never as a race still going.' : '';
   const where = 'Standings page';
   const out = {};
 
@@ -23064,11 +23326,14 @@ function standingsSectionFacts(sd) {
       ...m.notes.map(n => `Tiebreak: ${teamsTc(n)}.`),
       sd.isCurrent ? (m.sched.length ? `${plural(m.sched.length, 'regular-season game')} left on the schedule.` : 'No regular-season games left on the schedule.') : '',
       lock,
+      post ? ph.line : '',
     ].filter(Boolean);
     out.playoffs = {
       kicker: `Playoff picture · ${asOf}`, section: live ? 'Playoff picture (the semifinal matchups if the season ended now)' : 'Playoff picture (the settled semifinal matchups)', where,
       facts: lines.join('\n'),
-      focus: live
+      focus: post
+        ? 'The regular season set up the playoffs, and the playoffs are now under way: say who earned twice to beat, then where each semifinal (and the Finals) stands from the SEASON PHASE lines. Never present a semifinal that has been played as still to come.'
+        : live
         ? 'Describe the playoff picture: who holds the twice-to-beat spots, how tight the race for them is, and the semifinal matchups as they stand. Don\'t recap the whole table.'
         : 'Describe how the regular season set up the playoffs: who earned twice to beat and the semifinal matchups it produced.',
     };
@@ -23096,7 +23361,7 @@ function standingsSectionFacts(sd) {
   }
   out.h2h = {
     kicker: `Head to head · ${asOf}`, section: 'Head to head (every pairing\'s season series)', where,
-    facts: `Season ${sd.season} regular-season meetings, by pairing:\n${h2hLines.join('\n')}`,
+    facts: `Season ${sd.season} regular-season meetings, by pairing:\n${h2hLines.join('\n')}${over}`,
     focus: 'Pick the one or two most interesting rivalries: a one-sided series, a split one, the loop if there is one, or a meeting still to come. Don\'t go through every pairing.',
   };
 
@@ -23104,7 +23369,7 @@ function standingsSectionFacts(sd) {
   const roadLines = m.weeks.map(w => `- Week ${w.n} (${w.dates.map(d => summaryDay(d)).join(' and ')}): ${w.games.map(g => `${T(g.w)} beat ${T(g.l)} ${g.ws}-${g.ls}`).join('; ')}. Table after: ${w.table.map((t, k) => `${k + 1}. ${T(t.name)} ${t.rec}`).join(', ')}.${w.n > 1 && w.headline ? ` Biggest change: ${teamsTc(w.headline)}.` : ''}`);
   out.road = {
     kicker: `The road so far · ${asOf}`, section: 'The road so far (what each week did to the table)', where,
-    facts: `Season ${sd.season}, week by week:\n${roadLines.join('\n')}`,
+    facts: `Season ${sd.season}, week by week:\n${roadLines.join('\n')}${over}`,
     focus: 'Tell the arc of the season in one or two beats: how the top of the table took shape and the biggest swing along the way. Don\'t walk through every week.',
   };
 
@@ -23118,7 +23383,7 @@ function standingsSectionFacts(sd) {
     });
     out.stats = {
       kicker: `Team stats · ${asOf}`, section: 'Team stats (every team\'s per-game numbers)', where,
-      facts: `Season ${sd.season} team stats, best first in each category:\n${statLines.join('\n')}`,
+      facts: `Season ${sd.season} regular-season team stats, best first in each category:\n${statLines.join('\n')}${over}`,
       focus: 'Pick the one or two most telling stat stories: the biggest gap at the top or bottom of a category, or a team that ranks first in one category and last in another. Don\'t list every category.',
     };
   }
@@ -23154,8 +23419,12 @@ function playoffsSectionFacts(pd) {
   }
   // The playoff games' highlights (lib/highlights.js, cached per game): series results for the
   // bracket (clinch, title, upset, forced decider), records and big nights for the games list.
-  const poHl = m.projected ? [] : (pd.games || []).filter(g => Number(g.team_a_score) + Number(g.team_b_score) > 0).flatMap(g => cachedGameHighlights(g));
-  const seriesHl = poHl.filter(h => /^(CHAMPIONS|SERIES WON|UPSET|SERIES TIED):/.test(h.text));
+  // Each highlight says which game it came from: without it, the games block put White's JM
+  // Angeles in Black's comeback over Maroon (Fable audit, 2026-11-11).
+  const roundOf = Object.fromEntries(m.tableRows.map(r => [r.id, `${r.round.replace(/ · G(\d)/, ', Game $1')}: ${T(r.w)} beat ${T(r.l)} ${r.ws}-${r.ls}`]));
+  const poHl = m.projected ? [] : (pd.games || []).filter(g => Number(g.team_a_score) + Number(g.team_b_score) > 0)
+    .flatMap(g => cachedGameHighlights(g).map(h => ({ ...h, text: roundOf[g.id] && !/^(CHAMPIONS|SERIES WON|UPSET|SERIES ALIVE|SERIES TIED):/.test(h.text) ? `${h.text} [in ${roundOf[g.id]}; only about that game]` : h.text })));
+  const seriesHl = poHl.filter(h => /^(CHAMPIONS|SERIES WON|UPSET|SERIES ALIVE|SERIES TIED):/.test(h.text));
   const seriesMusts = mustMentions(seriesHl, 2);
   if (seriesHl.length) facts += `\n\n${highlightsBlock(seriesHl, seriesMusts)}`;
   out.bracket = {
@@ -23648,7 +23917,8 @@ async function getOrGenerateCoachNote(playerId, player, totals) {
     const positions = (() => { try { return JSON.parse(player.positions || '[]'); } catch { return []; } })();
     const group = classifyPositionGroup(positions);
     const peerRows = getAllPlayerCareerTotals().filter(r => r.player_id !== playerId);
-    const peerAverages = aggregatePeerAverages(peerRows, group);
+    // No listed position: no peer group (it was read as a big and compared with PF/C).
+    const peerAverages = positions.length ? aggregatePeerAverages(peerRows, group) : null;
     const recentGames = (getPlayerGameLog(playerId) || []).filter(g => g.status === 'played').slice(0, 4);
     const displayName = displayPlayerName(player.name);
     const result = await generateCoachAnalysis({
@@ -23664,7 +23934,7 @@ async function getOrGenerateCoachNote(playerId, player, totals) {
   } catch (err) {
     console.error('coach-analysis generation error:', err.message);
     // Serve the last good analysis rather than nothing if regeneration fails.
-    return stored ? { analysis: stored.analysis, focus_tag: stored.focus_tag, generated_at: stored.generated_at } : null;
+    return stored ? { analysis: stored.analysis, focus_tag: stored.focus_tag, generated_at: stored.generated_at, stale: true } : null;
   }
 }
 
@@ -27984,13 +28254,13 @@ app.post('/admin/papawis/courts/:id/writeup/generate', requireAuth, express.json
   const { p } = courtPageData(court);
   const factsText = p.facts.join('\n');
   const allowed = new Set(factsText.match(/\d+(?:[.,]\d+)?/g) || []);
-  const voice = pickVoice('home', { date: manilaTodayStr() });
+  const voice = pickVoice('court', { date: manilaTodayStr() });
   const flavor = voiceFlavor(voice, court.id, 200);
   // Write → check → rewrite (lib/writer.js), 3 tries, the same voice as every other writer:
   // numbers from the facts, the shared claim/banned/voice checks, length, then the AI fact
   // check once the free ones pass.
   {
-    const prompt = `You write the "About this court" paragraph on a basketball court's page for WKND Basketball, a weekend basketball league and pickup community ("Papawis" = our pickup runs) in Makati, Mandaluyong and Pasig, Philippines.
+    const prompt = `You write the "About this court" paragraph on a basketball court's page for WKND Basketball, a weekend basketball league and pickup community ("Papawis" = our pickup runs) in Metro Manila, Philippines. Where this court is comes only from the facts below; never compare it with other courts or count them.
 
 Voice: ${voice.name}. ${voice.guide}${flavor ? `\n${flavor}` : ''}
 It also has to read well to someone who found the page on Google: the court name, city and directions stay plain and clear; the voice lives in the sentences around them.
@@ -28007,7 +28277,7 @@ Write 3 paragraphs, 150 to 220 words in total, plain text, no headings, no bulle
 - Do not say how often runs happen ("every Saturday", "weekly", "monthly") unless a fact says exactly that.
 - No claims of fame or rank ("legendary", "the best", "the hotspot", "always packed") unless a fact supports them.
 - Separate the paragraphs with one blank line.
-- Banned (rejected in code): ${BANNED_HINT}.
+- Banned (a draft that uses one is sent back to be rewritten): ${BANNED_HINT}.
 
 FINAL REMINDER — write it in the ${voice.name} voice.${voice.sample ? ` Example of the voice (style only — do not copy its words or facts): "${voice.sample}"` : ''}`;
     let out;
