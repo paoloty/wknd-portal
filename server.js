@@ -225,6 +225,11 @@ import {
 import { getRecentBroadcasts, getBroadcastStats } from './lib/portal-db.js';
 import { adminReachComposeBody, adminReachSentBody } from './views/admin/reach.js';
 import { leagueNudgeEmail, raffleWinnerEmail } from './lib/mailer.js';
+import { seoReportEmail } from './lib/mailer.js';
+import { gscConfigured, gscSearchAnalytics, gscInspectUrl } from './lib/seo-gsc.js';
+import { buildSeoReport, checkPageHtml, SEO_PAGES, SEO_TARGETS } from './lib/seo-report.js';
+import { saveSeoDaily, getSeoLatestDate, getSeoTotals, addSeoCheck, getLatestSeoChecks, addSeoChange, getSeoChanges, addSeoRun, getSeoRuns } from './lib/portal-db.js';
+import { adminSeoReportBody } from './views/admin/seo-report.js';
 import { getBroadcastByDedupe, setLeagueEmailOptout } from './lib/portal-db.js';
 import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
 import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
@@ -233,8 +238,8 @@ import { adminGameDetailBody, perOf } from './views/admin/game.js';
 import { adminRetrackCompareBody } from './views/admin/retrack-compare.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt, setGamesTipTime } from './lib/portal-db.js';
-import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
-import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems } from './views/court.js';
+import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin, COURT_IDENTITY_FIELDS } from './lib/court-page.js';
+import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems, courtCityPage, venueUrl, CITY_PAGES, cityPageSlug } from './views/court.js';
 import { askToRateCourt, courtRatingsOn } from './lib/court-rate-ask.js';
 import { gameRatingsOn, resolveRateGame, askToRateGame, verifyRateToken, verifyRatingUnsubscribe, RATE_KINDS } from './lib/game-rate-ask.js';
 import { RATE_ANSWER_KEYS, cleanRating, summarizeConduct, raterFlags, RATE_WINDOW_DAYS } from './lib/game-ratings.js';
@@ -14361,8 +14366,12 @@ app.get('/sitemap.xml', (req, res) => {
   // Court pages: only courts with a live page (something played there, not hidden).
   const courtsLive = liveCourts();
   urls.push({ loc: '/join', priority: '0.8', changefreq: 'monthly' });
-  if (courtsLive.length) urls.push({ loc: '/courts', priority: '0.6', changefreq: 'weekly' });
-  for (const { court, p } of courtsLive) urls.push({ loc: `/courts/${encodeURIComponent(court.slug)}`, priority: '0.6', changefreq: p.nextRun ? 'daily' : 'weekly' });
+  if (courtsLive.length) urls.push({ loc: '/courts', priority: '0.6', changefreq: 'weekly', lastmod: courtsLive.map(x => x.p.updatedYmd).filter(Boolean).sort().pop() });
+  for (const [slug, city] of Object.entries(CITY_PAGES)) {
+    const here = courtsLive.filter(x => x.p.city === city);
+    if (here.length) urls.push({ loc: `/courts/${slug}`, priority: '0.7', changefreq: 'weekly', lastmod: here.map(x => x.p.updatedYmd).filter(Boolean).sort().pop() });
+  }
+  for (const { court, p } of courtsLive) urls.push({ loc: `/courts/${encodeURIComponent(court.slug)}`, priority: '0.6', changefreq: p.nextRun ? 'daily' : 'weekly', lastmod: p.updatedYmd || undefined });
   if (flags.posts)   urls.push({ loc: '/posts',   priority: '0.6', changefreq: 'daily' });
   if (picksEnabled()) urls.push({ loc: '/picks',  priority: '0.5', changefreq: 'weekly' }, { loc: '/picks/rules', priority: '0.3', changefreq: 'monthly' });
 
@@ -20003,7 +20012,7 @@ function homeNextUpLeague(season, games) {
   if (scheduled.length) {
     const day = String(scheduled[0].date).slice(0, 10);
     return {
-      mode: 'upcoming', date: day, season,
+      mode: 'upcoming', date: day, season, court: sharedLiveCourt(scheduled.filter(g => String(g.date).slice(0, 10) === day)),
       games: scheduled.filter(g => String(g.date).slice(0, 10) === day)
         .map(g => ({ a: g.team_a_name, b: g.team_b_name, recA: records[g.team_a_name] || '', recB: records[g.team_b_name] || '', type: g.game_type, tip: g.tip_time || '' })),
     };
@@ -20014,7 +20023,7 @@ function homeNextUpLeague(season, games) {
   if (!played.length) return null;
   const day = String(played[0].date).slice(0, 10);
   return {
-    mode: 'results', date: day, season,
+    mode: 'results', date: day, season, court: sharedLiveCourt(played.filter(g => String(g.date).slice(0, 10) === day)),
     games: played.filter(g => String(g.date).slice(0, 10) === day)
       .map(g => ({ id: g.id, a: g.team_a_name, b: g.team_b_name, scoreA: Number(g.team_a_score), scoreB: Number(g.team_b_score) })),
   };
@@ -20033,7 +20042,7 @@ function homeNextUpPapawis() {
   return {
     faces: confirmedSignups.slice(0, 7).map(s => ({ id: s.player_id, name: s.player_name, team: s.team_name || '' })),
     date: next.date, time: formatTimeRange(next.start_time, next.end_time) || next.time_label || '',
-    location: next.location || '', maxSlots: Number(next.max_slots) || 0,
+    location: next.location || '', courtSlug: liveCourtSlugByName().get(normCourtName(next.location)) || '', maxSlots: Number(next.max_slots) || 0,
     confirmed: Number(next.confirmed_count) || 0, waitlist: Number(next.waitlist_count) || 0,
     price: next.price_per_player ?? next.min_per_player ?? null, hasReferee: !!next.has_referee,
   };
@@ -26562,6 +26571,11 @@ function buildCourtOgTags(court, p) {
     // The venue's own site and socials: tells search engines this page is about that place.
     ...(() => { const same = courtLinks(p.info).filter(l => l.key !== 'booking').map(l => l.url); return same.length ? { sameAs: same } : {}; })(),
     ...(p.info?.rate ? { priceRange: p.info.rate } : {}),
+    // Other spellings people search ("Activate Hoops Arena"), the company that runs it and
+    // the building it's in.
+    ...(p.altNames.length ? { alternateName: p.altNames } : {}),
+    ...(p.info?.operator ? { parentOrganization: { '@type': 'Organization', name: p.info.operator, ...(courtLinks(p.info).find(l => l.key === 'website') ? { url: courtLinks(p.info).find(l => l.key === 'website').url } : {}) } } : {}),
+    ...(p.info?.building ? { containedInPlace: { '@type': 'Place', name: p.info.building } } : {}),
     // Star rating for search results: players' ratings of this court (a venue WKND doesn't
     // own, so allowed), only once the page itself shows the score (5+ ratings) and matching it.
     ...(() => {
@@ -26606,7 +26620,8 @@ function buildCourtOgTags(court, p) {
     jsonLdTag({ '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_ORIGIN}/` },
       { '@type': 'ListItem', position: 2, name: 'Courts', item: `${SITE_ORIGIN}/courts` },
-      { '@type': 'ListItem', position: 3, name: p.name, item: url },
+      ...(cityPageSlug(p.city) ? [{ '@type': 'ListItem', position: 3, name: p.city, item: `${SITE_ORIGIN}/courts/${cityPageSlug(p.city)}` }] : []),
+      { '@type': 'ListItem', position: cityPageSlug(p.city) ? 4 : 3, name: p.name, item: url },
     ] }),
     jsonLdTag({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: courtFaqItems(p, courtFlags()).map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) }),
     `<link rel="stylesheet" href="/courts.css?v=${COURTS_CSS_VER}">`,
@@ -26636,15 +26651,61 @@ if (getSetting('court_seeds_v1', '') !== 'done') {
   } catch (e) { console.error('[court seeds]', e.message); }
 }
 
+// One-time SEO details for the Activate Sports courts (2026-11-11, the court SEO project):
+// other spellings, who runs them, the building, and Hoop Arena's search title/description.
+// Fills empty fields only, so anything typed in admin wins.
+if (getSetting('court_seo_seeds_v1', '') !== 'done') {
+  try {
+    const seeds = {
+      'activate-hoop-arena': {
+        info: { alt_names: 'Activate Hoops Arena, Activate HOOP Arena', operator: 'Activate Sports PH', building: 'Sparta Philippines' },
+        seo_title: 'Activate Hoop Arena, Mandaluyong: Basketball Court | WKND',
+        seo_description: 'Activate Hoop Arena (Activate Hoops Arena) by Activate Sports PH, inside Sparta Philippines, 126 Pioneer St, Mandaluyong. WKND league games on Sundays.',
+      },
+      'activate-battlegrounds': {
+        city: 'Pasig',
+        info: { operator: 'Activate Sports PH', building: 'Ayala Malls The 30th', links: { website: 'https://activatesports.ph/', facebook: 'https://www.facebook.com/activatesportsph', instagram: 'https://www.instagram.com/activatesportsph', tiktok: 'https://www.tiktok.com/@activatesportsph' } },
+      },
+    };
+    for (const [slug, seed] of Object.entries(seeds)) {
+      const court = getPapawisCourtBySlug(slug);
+      if (!court) continue;
+      const info = parseCourtJson(court.info_json, {});
+      for (const [k, v] of Object.entries(seed.info || {})) {
+        if (k === 'links') info.links = { ...v, ...(info.links || {}) };
+        else if (!info[k]) info[k] = v;
+      }
+      const fields = { info_json: JSON.stringify(info) };
+      if (seed.city && !court.city) fields.city = seed.city;
+      if (seed.seo_title && !court.seo_title) fields.seo_title = seed.seo_title;
+      if (seed.seo_description && !court.seo_description) fields.seo_description = seed.seo_description;
+      updatePapawisCourtPage(court.id, fields);
+    }
+    setSetting('court_seo_seeds_v1', 'done');
+  } catch (e) { console.error('[court seo seeds]', e.message); }
+}
+
 // Court name → slug for courts with a live page, for linking run locations (/papawis). Cached
 // for 5 minutes; admin saves on a court page clear it.
 let liveCourtsCache = null;
 const normCourtName = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 function liveCourtSlugByName() {
   if (!liveCourtsCache || Date.now() - liveCourtsCache.at > 300000) {
-    liveCourtsCache = { at: Date.now(), map: new Map(liveCourts().map(({ court }) => [normCourtName(court.name), court.slug])) };
+    const live = liveCourts();
+    liveCourtsCache = { at: Date.now(), map: new Map(live.map(({ court }) => [normCourtName(court.name), court.slug])),
+      byId: new Map(live.map(({ court, p }) => [court.id, { slug: court.slug, name: p.name }])) };
   }
   return liveCourtsCache.map;
+}
+// Court id → { slug, name } for courts with a live page (homepage venue links).
+function liveCourtById(id) {
+  liveCourtSlugByName();
+  return (id && liveCourtsCache.byId.get(id)) || null;
+}
+// The venue of a set of league games, when they all share one court with a live page.
+function sharedLiveCourt(games) {
+  const ids = new Set(games.map(g => g.court_id || ''));
+  return ids.size === 1 ? liveCourtById([...ids][0]) : null;
 }
 
 // /join: the league explained for people searching for one (views/join.js).
@@ -26677,20 +26738,85 @@ app.get('/join', (req, res) => {
   }));
 });
 
+// City pages that have at least one live court: [{ slug, city, n }].
+function courtCities(courts = liveCourts()) {
+  return Object.entries(CITY_PAGES).map(([slug, city]) => ({ slug, city, n: courts.filter(x => x.p.city === city).length })).filter(c => c.n);
+}
+const courtListMeta = (name, courts, url) => [
+  jsonLdTag({ '@context': 'https://schema.org', '@type': 'ItemList', name, url, itemListElement: courts.map(({ court, p }, i) => ({ '@type': 'ListItem', position: i + 1, name: p.name, url: courtUrl(court) })) }),
+  `<link rel="canonical" href="${escAttr(url)}">`,
+  `<link rel="stylesheet" href="/courts.css?v=${COURTS_CSS_VER}">`,
+];
+
 app.get('/courts', (req, res) => {
   const courts = liveCourts();
+  const cities = courtCities(courts);
+  const where = cities.map(c => c.city);
+  const whereText = where.length > 1 ? `${where.slice(0, -1).join(', ')} & ${where[where.length - 1]}` : where[0] || 'Metro Manila';
+  const description = `Basketball courts where WKND Basketball plays in ${whereText.replace(' & ', ' and ')}: league games and pickup runs, with photos, prices per player and stats.`;
   res.send(renderPage(req, {
-    title: 'Courts in Makati, Mandaluyong & Pasig | WKND Basketball',
+    title: `Basketball Courts in ${whereText} | WKND`,
     currentPath: '/papawis',
     metaTags: [
-      jsonLdTag({ '@context': 'https://schema.org', '@type': 'ItemList', name: 'WKND Basketball courts', itemListElement: courts.map(({ court, p }, i) => ({ '@type': 'ListItem', position: i + 1, name: p.name, url: courtUrl(court) })) }),
-      `<link rel="stylesheet" href="/courts.css?v=${COURTS_CSS_VER}">`,
+      `<meta name="description" content="${escAttr(description)}">`,
+      ...courtListMeta('WKND Basketball courts', courts, `${SITE_ORIGIN}/courts`),
+      jsonLdTag({ '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_ORIGIN}/` },
+        { '@type': 'ListItem', position: 2, name: 'Courts', item: `${SITE_ORIGIN}/courts` },
+      ] }),
     ].join('\n  '),
-    body: courtsIndexPage({ courts }),
+    body: courtsIndexPage({ courts, cities }),
   }));
 });
 
-app.get('/courts/:slug', (req, res) => {
+// /courts/mandaluyong, /courts/pasig, /courts/makati: "basketball courts in <city>". Live courts
+// as tiles, other courts on file in that city as plain rows, a summary line from the numbers
+// and the admin's intro (Admin → SEO report). Only cities with a live court have a page.
+function courtCityPageData(slug) {
+  const city = CITY_PAGES[slug];
+  if (!city) return null;
+  const all = liveCourts();
+  const live = all.filter(x => x.p.city === city);
+  if (!live.length) return null;
+  const liveIds = new Set(live.map(x => x.court.id));
+  const others = getAllPapawisCourts().filter(c => c.active && !c.page_hidden && !liveIds.has(c.id) && courtCity(c) === city)
+    .map(c => { const info = normalizeCourtInfo(parseCourtJson(c.info_json, {})); return { name: courtDisplayName(c), address: c.address || '', type: (COURT_TYPES.find(([k]) => k === info.setting) || [])[1] || '' }; });
+  const runs = live.reduce((a, x) => a + x.p.playedRuns, 0);
+  const league = live.reduce((a, x) => a + x.p.finalsCount, 0);
+  const leagueHome = [...live].sort((a, b) => b.p.finalsCount - a.p.finalsCount)[0];
+  const parts = [league && plural(league, 'league game'), runs && plural(runs, 'Papawis pickup run')].filter(Boolean);
+  const summary = `WKND Basketball has played ${parts.join(' and ') || 'games'} at ${live.length === 1 ? live[0].p.name : `${live.length} courts`} in ${city}.`
+    + (leagueHome?.p.finalsCount && live.length > 1 ? ` Most league games are at ${leagueHome.p.name}.` : '');
+  return { city, slug, live, others, cities: courtCities(all), summary, intro: getSetting(`seo_city_intro_${slug}`, '') };
+}
+
+app.get('/courts/:slug', (req, res, next) => {
+  if (CITY_PAGES[req.params.slug]) {
+    const d = courtCityPageData(req.params.slug);
+    if (!d) return next();
+    const url = `${SITE_ORIGIN}/courts/${d.slug}`;
+    const names = d.live.map(x => x.p.name);
+    let description = `Basketball courts in ${d.city} where WKND Basketball plays: ${names.slice(0, 3).join(', ')}. League games, pickup runs, prices per player and photos.`;
+    if (description.length > 160) description = `Basketball courts in ${d.city} where WKND Basketball plays: league games, pickup runs, prices per player and photos.`;
+    return res.send(renderPage(req, {
+      title: `Basketball Courts in ${d.city} | WKND Basketball`,
+      currentPath: '/papawis',
+      metaTags: [
+        `<meta name="description" content="${escAttr(description)}">`,
+        `<meta property="og:title" content="${escAttr(`Basketball courts in ${d.city}`)}">`,
+        `<meta property="og:description" content="${escAttr(description)}">`,
+        `<meta property="og:url" content="${escAttr(url)}">`,
+        ...(d.live[0]?.p.photos[0] ? [`<meta property="og:image" content="${escAttr(SITE_ORIGIN + d.live[0].p.photos[0].src)}">`] : []),
+        ...courtListMeta(`Basketball courts in ${d.city}`, d.live, url),
+        jsonLdTag({ '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_ORIGIN}/` },
+          { '@type': 'ListItem', position: 2, name: 'Courts', item: `${SITE_ORIGIN}/courts` },
+          { '@type': 'ListItem', position: 3, name: d.city, item: url },
+        ] }),
+      ].join('\n  '),
+      body: courtCityPage(d),
+    }));
+  }
   const court = getPapawisCourtBySlug(req.params.slug);
   const notFound = () => res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/papawis', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Court not found.</p></div>' }));
   if (!court) return notFound();
@@ -28224,13 +28350,23 @@ app.post('/admin/papawis/courts/:id/page', requireAuth, express.json(), (req, re
   for (const f of COURT_LINK_FIELDS) { const v = clean(b[`link_${f.key}`], 300).trim(); if (/^https?:\/\/\S+$/i.test(v)) links[f.key] = v; }
   if (Object.keys(links).length) info.links = links;
   const rate = clean(b.info_rate, 100).trim(); if (rate) info.rate = rate;
+  for (const f of COURT_IDENTITY_FIELDS) { const v = clean(b[`info_${f.key}`], 160).trim(); if (v) info[f.key] = v; }
   const { p } = courtPageData(court);
   const show = new Set([].concat(b['gallery_show[]'] || b.gallery_show || []).map(String));
+  {
+    const by = req.session?.isElevatedPlayer ? (req.session.playerName || 'admin') : 'Super admin';
+    const page = `/courts/${court.slug}`;
+    addSeoChange({ page, field: 'title', before: court.seo_title, after: clean(b.seo_title, 120).trim(), by });
+    addSeoChange({ page, field: 'description', before: court.seo_description, after: clean(b.seo_description, 300).trim(), by });
+    addSeoChange({ page, field: 'About text', before: court.writeup, after: clean(b.writeup, 4000).trim(), by });
+    addSeoChange({ page, field: 'court info', before: court.info_json, after: JSON.stringify(info), by });
+  }
   updatePapawisCourtPage(court.id, {
     city: COURT_CITIES.includes(b.city) ? b.city : '',
     info_json: JSON.stringify(info),
     writeup: clean(b.writeup, 4000).trim(),
     page_hidden: b.page_on === '0' ? 1 : 0,
+    page_early: b.page_early === '1' ? 1 : 0,
     gallery_hidden_json: JSON.stringify(p.allPhotos.map(x => x.key).filter(k => !show.has(k))),
     gallery_main: String(b.gallery_main || ''),
     seo_title: clean(b.seo_title, 120).trim(),
@@ -30584,6 +30720,293 @@ function broadcastLivenessCaptured(token) {
 }
 
 // A route that threw. console.error puts it in the log; Express still answers as before.
+// ── SEO jobs (court SEO project, 2026-11-11) ─────────────────────────────────────────────
+// Runs by itself on the live site: every morning from 7am Manila it pulls Google Search
+// Console (lib/seo-gsc.js), checks the tracked pages as Google would read them, and emails the
+// report (lib/seo-report.js → seoReportEmail). Mondays add the weekly "Lately at <court>" note
+// on courts with games that week (fact-checked, its own column, never the writeup) and
+// Google's index check. The 1st of the month adds a venue link check and AI title/description
+// suggestions for a person to apply; nothing rewrites titles or the About text by itself.
+// Switches and city intros: Admin → Site settings → SEO report. Every job run → seo_runs and
+// one line in /admin/logs.
+const seoJobsOn = () => process.env.NODE_ENV === 'production' && getSetting('seo_jobs_enabled', '1') === '1';
+const seoReportTo = () => getSetting('seo_report_email', '') || ADMIN_NOTIFY_EMAIL;
+const seoPageUrl = p => `${SITE_ORIGIN}${p === '/' ? '/' : p}`;
+const isMondayYmd = ymd => new Date(`${ymd}T00:00:00Z`).getUTCDay() === 1;
+
+async function seoPullGsc(today) {
+  if (!gscConfigured()) { addSeoRun({ kind: 'gsc', ok: false, summary: 'Search Console is not set up yet (GSC_SERVICE_ACCOUNT_FILE, GSC_SITE_URL).' }); return; }
+  try {
+    // Google's final numbers land ~3 days late; re-pull the last 3 stored days in case they moved.
+    const end = addDaysYmd(today, -3);
+    const last = getSeoLatestDate();
+    const start = last ? addDaysYmd(last, -2) : addDaysYmd(end, -89);
+    if (start > end) { addSeoRun({ kind: 'gsc', summary: 'Nothing new from Google yet.' }); return; }
+    const byQuery = await gscSearchAnalytics({ startDate: start, endDate: end, dimensions: ['date', 'page', 'query'] });
+    const byPage = await gscSearchAnalytics({ startDate: start, endDate: end, dimensions: ['date', 'page'] });
+    const rows = [
+      ...byQuery.map(r => ({ date: r.keys[0], page: r.keys[1], query: String(r.keys[2] || '').toLowerCase(), clicks: r.clicks, impressions: r.impressions, position: r.position })),
+      ...byPage.map(r => ({ date: r.keys[0], page: r.keys[1], query: '', clicks: r.clicks, impressions: r.impressions, position: r.position })),
+    ];
+    saveSeoDaily(rows);
+    addSeoRun({ kind: 'gsc', summary: `${start} to ${end}: ${byQuery.length} search rows, ${byPage.length} page rows.` });
+  } catch (e) {
+    addSeoRun({ kind: 'gsc', ok: false, summary: e.message });
+  }
+}
+
+// Fetch each tracked page from the live site like a crawler would and check what it serves.
+async function seoCheckPages() {
+  let bad = 0;
+  for (const p of SEO_PAGES) {
+    const url = seoPageUrl(p);
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'WKND-SEO-check/1.0 (bot)' }, redirect: 'manual', signal: AbortSignal.timeout(20000) });
+      const html = res.status === 200 ? await res.text() : '';
+      const c = checkPageHtml({ url, status: res.status, html, expectCanonical: url });
+      if (!c.ok) bad++;
+      addSeoCheck({ kind: 'page', ...c });
+    } catch (e) {
+      bad++;
+      addSeoCheck({ kind: 'page', url, ok: false, detail: `could not load (${e.message})` });
+    }
+  }
+  addSeoRun({ kind: 'checks', ok: !bad, summary: bad ? `${bad} of ${SEO_PAGES.length} pages have a problem.` : `All ${SEO_PAGES.length} pages OK.` });
+}
+
+// Google's own view of each tracked page (URL Inspection API): indexed or not, last crawl.
+async function seoInspectPages() {
+  if (!gscConfigured()) return;
+  let notIndexed = 0;
+  for (const p of SEO_PAGES) {
+    const url = seoPageUrl(p);
+    try {
+      const r = await gscInspectUrl(url);
+      const ok = r.verdict === 'PASS';
+      if (!ok) notIndexed++;
+      addSeoCheck({ kind: 'inspect', url, ok, detail: ok ? '' : (r.coverage || r.verdict || 'not indexed'), data: r });
+    } catch (e) {
+      addSeoCheck({ kind: 'inspect', url, ok: false, detail: `inspection failed (${e.message})` });
+    }
+  }
+  addSeoRun({ kind: 'inspect', ok: !notIndexed, summary: notIndexed ? `${notIndexed} of ${SEO_PAGES.length} pages not indexed by Google.` : `All ${SEO_PAGES.length} pages indexed.` });
+}
+
+// "Lately at <court>": 2-3 sentences from the last 7 days at the court (league scores and top
+// scorers, Papawis runs and turnout) plus what's next. Facts in code, write → check → rewrite,
+// numbers from the facts only, AI fact check. Courts with nothing played that week keep last
+// week's note.
+const tcName = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+function seoWeeklyFacts(court, today) {
+  const { p, games } = courtPageData(court);
+  const since = addDaysYmd(today, -7);
+  const dayLabel = ymd => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  const players = Object.fromEntries(getAllPlayers().map(x => [x.id, x.name]));
+  const teams = Object.fromEntries(getAllTeams().map(t => [t.id, t.name]));
+  const recent = games.filter(g => String(g.date).slice(0, 10) >= since && String(g.date).slice(0, 10) < today);
+  const runs = p.pastRuns.filter(r => r.ymd >= since && r.ymd < today);
+  if (!recent.length && !runs.length) return null;
+  const facts = [`Court: ${p.name}${p.city ? `, ${p.city}` : ''}`];
+  for (const g of recent) {
+    const top = getGameStats(g.id)[0];
+    const a = Number(g.team_a_score), b = Number(g.team_b_score);
+    const [w, l, ws, ls] = a >= b ? [g.team_a_name, g.team_b_name, a, b] : [g.team_b_name, g.team_a_name, b, a];
+    facts.push(`WKND league game (Season ${g.season}${g.game_type === 'playoff' ? ', playoffs' : ''}) on ${dayLabel(String(g.date).slice(0, 10))}: ${tcName(w)} beat ${tcName(l)} ${ws}-${ls}${Number(g.overtime) > 0 ? ' in overtime' : ''}.${top && players[top.player_id] && top.pts > 0 ? ` Top scorer of the game: ${displayPlayerName(players[top.player_id])}${teams[top.team_id] ? ` (${tcName(teams[top.team_id])})` : ''} with ${top.pts} points.` : ''}`);
+  }
+  for (const r of runs) facts.push(`Papawis pickup run on ${dayLabel(r.ymd)}${r.time ? `, ${r.time}` : ''}: ${r.players} players${r.fresh ? `, ${r.fresh} of them playing their first run here` : ''}${r.refereed ? ', with a referee' : ''}.`);
+  const nextGames = getAllGames().filter(g => g.scheduled === 1 && !g.under_review && g.court_id === court.id && String(g.date).slice(0, 10) >= today).sort((x, y) => String(x.date).localeCompare(String(y.date)));
+  // No "next run" in the note: a quiet court keeps last week's note, and a dated next event
+  // would go stale under "Lately" (the page shows the live next run anyway).
+  void nextGames;
+  return { p, facts };
+}
+async function factCheckWeeklyNote(factsText, text) {
+  const prompt = `Check this short update for a basketball court's web page against the facts.
+
+TEXT
+${text}
+
+FACTS
+${factsText}
+
+List every statement in the text that the facts do not directly support: wrong or invented numbers, scores, names, dates or days, who won, claims about the court, records or streaks, and how often games happen unless a fact says so. Plain wording and an invitation to play are fine. If everything is supported, return accurate=true and an empty problems list.`;
+  const schema = { type: 'object', properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } }, required: ['accurate', 'problems'] };
+  const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 300, openaiModel: FACT_CHECK_MODEL });
+  if (data.accurate) return [];
+  const problems = realFactProblems((data.problems || []).map(x => String(x).slice(0, 200)).filter(Boolean));
+  return problems;
+}
+async function seoWriteWeeklyNotes(today) {
+  const notes = [];
+  if (getSetting('seo_weekly_notes', '1') !== '1' || !aiAvailable()) return notes;
+  const slugs = SEO_PAGES.filter(p => /^\/courts\/[^/]+$/.test(p)).map(p => p.split('/')[2]).filter(s => !CITY_PAGES[s]);
+  for (const slug of slugs) {
+    const court = getPapawisCourtBySlug(slug);
+    if (!court) continue;
+    const f = seoWeeklyFacts(court, today);
+    if (!f || !f.p.live) continue;
+    const factsText = f.facts.join('\n');
+    const allowed = new Set(factsText.match(/\d+(?:[.,]\d+)?/g) || []);
+    const prompt = `Write a short "Lately at ${f.p.name}" update for the court's page on WKND Basketball's website (a weekend basketball league and pickup community in Makati, Mandaluyong and Pasig). People reading it found the page on Google.
+
+FACTS (the only facts you may use):
+${factsText}
+
+Write 2 or 3 plain sentences, 30 to 60 words, as one paragraph. Name the court once. Say what was played and the results, then what's next if the facts say. Don't say a season, playoffs or anything else started, ended or was decided unless a fact says so. Use digits for numbers. Team names as given. No headings, emoji, hashtags, hype words or exclamation marks. Never add a fact, number, name or day that isn't above.
+Banned (a draft that uses one is sent back to be rewritten): ${BANNED_HINT}.`;
+    try {
+      const out = await runWriter({
+        prompt, label: `Weekly court note (${court.id})`, tries: 3,
+        generate: async q => String((await generateText(q, { tier: 'short', maxTokens: 220, temperature: 0.5 })).text || '').replace(/^["“]|["”]$/g, '').replace(/\*\*/g, '').replace(/\s*\n+\s*/g, ' ').trim(),
+        checks: [
+          t => { const bad = (t.match(/\d+(?:[.,]\d+)?/g) || []).filter(n => !allowed.has(n)); return bad.length ? [`it used numbers not in the facts (${bad.join(', ')})`] : []; },
+          t => numberProblems(t, factsText, { pairs: false }).filter(x => x.startsWith('it spells')),
+          t => { const w = t.split(/\s+/).length; return w < 20 || w > 75 ? [`it was ${w} words, aim for 30 to 60`] : []; },
+          t => claimProblems(t, factsText),
+          { style: true, fn: t => bannedProblems(t) },
+          { costly: true, fn: async t => (await factCheckWeeklyNote(factsText, t)).map(x => `a fact check found a claim the facts don't support: ${x}`) },
+        ],
+      });
+      const text = String(out.draft || '').trim();
+      if (!text || out.problems.length) { addSeoRun({ kind: 'note', ok: false, summary: `${f.p.name}: kept last week's note (${out.problems.join('; ').slice(0, 300) || 'empty draft'}).` }); continue; }
+      addSeoChange({ page: `/courts/${slug}`, field: 'weekly note', before: court.weekly_note || '', after: text, by: 'SEO job' });
+      updatePapawisCourtPage(court.id, { weekly_note: text, weekly_note_at: Date.now() });
+      liveCourtsCache = null;
+      notes.push({ court: f.p.name, text });
+      addSeoRun({ kind: 'note', summary: `${f.p.name}: weekly note written.` });
+    } catch (e) {
+      addSeoRun({ kind: 'note', ok: false, summary: `${f.p.name}: ${e.message}` });
+    }
+  }
+  return notes;
+}
+
+// The 1st of the month: are the venue links on the tracked court pages still alive?
+async function seoCheckVenueLinks() {
+  const broken = [];
+  for (const p of SEO_PAGES.filter(x => /^\/courts\/[^/]+$/.test(x))) {
+    const court = getPapawisCourtBySlug(p.split('/')[2]);
+    if (!court) continue;
+    for (const l of courtLinks(normalizeCourtInfo(parseCourtJson(court.info_json, {})))) {
+      try {
+        const res = await fetch(l.url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WKND-link-check)' }, redirect: 'follow', signal: AbortSignal.timeout(20000) });
+        if (res.status === 404 || res.status === 410 || res.status >= 500) broken.push(`${court.name}: ${l.label} returns ${res.status}`);
+      } catch (e) { broken.push(`${court.name}: ${l.label} did not load`); }
+    }
+  }
+  addSeoRun({ kind: 'links', ok: !broken.length, summary: broken.length ? broken.join('; ') : 'All venue links load.' });
+  return broken;
+}
+
+// The 1st of the month: 3 title/description options per main page, from the searches Google
+// actually shows it for. A suggestion only; a person applies it (court admin → Search results).
+async function seoSuggestTitles(today) {
+  const out = [];
+  if (!aiAvailable()) return out;
+  const through = getSeoLatestDate();
+  const pages = ['/courts/activate-hoop-arena', '/courts/mandaluyong', '/courts/pasig'];
+  for (const path of pages) {
+    const url = seoPageUrl(path);
+    const check = getLatestSeoChecks('page').find(c => c.url === url);
+    const cur = check ? JSON.parse(check.data_json || '{}') : {};
+    if (!cur.title) continue;
+    const queries = through ? getSeoTotals({ from: addDaysYmd(through, -27), to: through, page: url }).slice(0, 12) : [];
+    const targets = SEO_TARGETS.filter(t => path.includes('pasig') ? /pasig/.test(t.query) : path.includes('mandaluyong') ? /mandaluyong/.test(t.query) && !/activate/.test(t.query) : /activate/.test(t.query)).map(t => t.query);
+    const prompt = `Suggest 3 better Google search titles and descriptions for this page of WKND Basketball (wkndbasketball.com), a weekend basketball league and pickup community in Metro Manila.
+
+Page: ${url}
+Current title: ${cur.title}
+Current description: ${cur.description || '(none)'}
+Searches we want to win: ${targets.join('; ')}
+Searches Google showed this page for in the last 28 days (position, times shown): ${queries.length ? queries.map(q => `${q.k} (#${Math.round(q.position * 10) / 10}, ${q.impressions}x)`).join('; ') : 'no data yet'}
+
+Rules: titles at most 60 characters and descriptions at most 155; plain, specific and true to the current text (no new facts, prices or claims); include the main search words naturally; no ALL CAPS, emoji or exclamation marks; brand is "WKND Basketball" or "WKND".`;
+    const schema = { type: 'object', properties: { options: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' } }, required: ['title', 'description'] } } }, required: ['options'] };
+    try {
+      const { data } = await generateJson(prompt, schema, { tier: 'medium', temperature: 0.6, maxTokens: 600 });
+      const options = (data.options || []).filter(o => o.title && o.title.length <= 65 && o.description && o.description.length <= 165).slice(0, 3);
+      if (options.length) out.push({ page: path, options });
+    } catch (e) { addSeoRun({ kind: 'suggest', ok: false, summary: `${path}: ${e.message}` }); }
+  }
+  if (out.length) addSeoRun({ kind: 'suggest', summary: `${out.length} page(s) with title suggestions.`, data: { today, suggestions: out } });
+  return out;
+}
+
+async function sendSeoReport(today, { weekly = false, weeklyNotes = [], suggestions = [] } = {}) {
+  const report = buildSeoReport({ origin: SITE_ORIGIN, today, weekly, weeklyNotes, suggestions });
+  await sendMail({ to: seoReportTo(), ref: today, ...seoReportEmail(report, { adminUrl: `${SITE_ORIGIN}/admin/seo/report` }) });
+  addSeoRun({ kind: 'email', summary: `Sent to ${seoReportTo()}: ${report.subject}` });
+}
+
+let seoJobsRunning = false;
+async function runSeoJobs({ force = false } = {}) {
+  if (seoJobsRunning) return;
+  const today = manilaTodayStr();
+  if (!force && (!seoJobsOn() || manilaHourNow() < 7 || getSetting('seo_jobs_last_day', '') === today)) return;
+  seoJobsRunning = true;
+  try {
+    if (!force) setSetting('seo_jobs_last_day', today);
+    const weekly = force || isMondayYmd(today), monthly = today.endsWith('-01');
+    await seoPullGsc(today);
+    await seoCheckPages();
+    let weeklyNotes = [], suggestions = [];
+    if (weekly) { await seoInspectPages(); weeklyNotes = await seoWriteWeeklyNotes(today); }
+    if (monthly) { await seoCheckVenueLinks(); suggestions = await seoSuggestTitles(today); }
+    if (weekly || force || getSetting('seo_email_daily', '1') === '1') await sendSeoReport(today, { weekly: weekly || force, weeklyNotes, suggestions });
+    logSystem('seo_jobs', { day: today, weekly, monthly });
+  } catch (e) {
+    console.error('[seo] jobs failed:', e.message);
+    addSeoRun({ kind: 'jobs', ok: false, summary: e.message });
+  } finally { seoJobsRunning = false; }
+}
+setTimeout(() => runSeoJobs().catch(() => {}), 90 * 1000);
+setInterval(() => runSeoJobs().catch(() => {}), 30 * 60 * 1000);
+
+// Admin → Site settings → SEO report.
+app.get('/admin/seo/report', requireAuth, (req, res) => {
+  const today = manilaTodayStr();
+  const report = buildSeoReport({ origin: SITE_ORIGIN, today, weekly: true });
+  const live = courtCities();
+  const cities = Object.entries(CITY_PAGES).map(([slug, city]) => ({ slug, city, intro: getSetting(`seo_city_intro_${slug}`, ''), live: live.some(c => c.slug === slug), n: live.find(c => c.slug === slug)?.n || 0 }));
+  const trendByQuery = {};
+  for (const r of report.trend || []) (trendByQuery[r.query] ??= []).push(Math.round(r.position * 10) / 10);
+  res.send(renderAdminPage(req, {
+    title: 'SEO report',
+    currentPath: '/admin/seo/report',
+    body: adminSeoReportBody({
+      report, gscReady: gscConfigured(), cities, trendByQuery,
+      runs: getSeoRuns({ limit: 40 }), changes: getSeoChanges({ limit: 100 }),
+      settings: { enabled: getSetting('seo_jobs_enabled', '1') === '1', daily: getSetting('seo_email_daily', '1') === '1', notes: getSetting('seo_weekly_notes', '1') === '1', email: getSetting('seo_report_email', ''), defaultEmail: ADMIN_NOTIFY_EMAIL },
+    }),
+  }));
+});
+app.post('/admin/seo/report/settings', requireAuth, express.json(), (req, res) => {
+  const b = req.body || {};
+  for (const k of ['seo_jobs_enabled', 'seo_email_daily', 'seo_weekly_notes']) if (k in b) setSetting(k, b[k] === '1' ? '1' : '0');
+  if ('seo_report_email' in b) {
+    const v = String(b.seo_report_email || '').trim();
+    if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return res.status(400).json({ error: 'That email address doesn’t look right.' });
+    setSetting('seo_report_email', v.slice(0, 160));
+  }
+  for (const slug of Object.keys(CITY_PAGES)) {
+    const k = `seo_city_intro_${slug}`;
+    if (!(k in b)) continue;
+    const v = String(b[k] || '').trim().slice(0, 2000);
+    addSeoChange({ page: `/courts/${slug}`, field: 'intro', before: getSetting(k, ''), after: v, by: req.session?.isElevatedPlayer ? (req.session.playerName || 'admin') : 'Super admin' });
+    setSetting(k, v);
+  }
+  res.json({ ok: true });
+});
+app.post('/admin/seo/report/send', requireAuth, express.json(), async (req, res) => {
+  try { await sendSeoReport(manilaTodayStr(), { weekly: true }); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/admin/seo/report/run', requireAuth, express.json(), async (req, res) => {
+  if (seoJobsRunning) return res.status(409).json({ error: 'Already running.' });
+  try { await runSeoJobs({ force: true }); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.use((err, req, res, next) => {
   if ((err.status || err.statusCode || 500) >= 500) console.error(`[route] ${req.method} ${req.path}: ${err.message}`);
   next(err);

@@ -776,6 +776,8 @@ const nuShortName = raw => {
   const parts = displayPlayerName(String(raw || '')).trim().split(/\s+/);
   return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || '';
 };
+// " · at <court>" on a league card, linked to the court page (server.js sharedLiveCourt).
+const nuCourt = c => c ? ` · at <a href="/courts/${encodeURIComponent(c.slug)}" class="nu-card__court" data-cta="home-court">${escHtml(c.name)}</a>` : '';
 function nuCard(kind, kicker, title, meta, body, foot) {
   return `<article class="card nu-card nu-card--${kind}">
     <div class="nu-card__head">
@@ -804,7 +806,7 @@ const NU_RENDER = {
       // The day's first tip-off, when any game has one set.
       const firstTip = d.games.map(g => g.tip).filter(Boolean).sort()[0];
       return nuCard('league', `League · Season ${escHtml(String(d.season))}`, escHtml(nuDayLabel(d.date)),
-        `${escHtml(nuDaysAway(d.date))}${firstTip ? ` · ${escHtml(gameTipLabel({ tip_time: firstTip }))}` : ''} · ${d.games.length} game${d.games.length === 1 ? '' : 's'}`,
+        `${escHtml(nuDaysAway(d.date))}${firstTip ? ` · ${escHtml(gameTipLabel({ tip_time: firstTip }))}` : ''} · ${d.games.length} game${d.games.length === 1 ? '' : 's'}${nuCourt(d.court)}`,
         rows, `<a href="/games" class="nu-card__link">All games <span>&rarr;</span></a>`);
     }
     const rows = d.games.map(g => {
@@ -816,7 +818,7 @@ const NU_RENDER = {
       </a>`;
     }).join('');
     return nuCard('league', `League · Latest results`, escHtml(nuDayLabel(d.date)),
-      'Next game day to be announced', rows, `<a href="/games" class="nu-card__link">All games <span>&rarr;</span></a>`);
+      `Next game day to be announced${nuCourt(d.court)}`, rows, `<a href="/games" class="nu-card__link">All games <span>&rarr;</span></a>`);
   },
 
   papawis(d, { isLoggedIn }) {
@@ -829,7 +831,7 @@ const NU_RENDER = {
     const pct  = d.maxSlots ? Math.min(100, Math.round(d.confirmed / d.maxSlots * 100)) : 0;
     const full = d.maxSlots && d.confirmed >= d.maxSlots;
     const meta = [escHtml(nuDaysAway(d.date)), d.time && escHtml(d.time)].filter(Boolean).join(' · ');
-    const body = `${d.location ? `<p class="nu-card__text nu-card__text--loc">${escHtml(d.location)}${d.hasReferee ? ' · with ref' : ''}</p>` : ''}
+    const body = `${d.location ? `<p class="nu-card__text nu-card__text--loc">${d.courtSlug ? `<a href="/courts/${encodeURIComponent(d.courtSlug)}" data-cta="home-court">${escHtml(d.location)}</a>` : escHtml(d.location)}${d.hasReferee ? ' · with ref' : ''}</p>` : ''}
       ${d.maxSlots ? `<div class="nu-slots"><div class="nu-slots__bar"><i style="width:${pct}%"></i></div>
       <div class="nu-slots__row"><span><b>${d.confirmed}/${d.maxSlots}</b> ${full ? 'full' : 'slots filled'}</span>${d.waitlist ? `<span class="nu-slots__wait">+${d.waitlist} waitlist</span>` : ''}</div></div>` : ''}
       ${avatarStack(d.faces, { size: 32, max: 7, total: d.confirmed, className: 'nu-faces', label: `${d.confirmed} players confirmed` })}

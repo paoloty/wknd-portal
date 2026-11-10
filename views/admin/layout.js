@@ -217,7 +217,7 @@ const MENU = [
     { id: 'awards', label: 'Awards', icon: 'trophy', also: ['/admin/mvp', '/admin/dpoy', '/admin/mvp-podium', '/admin/award-photo'], tabs: [{ href: '/admin/awards', label: 'Overview' }, { href: '/admin/awards/season', label: 'Season awards' }, { href: '/admin/awards/races', label: 'MVP & Best Defender' }, { href: '/admin/awards/podium', label: 'Podium ballot' }] },
   ] },
   { head: 'Setup', items: [
-    { id: 'site', label: 'Site settings', icon: 'sliders', also: ['/admin/visibility'], tabs: [{ href: '/admin/site', label: 'Site & homepage' }, { href: '/admin/seo', label: 'Search results' }] },
+    { id: 'site', label: 'Site settings', icon: 'sliders', also: ['/admin/visibility'], tabs: [{ href: '/admin/site', label: 'Site & homepage' }, { href: '/admin/seo', label: 'Search results' }, { href: '/admin/seo/report', label: 'SEO report' }] },
     { id: 'app', label: 'Players app', icon: 'phone', tabs: [{ href: '/admin/app', label: 'Players app' }] },
     { id: 'ai', label: 'AI writing', icon: 'spark', tabs: [{ href: '/admin/ai-writing', label: 'Voice' }, { href: '/admin/coach-notes', label: 'Coach notes' }, { href: '/admin/compare', label: 'Compares' }] },
     { id: 'privileges', label: 'Admin access', icon: 'key', tabs: [{ href: '/admin/privileges', label: 'Admins', super: true }] },

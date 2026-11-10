@@ -3,7 +3,7 @@
 // adds: city, "Good to know" info, the About writeup, the gallery, visibility and search text.
 import { escHtml } from '../layout.js';
 import { pageHeader, section, button, badge, breadcrumb, field, fieldGrid, toggleRow, saveBar, banner, facts, menu, emptyState, ago } from './ui.js';
-import { COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, COURT_CITIES, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, parseJson } from '../../lib/court-page.js';
+import { COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, COURT_CITIES, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, parseJson, COURT_IDENTITY_FIELDS } from '../../lib/court-page.js';
 import { displayPlayerName, formatTimeRange } from '../utils.js';
 
 const attr = s => escHtml(String(s ?? ''));
@@ -73,10 +73,11 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
     : p.live ? badge('Live', 'green') : badge('Not played yet', 'amber');
   const statusLine = court.page_hidden
     ? 'Hidden by you. Switch it on to show the page again.'
-    : p.live ? 'Live on the site and in the sitemap.' : 'Goes live by itself after the first run or league game here.';
+    : p.live ? (court.page_early && !p.playedRuns && !p.finalsCount ? 'Live on the site and in the sitemap (published early, before anything was played here).' : 'Live on the site and in the sitemap.') : 'Goes live by itself after the first run or league game here, or publish it early below.';
 
   const page = `<div class="aui-panel acrt-panel">
     ${toggleRow({ label: 'Show the court page', help: statusLine, name: 'page_on', on: !court.page_hidden })}
+    ${toggleRow({ label: 'Publish before anything is played here', help: 'For a venue WKND plays at or is about to: the page goes live now instead of after the first run or league game. Fill in the address, photo and links first.', name: 'page_early', on: !!court.page_early })}
     ${facts([
       ['Page address', `<a class="acrt-link" href="${attr(pageUrl)}" target="_blank" rel="noopener">wkndbasketball.com${escHtml(pageUrl)} ↗</a>`],
       ['Played here', escHtml(`${p.playedRuns} Papawis run${p.playedRuns === 1 ? '' : 's'} · ${p.finalsCount} league game${p.finalsCount === 1 ? '' : 's'}`)],
@@ -100,6 +101,7 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
     <label class="aui-check acrt-check"><input type="checkbox" name="info_contact_public" value="1"${info.contact_public ? ' checked' : ''}><span>Show the court contact on the public page</span></label>
     ${fieldGrid(`${field({ label: 'Court rental rate', name: 'info_rate', value: info.rate || '', placeholder: 'e.g. From ₱2,800 (per activatesports.ph)', wide: true, help: 'As the venue posts it publicly. Shown on the page and sent to Google. Blank = hidden.' })}
       ${COURT_LINK_FIELDS.map(f => field({ label: f.label, name: `link_${f.key}`, type: 'url', value: info.links?.[f.key] || '', placeholder: f.placeholder })).join('')}`)}
+    ${fieldGrid(COURT_IDENTITY_FIELDS.map(f => field({ label: f.label, name: `info_${f.key}`, value: info[f.key] || '', placeholder: `e.g. ${f.placeholder}`, help: `${f.help} Shown under the court name and sent to Google.` })).join(''))}
     ${fieldGrid(field({ label: 'Map pin', name: 'map_pin', value: court.map_lat != null ? `${court.map_lat}, ${court.map_lng}` : '', placeholder: 'Paste a Google Maps link or 14.5806, 121.0536', wide: true,
       help: court.map_lat != null ? 'The court page map uses this exact pin. Clear it to fall back to the address.' : 'Empty: the map uses the address, which can land on the city centre. In Google Maps, right-click the court and copy the numbers, or paste the share link.' }))}
     <div class="acrt-facts">

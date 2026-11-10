@@ -73,7 +73,7 @@ test('a Papawis-only admin sees Papawis and nothing else, with no empty headings
 
 test('a link split across permissions only shows the tabs this admin can open', () => {
   const site = menuFor({ allowedSections: ['content'] }).flatMap(s => s.items).find(i => i.id === 'site');
-  assert.deepEqual(site.tabs.map(t => t.href), ['/admin/seo']);
+  assert.deepEqual(site.tabs.map(t => t.href), ['/admin/seo', '/admin/seo/report']);
   const message = menuFor({ allowedSections: ['reach'] }).flatMap(s => s.items).find(i => i.id === 'message');
   assert.deepEqual(message.tabs.map(t => t.label), ['Compose', 'Sent']);
 });
@@ -98,7 +98,7 @@ test('the access screen says in menu words what each section opens', () => {
   assert.equal(opens['games-stats'], 'Games, Player profiles');
   assert.equal(opens.members, 'Accounts, Feed posts, Players app');
   assert.equal(opens.finance, 'Money');
-  assert.equal(opens.content, 'News posts, Site settings: Search results, AI writing');
+  assert.equal(opens.content, 'News posts, Site settings: Search results, Site settings: SEO report, AI writing');
   assert.equal(opens.site, 'Site settings: Site & homepage');
   for (const s of ADMIN_SECTIONS) assert.ok(s.opens, `${s.key} opens nothing`);
 });

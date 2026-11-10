@@ -65,14 +65,29 @@ function head(p, court, x, isAdmin) {
     n.papawis.fastestH != null && ['Fastest sell-out', dh(n.papawis.fastestH), p.fastest ? `the ${ymdLabel(p.fastest.ymd, { month: 'short', day: 'numeric' })} run` : 'first sign-up to full'],
   ].filter(Boolean).slice(0, 4);
   const paras = String(court.writeup || '').split(/\n{2,}/).map(t => t.trim()).filter(Boolean);
+  // Other names, who runs it and where it is: one plain line (also what Google reads for
+  // the "Hoop" / "Hoops" spellings). The operator links to the venue's own site.
+  const site = courtLinks(p.info).find(l => l.key === 'website');
+  const identity = [
+    p.altNames.length && `Also known as ${p.altNames.map(n => escHtml(n)).join(', ')}`,
+    p.info.operator && `Run by ${site ? `<a href="${escHtml(venueUrl(site.url))}" target="_blank" rel="noopener" data-cta="court-venue-link">${escHtml(p.info.operator)}</a>` : escHtml(p.info.operator)}`,
+    p.info.building && `Inside ${escHtml(p.info.building)}`,
+  ].filter(Boolean).join(' · ');
+  // The automated weekly note (lib/seo-jobs.js): dated, replaced each week, never the writeup.
+  // Hidden once it's more than 2 weeks old: a quiet court shouldn't keep saying "lately".
+  const weekAt = Number(court.weekly_note_at) || 0;
+  const weekNote = Date.now() - weekAt < 14 * 86400e3 ? String(court.weekly_note || '').trim() : '';
+  const citySlug = cityPageSlug(p.city);
   return `<header class="crt-head">
-      <div class="crt-head__top"><nav class="crt-crumbs" aria-label="Breadcrumb"><a href="/papawis">Papawis</a><span aria-hidden="true">/</span><a href="/courts">Courts</a></nav>${isAdmin ? `<a class="crt-link" href="/admin/papawis/courts/${encodeURIComponent(court.id)}">Edit this court</a>` : ''}</div>
+      <div class="crt-head__top"><nav class="crt-crumbs" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">/</span><a href="/courts">Courts</a>${citySlug ? `<span aria-hidden="true">/</span><a href="/courts/${citySlug}">${escHtml(p.city)}</a>` : ''}</nav>${isAdmin ? `<a class="crt-link" href="/admin/papawis/courts/${encodeURIComponent(court.id)}">Edit this court</a>` : ''}</div>
       <span class="crt-kicker">Basketball court${p.city ? ` · ${escHtml(p.city)}` : ''}</span>
       <h1 class="crt-h1">${escHtml(p.name)}</h1>
+      ${identity ? `<p class="crt-ident">${identity}</p>` : ''}
       ${commute ? `<p class="crt-line">${ICON.pin}<span>${escHtml(commute)}</span></p>` : ''}
       ${r ? `<div class="crt-rateline">${stars(r.avg)}<b>${r.avg.toFixed(1)}</b><span>${plural(r.n, 'player rating')}</span><a href="#crt-say">What players say</a></div>` : ''}
       ${chips.length ? `<dl class="crt-chips crt-chips--${chips.length}">${chips.map(([l, val, sub]) => `<div class="crt-chip"><dt>${escHtml(l)}</dt><dd><b class="crt-num">${escHtml(val)}</b><span>${escHtml(sub)}</span></dd></div>`).join('')}</dl>` : ''}
     </header>
+    ${weekNote ? `<section class="crt-about crt-week" id="crt-week" aria-labelledby="crt-week-h">${sh(`Lately at ${p.name}`, { id: 'crt-week-h' })}<div class="crt-about__text"><p>${escHtml(weekNote)}</p><p class="crt-week__date">Updated <time datetime="${new Date(weekAt).toISOString()}">${escHtml(new Date(weekAt + 8 * 3600e3).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }))}</time></p></div></section>` : ''}
     ${paras.length ? `<section class="crt-about" id="crt-about" aria-labelledby="crt-about-h">${sh('About this court', { id: 'crt-about-h' })}<div class="crt-about__text">${paras.map(t => `<p>${escHtml(t)}</p>`).join('')}</div></section>` : ''}`;
 }
 
@@ -331,7 +346,7 @@ function there(p, court, x) {
       <div class="crt-there__info">
         ${court.address ? `<div class="crt-note"><b>Address</b><p>${escHtml(court.address)}</p></div>` : ''}
         ${notes.map(([k, v]) => `<div class="crt-note"><b>${escHtml(k)}</b><p>${escHtml(v)}</p></div>`).join('')}
-        ${links.length ? `<div class="crt-note"><b>Official links</b><div class="crt-vlinks">${links.map(l => `<a class="crt-vlink" href="${escHtml(l.url)}" target="_blank" rel="noopener" data-cta="court-venue-link">${VENUE_ICON[l.key] || ''}${escHtml(l.key === 'website' ? 'Website' : l.key === 'booking' ? 'Book a court' : l.label)}</a>`).join('')}</div></div>` : ''}
+        ${links.length ? `<div class="crt-note"><b>Official links</b><div class="crt-vlinks">${links.map(l => `<a class="crt-vlink" href="${escHtml(l.key === 'website' ? venueUrl(l.url) : l.url)}"target="_blank" rel="noopener" data-cta="court-venue-link">${VENUE_ICON[l.key] || ''}${escHtml(l.key === 'website' ? 'Website' : l.key === 'booking' ? 'Book a court' : l.label)}</a>`).join('')}</div></div>` : ''}
         ${tags.length ? `<ul class="crt-ticks" aria-label="Court features">${tags.map(t => `<li>${ICON.tick}${escHtml(t)}</li>`).join('')}</ul>` : ''}
       </div>
     </div></section>`;
@@ -346,7 +361,25 @@ export function courtFaqItems(p, flags = {}) {
     ['How do I join a run?', 'Sign up on the Papawis page. When a run is full, join the waitlist and you’re in if someone drops.'],
     ['I’m new. Can I still play?', `Yes.${p.firstHere ? ` ${plural(p.firstHere, 'player')} played their first Papawis here.` : ''} Make a WKND account, then sign up for a run.`],
     flags.requests && ['Can I book the court for my own group?', 'Yes. Send a request under Rent the court. The court confirms with you directly and you pay the court.'],
+    // Court-specific answers, only from what an admin filled in or what was played here.
+    p.finalsCount && [`Is there a basketball league at ${p.name}?`, `Yes. WKND Basketball plays league games here: ${plural(p.finalsCount, 'game')}${p.numbers.league.since ? ` since ${p.numbers.league.since}` : ''}, with box scores and recaps on the site. Sign-ups open before every season.`],
+    (p.street || p.info.building) && [`Where is ${p.name}?`, [`${[p.info.building && `Inside ${p.info.building}`, p.street, p.city].filter(Boolean).join(', ')}.`, p.info.directions && p.info.directions !== p.street && !/^\d+\s/.test(p.info.directions) ? p.info.directions : ''].filter(Boolean).join(' ')],
+    !flags.requests && (courtLinks(p.info).some(l => l.key === 'booking') || p.info.rate) && [`Can I rent ${p.name} for my own group?`, [`Yes, book it directly with ${p.info.operator || 'the venue'}${courtLinks(p.info).some(l => l.key === 'booking') ? ' through their booking page (under Official links)' : ''}.`, p.info.rate ? `Posted rate: ${p.info.rate}.` : ''].filter(Boolean).join(' ')],
+    p.altNames.length && [`Is this the same as ${p.altNames[0]}?`, `Yes. ${p.name} is also listed as ${p.altNames.join(' and ')}${p.info.operator ? `, run by ${p.info.operator}` : ''}.`],
   ].filter(Boolean);
+}
+// The venue's own website, tagged so WKND shows up by name in the venue's visitor stats.
+export function venueUrl(url) {
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has('utm_source')) { u.searchParams.set('utm_source', 'wkndbasketball'); u.searchParams.set('utm_medium', 'court-page'); }
+    return u.toString();
+  } catch { return url; }
+}
+// City pages (/courts/mandaluyong …): one per city with a court in it. Shared with server.js.
+export const CITY_PAGES = { makati: 'Makati', mandaluyong: 'Mandaluyong', pasig: 'Pasig' };
+export function cityPageSlug(city) {
+  return Object.keys(CITY_PAGES).find(k => CITY_PAGES[k] === city) || '';
 }
 function faq(p, x) {
   const qa = courtFaqItems(p, x.flags);
@@ -565,15 +598,7 @@ ${sectionNavScript()}
 ${SCRIPT}`;
 }
 
-// /courts: every court with a public page, busiest first.
-export function courtsIndexPage({ courts }) {
-  return `<div class="page-content crt">
-  <header class="crt-index__head">
-    <span class="crt-kicker">Papawis · League</span>
-    <h1 class="crt-h1">Courts</h1>
-    <p class="crt-muted">Where WKND plays: pickup runs and league games in Makati, Mandaluyong and Pasig.</p>
-  </header>
-  <div class="crt-index">${courts.map(({ court, p }) => `<a class="card crt-tile" href="/courts/${encodeURIComponent(court.slug)}" data-cta="courts-tile">
+const courtTile = ({ court, p }) => `<a class="card crt-tile" href="/courts/${encodeURIComponent(court.slug)}" data-cta="courts-tile">
       <span class="crt-tile__img">${p.photos[0] ? `<img src="${escHtml(p.photos[0].src)}" alt="${escHtml(p.photos[0].alt)}" loading="lazy">` : ''}</span>
       <span class="crt-tile__body">
         <span class="crt-kicker">${escHtml(p.city || 'Metro Manila')}</span>
@@ -581,7 +606,48 @@ export function courtsIndexPage({ courts }) {
         <small>${[p.playedRuns ? plural(p.playedRuns, 'run') : '', p.finalsCount ? plural(p.finalsCount, 'league game') : '', p.numbers.players ? `${p.numbers.players} players` : ''].filter(Boolean).join(' · ')}</small>
         ${p.nextRun ? `<span class="crt-tile__next">Next run ${escHtml(ymdLabel(p.nextRun.ymd, { weekday: 'short', month: 'short', day: 'numeric' }))}</span>` : ''}
       </span>
-    </a>`).join('')}</div>
+    </a>`;
+const cityLinks = (cities, current = '') => cities.length > 1 || current
+  ? `<ul class="crt-city__links" aria-label="Courts by city">${cities.filter(c => c.slug !== current).map(c => `<li><a href="/courts/${c.slug}" data-cta="courts-city">Basketball courts in ${escHtml(c.city)}</a></li>`).join('')}</ul>` : '';
+
+// /courts: the hub. Every court with a public page, busiest first, and a link to each city page.
+// cities: [{ slug, city, n }] for cities with at least one live court.
+export function courtsIndexPage({ courts, cities = [] }) {
+  const names = cities.map(c => c.city);
+  const where = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] || 'Metro Manila';
+  return `<div class="page-content crt">
+  <header class="crt-index__head">
+    <nav class="crt-crumbs" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">/</span><span>Courts</span></nav>
+    <span class="crt-kicker">Papawis · League</span>
+    <h1 class="crt-h1">Basketball courts in ${escHtml(where)}</h1>
+    <p class="crt-muted">Where WKND Basketball plays: league games and Papawis pickup runs, with photos, prices per player and stats from every game.</p>
+    ${cityLinks(cities)}
+  </header>
+  <div class="crt-index">${courts.map(courtTile).join('')}</div>
+</div>`;
+}
+
+// /courts/mandaluyong …: one city's courts. live: courts with a page (tiles, busiest first);
+// others: courts on file in that city without a page yet (name and address only). intro: the
+// admin's text (Admin → SEO), else nothing; summary: a line built from the numbers.
+export function courtCityPage({ city, slug, live, others = [], cities = [], intro = '', summary = '' }) {
+  const paras = String(intro || '').split(/\n{2,}/).map(t => t.trim()).filter(Boolean);
+  return `<div class="page-content crt">
+  <header class="crt-index__head">
+    <nav class="crt-crumbs" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">/</span><a href="/courts">Courts</a><span aria-hidden="true">/</span><span>${escHtml(city)}</span></nav>
+    <span class="crt-kicker">${escHtml(city)} · Metro Manila</span>
+    <h1 class="crt-h1">Basketball courts in ${escHtml(city)}</h1>
+    ${summary ? `<p class="crt-city__intro">${escHtml(summary)}</p>` : ''}
+    ${paras.map(t => `<p class="crt-city__intro">${escHtml(t)}</p>`).join('')}
+  </header>
+  ${live.length ? `<section class="crt-sec" aria-labelledby="crt-city-live">${sh(`Where WKND plays in ${city}`, { id: 'crt-city-live' })}
+    <div class="crt-index">${live.map(courtTile).join('')}</div></section>` : ''}
+  ${others.length ? `<section class="crt-sec" aria-labelledby="crt-city-more">${sh(`More courts in ${city}`, { id: 'crt-city-more' })}
+    <div class="card crt-city__list">${others.map(o => `<div class="crt-city__row"><span><b>${escHtml(o.name)}</b>${o.address ? `<small>${escHtml(o.address)}</small>` : ''}</span><span>${escHtml(o.type || '')}</span></div>`).join('')}</div></section>` : ''}
+  <section class="crt-sec" aria-labelledby="crt-city-play">${sh('Play with WKND', { id: 'crt-city-play' })}
+    <div class="card crt-cta"><div><b>Weekend basketball in ${escHtml(city)}</b><span class="crt-muted">A Sunday basketball league with box scores and recaps, plus Papawis pickup runs anyone can sign up for.</span></div><div class="crt-cta__side"><div class="crt-cta__btns"><a class="crt-btn crt-btn--amber" href="/join" data-cta="city-join">See how it works</a><a class="crt-btn crt-btn--ghost" href="/papawis" data-cta="city-papawis">Next Papawis run</a></div></div></div>
+    ${cityLinks(cities, slug)}
+  </section>
 </div>`;
 }
 
