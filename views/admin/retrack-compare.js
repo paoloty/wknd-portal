@@ -18,7 +18,7 @@ const ICON = { missing: '−', extra: '+', player: '≠', result: '≠', many: '
 // d: server.js GET /admin/games/:id/compare. c: retrackCompare(game, { full: true }).
 export function adminRetrackCompareBody({ game, c, d }) {
   const base = `/admin/games/${encodeURIComponent(game.id)}`;
-  const post = (label, url, body, { kind = 'secondary', confirm, then = `${base}?tab=scoring` } = {}) => button(label, { kind, size: 'sm', attrs: `data-post-json="${url}" data-body="${attr(JSON.stringify(body || {}))}" data-then="${then}"${confirm ? ` data-confirm data-confirm-title="${attr(confirm[0])}" data-confirm-body="${attr(confirm[1])}" data-confirm-send="${attr(confirm[2])}"` : ''}` });
+  const post = (label, url, body, { kind = 'secondary', confirm, then = `${base}?tab=scoring`, withNote = false } = {}) => button(label, { kind, size: 'sm', attrs: `data-post-json="${url}" data-body="${attr(JSON.stringify(body || {}))}" data-then="${then}"${withNote ? ' data-with="#arc-note"' : ''}${confirm ? ` data-confirm data-confirm-title="${attr(confirm[0])}" data-confirm-body="${attr(confirm[1])}" data-confirm-send="${attr(confirm[2])}"` : ''}` });
   const back = button('Back to the Scoring tab', { kind: 'ghost', size: 'sm', href: `${base}?tab=scoring` });
   const head = pageHeader({ eyebrow: `${game.team_a_name} vs ${game.team_b_name}`, title: 'Saved vs re-track', sub: c.over ? `Re-track at Game over · ${c.count} plays` : `Re-track so far · ${c.at} · ${c.pct}%`, actionsHtml: back });
   if (!c.count) return `${head}${banner('info', 'No re-track yet. Start one from the Scoring tab.')}`;
@@ -83,16 +83,23 @@ export function adminRetrackCompareBody({ game, c, d }) {
   const changes = c.over ? `<div class="aui-panel aui-stack">${teamCh.length || plCh.length ? `<div class="arc-ch">${[...teamCh, ...plCh].join('')}</div>` : '<p class="aui-muted">Nothing changes.</p>'}<p class="aui-muted">${c.match} player${c.match === 1 ? '' : 's'} match.</p></div>`
     : '<div class="aui-panel"><p class="aui-muted">The box score changes show once the re-track reaches Game over.</p></div>';
   const replaceBody = final => `${final === 'plays' ? `Final score ${sc(d.mismatch.plays)} from the plays. ` : d.mismatch ? `The final score stays ${sc(d.mismatch.typed)}. ` : ''}The re-track becomes the box score in one step and the stats are official. The saved one is kept on record: Undo the replace puts it back.`;
-  const replaceBtn = (final, label, kind) => post(label, `${base}/scoring/replace`, { final }, { kind, confirm: ['Replace the box score?', replaceBody(final), 'Replace it'] });
-  const acts = !c.over ? `<p class="aui-muted">Replace opens when the re-track reaches Game over.</p>`
-    : d.blocked ? `<p class="aui-muted">${escHtml(d.blocked)}</p>`
-    : d.mismatch ? `<p>The plays add up to <b>${sc(d.mismatch.plays)}</b>; the final score says <b>${sc(d.mismatch.typed)}</b>.${c.explain ? ` ${escHtml(c.explain)}` : ''}</p><div>${replaceBtn('typed', `Replace, keep ${sc(d.mismatch.typed)}`, 'primary')}</div><div>${replaceBtn('plays', `Use the plays’ ${sc(d.mismatch.plays)} instead`, 'ghost')}</div>`
-    : `<div>${replaceBtn('', 'Replace the box score', 'primary')}</div>`;
-  const keep = d.held ? '' : d.approver && c.over && d.open
-    ? post('Keep the saved one (official)', `${base}/scoring/review`, { action: 'discard', keep: true }, { kind: 'ghost', confirm: ['Keep the saved one?', 'The re-track is thrown away (kept on record, never counted) and the saved box score becomes official.', 'Keep it'] })
+  const replaceBtn = (final, label, kind) => post(label, `${base}/scoring/replace`, { final }, { kind, withNote: true, confirm: ['Replace the box score?', replaceBody(final), 'Replace it'] });
+  // The finalize bar: full width, stuck to the bottom of the screen, so the decision is always one
+  // click away while reading the compare. A note goes with it (admins only, the Scoring tab).
+  const can = c.over && d.approver && d.open && !d.held;
+  const backRt = button(c.over ? 'Back to the re-track' : 'Continue the re-track', { kind: c.over ? 'ghost' : 'secondary', size: 'sm', href: `${base}/score?pass=video` });
+  const keep = d.held ? '' : can
+    ? post('Keep the saved one', `${base}/scoring/review`, { action: 'discard', keep: true }, { kind: 'ghost', withNote: true, confirm: ['Keep the saved one?', 'The re-track is thrown away (kept on record, never counted) and the saved box score becomes official.', 'Keep it'] })
     : post('Throw away the re-track', `${base}/scoring/review`, { action: 'discard' }, { kind: 'ghost', confirm: ['Throw away the re-track?', 'The re-track is thrown away (kept on record, never counted). The saved box score isn’t touched.', 'Throw it away'] });
-  const decide = `<div class="aui-panel aui-stack">${acts}<div>${button(c.over ? 'Back to the re-track' : 'Continue the re-track', { kind: 'secondary', size: 'sm', href: `${base}/score?pass=video` })} ${keep}</div></div>`;
-  const right = `${section({ title: 'The differences', bodyHtml: spots })}${section({ title: 'Box score changes', bodyHtml: changes })}${section({ title: 'Decide', bodyHtml: decide })}`;
+  const replace = !can ? ''
+    : d.mismatch ? `${replaceBtn('plays', `Use the plays’ ${sc(d.mismatch.plays)}`, 'secondary')}${replaceBtn('typed', `Replace, keep ${sc(d.mismatch.typed)}`, 'primary')}`
+    : replaceBtn('', 'Replace the box score', 'primary');
+  const say = can ? `<b>Finalize the stats</b><span>Replace the box score or keep the saved one: either one makes the stats Official.${d.mismatch ? ` The plays add up to <b>${sc(d.mismatch.plays)}</b>; the final score says <b>${sc(d.mismatch.typed)}</b>.${c.explain ? ` ${escHtml(c.explain)}` : ''}` : ''}</span>`
+    : !c.over ? '<b>Finalize the stats</b><span>Opens when the re-track reaches Game over.</span>'
+    : `<b>Finalize the stats</b><span>${escHtml(d.blocked || 'A stats approver finalizes the stats here.')}</span>`;
+  const note = can ? `<input class="aui-input arc-bar__note" id="arc-note" name="note" maxlength="500" placeholder="Note (optional): what you fixed and why. Admins only" aria-label="Note, optional: saved with the stats, only admins see it">` : '';
+  const bar = `<div class="arc-bar" role="region" aria-label="Finalize the stats"><div class="arc-bar__say">${say}</div>${note}<div class="arc-bar__acts">${backRt}${keep}${replace}</div></div>`;
+  const right = `${section({ title: 'The differences', bodyHtml: spots })}${section({ title: 'Box score changes', bodyHtml: changes })}`;
 
-  return `${head}${scores}<div class="arc-layout"><div class="arc-main">${left}</div><aside class="arc-side">${right}</aside></div>`;
+  return `${head}${scores}<div class="arc-layout"><div class="arc-main">${left}</div><aside class="arc-side">${right}</aside></div>${bar}`;
 }

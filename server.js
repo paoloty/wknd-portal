@@ -8490,6 +8490,16 @@ app.post('/api/score/:id/finish', express.json(), (req, res) => {
 // "Unofficial stats": an approver makes them official (Make official) …
 // Make official (Unofficial stats) or Keep as official (Under review, no changes): a stats
 // approver. Not while a re-track is under way: replace with it or throw it away first.
+// The note an approver writes on the site compare when finalizing (what was fixed, why). Kept as a
+// history on the game (settings.statsNotes, newest last); admins see it on the Scoring tab, never players.
+function addStatsNote(gameId, req, action) {
+  const text = String(req.body?.note || '').trim().slice(0, 500);
+  if (!text) return;
+  const sg = getScoreGame(gameId); if (!sg) return;
+  const me = reviewer(req);
+  const notes = [...(Array.isArray(sg.settings.statsNotes) ? sg.settings.statsNotes : []), { text, by: me.by, name: me.name, at: Date.now(), action }].slice(-20);
+  saveScoreGame(gameId, { settings: { ...sg.settings, statsNotes: notes } });
+}
 function makeStatsOfficial(game, by) {
   const sg = getScoreGame(game.id);
   saveScoreGame(game.id, { settings: { ...sg.settings, statsPending: null, underReview: null, reviewedBy: by } });
@@ -9210,7 +9220,7 @@ app.post('/admin/games/:id/scoring/review', requireAuth, express.json(), (req, r
     if (bgRetrack(sg)) {
       const n = renameScorePass(game.id, 'video', 'discarded');
       saveScoreGame(game.id, { settings: { ...getScoreGame(game.id).settings, review: null, reviewLive: false } });
-      if (req.body?.keep && canApproveStats(req)) { makeStatsOfficial(game, me.name); return res.json({ ok: true, message: `Re-track thrown away (${n} play${n === 1 ? '' : 's'}, kept on record). The saved box score is official.` }); }
+      if (req.body?.keep && canApproveStats(req)) { makeStatsOfficial(game, me.name); addStatsNote(game.id, req, 'kept'); return res.json({ ok: true, message: `Re-track thrown away (${n} play${n === 1 ? '' : 's'}, kept on record). The saved box score is official.` }); }
       liveChanged(game.id);
       console.log(`[scorer] re-track discarded game=${game.id} by ${me.name} (${n} plays set aside, saved box score kept)`);
       return res.json({ ok: true, message: `Re-track thrown away (${n} play${n === 1 ? '' : 's'}, kept on record). The saved box score is as it was.` });
@@ -9452,6 +9462,7 @@ app.post('/admin/games/:id/scoring/replace', requireAuth, express.json(), (req, 
       out.body.message = `${out.body.message} The old one is kept: Undo the replace puts it back.`;
     }
   }
+  if (out.status === 200) addStatsNote(game.id, req, 'replaced');
   res.status(out.status).json(out.body);
   if (out.after) out.after();
 });
@@ -9641,6 +9652,7 @@ function adminScoringPanel(game, players, req) {
     dnp: [...new Set([...(sg.settings.dnp || []), ...st.dnp])], official: sg.settings.official || null,
     statsPending: sg.settings.statsPending || null, locked: !!game.review_locked,
     stats: statsState(sg), approver: canApproveStats(req), underReview: sg.settings.underReview || null,
+    statsNotes: Array.isArray(sg.settings.statsNotes) ? sg.settings.statsNotes : [],
     pass, liveScore: live.score, liveCount: live.rows.length, video: video ? { score: video.score, count: video.rows.length } : null, compare, hasVideo: !!ytId(game.youtube_url || ''),
     // Re-track a saved box score, compare, replace (2026-11-10): a scorer-saved game, or a
     // wknd-stats box score under a review.

@@ -3497,6 +3497,18 @@ select.aui-input { padding-left: 9px; }
 .arc-layout { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
 .arc-main { flex: 999 1 720px; min-width: 0; }
 .arc-side { flex: 1 1 300px; max-width: 380px; min-width: 0; }
+/* The finalize bar: full width, stuck to the bottom while reading the compare. */
+.arc-bar { position: sticky; bottom: 16px; z-index: 20; margin-top: 24px; display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; padding: 12px 12px 12px 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--aui-line-2); box-shadow: 0 18px 40px rgba(0,0,0,.4); font-size: 13px; color: var(--text-2); }
+.arc-bar__say { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.4; }
+.arc-bar__say > b { color: var(--text); font-weight: 600; font-size: 14px; }
+.arc-bar__say span b { color: var(--text); font-weight: 600; }
+.arc-bar__note { flex: 1 1 300px; min-width: 0; }
+.arc-bar__acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
+body:has(.arc-bar) .aui-toasts { bottom: 110px; }
+@media (max-width: 720px) {
+  .arc-bar { bottom: 8px; padding: 12px; }
+  .arc-bar__acts { margin-left: 0; width: 100%; }
+}
 .arc-filter { display: flex; gap: 6px; }
 .arc-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 10px; font-size: 12px; color: var(--text-muted); }
 .arc-legend span { display: inline-flex; align-items: center; gap: 6px; }

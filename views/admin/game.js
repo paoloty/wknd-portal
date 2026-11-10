@@ -386,7 +386,7 @@ function scoringTab({ game, sc, colors }) {
         : banner('info', 'Official stats.', sc.approver ? `${act('Reopen for review', 'reopen', 'secondary', ['Reopen for review?', 'Players see Stats under review and keep this box score until it’s replaced. The other admins get a bell.'])} ${unlock}` : unlock);
     return `${statsBanner}${banner('ok', `Box score saved from the scorer: ${game.team_a_name} ${sc.finalScore ? sc.finalScore.a : sc.score.a}, ${game.team_b_name} ${sc.finalScore ? sc.finalScore.b : sc.score.b}. Next: the POTG and the recap on the Content tab.`, undo)}
       ${reviewCard}
-      ${retrackSection({ game, sc, base })}
+      ${retrackSection({ game, sc, base })}${statsNotesSection(sc)}
       ${lateCard}
       ${correctForm}
       ${section({ title: 'Plays', note: `· ${sc.plays.length}`, bodyHtml: playsGrid(sc, base, false) })}`;
@@ -431,7 +431,7 @@ function scoringTab({ game, sc, colors }) {
     ${(sc.plays.length || sc.video) && !lockedOut ? section({ title: 'Video re-track', bodyHtml: `<div class="aui-panel aui-stack">${videoPanel}</div>` }) : ''}
     ${sc.video ? section({ title: 'Live vs video', note: `· ${sc.compare.length} player${sc.compare.length === 1 ? '' : 's'} differ`, bodyHtml: compare }) : ''}
     ${section({ title: 'Final score', note: '· settles Who wins? straight away', bodyHtml: `<div class="aui-panel">${lockedOut ? `<p class="aui-muted">${fin ? `${escHtml(game.team_a_name)} ${fin.a} – ${fin.b} ${escHtml(game.team_b_name)}.` : 'Not saved yet.'} ${escHtml(lock.name)} is reviewing.</p>` : finalForm}</div>` })}
-    ${sc.retrack ? retrackSection({ game, sc, base }) : sc.plays.length && !lockedOut ? section({ title: 'Box score', note: '· the plays become the box score; the POTG and recap come after', bodyHtml: `<div class="aui-panel">${publishForm}</div>` }) : ''}
+    ${sc.retrack ? retrackSection({ game, sc, base }) + statsNotesSection(sc) : sc.plays.length && !lockedOut ? section({ title: 'Box score', note: '· the plays become the box score; the POTG and recap come after', bodyHtml: `<div class="aui-panel">${publishForm}</div>` }) : ''}
     ${sc.plays.length ? section({ title: 'Plays', note: `· ${sc.video ? (sc.pass === 'video' ? 'video re-track, ' : 'live track, ') : ''}${sc.plays.length}, newest first`, asideHtml: lockedOut ? '' : button('Fix plays in the scorer', { kind: 'ghost', size: 'sm', href: sc.pass === 'video' ? videoHref : `${base}/score` }), bodyHtml: playsGrid(sc, base, !lockedOut) }) : ''}
     ${sc.removed && sc.removed.length ? section({ title: 'Removed plays', note: `· ${sc.removed.length}, kept on record`, bodyHtml: `<div class="aui-panel"><ul class="agd-removed">${sc.removed.map(r => `<li><span class="aui-muted">${escHtml(r.when)}</span> ${escHtml(r.text)} <span class="aui-muted">· removed by ${escHtml(r.by)}</span></li>`).join('')}</ul></div>` }) : ''}
     ${sc.plays.length ? section({ title: 'Who didn’t play', bodyHtml: `<div class="aui-panel">${dnpForm}</div>` }) : ''}`;
@@ -440,6 +440,14 @@ function scoringTab({ game, sc, colors }) {
 // saved box score stays up while an admin re-tracks the game from the video; the compare shows
 // where they differ; Replace swaps them in one step, Undo the replace puts the old one back.
 // Start over / Keep the saved one throw away only the re-track.
+// Notes written on the compare when the stats were finalized (newest first). Admins only.
+function statsNotesSection(sc) {
+  const notes = (sc.statsNotes || []).slice().reverse();
+  if (!notes.length) return '';
+  const when = t => new Date(t).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const what = { replaced: 'Replaced the box score', kept: 'Kept the saved one' };
+  return section({ title: 'Stats notes', note: '· admins only', bodyHtml: `<div class="aui-panel aui-stack">${notes.map(n => `<div><p>${escHtml(n.text)}</p><p class="aui-muted">${escHtml(what[n.action] || 'Finalized')} · ${escHtml(n.name)} · ${when(n.at)}</p></div>`).join('')}</div>` });
+}
 function retrackSection({ game, sc, base }) {
   const rt = sc.retrack;
   if (!rt) return '';
@@ -467,15 +475,22 @@ function retrackSection({ game, sc, base }) {
   const replaceBody = final => `${final === 'plays' ? `Final score ${sc2(rt.mismatch.plays)} from the plays. ` : final === 'typed' ? `The final score stays ${sc2(rt.mismatch.typed)}. ` : ''}The re-track becomes the box score in one step. The saved one is kept on record: Undo the replace puts it back.`;
   const replaceBtn = (final, label, kind) => post(label, `${base}/scoring/replace`, { final }, { kind, confirm: { title: 'Replace the box score?', body: replaceBody(final), send: 'Replace it' } });
   const replace = !c.over || !rt.canReplace ? ''
-    : rt.mismatch ? `<p class="aui-muted">The plays add up to <b>${sc2(rt.mismatch.plays)}</b>; the final score says <b>${sc2(rt.mismatch.typed)}</b>.</p><div>${replaceBtn('plays', `Replace with ${sc2(rt.mismatch.plays)} (the plays)`, 'primary')} ${replaceBtn('typed', `Replace, keep ${sc2(rt.mismatch.typed)}`, 'secondary')}</div>`
-    : `<div>${replaceBtn('', 'Replace the box score', 'primary')}</div>`;
+    : rt.mismatch ? `<p class="aui-muted">The plays add up to <b>${sc2(rt.mismatch.plays)}</b>; the final score says <b>${sc2(rt.mismatch.typed)}</b>.</p><div>${replaceBtn('plays', `Replace with ${sc2(rt.mismatch.plays)} (the plays)`, 'secondary')} ${replaceBtn('typed', `Replace, keep ${sc2(rt.mismatch.typed)}`, 'secondary')}</div>`
+    : `<div>${replaceBtn('', 'Replace the box score', 'secondary')}</div>`;
+  // The compare is the way to finish: the one primary button, said plainly that it finalizes the stats.
+  const finalizeNote = !c.over ? 'Side by side so far. Once the re-track reaches Game over, finalize the stats there.'
+    : rt.canReplace ? 'Side by side, play by play. Replace the box score or keep the saved one there: either one finalizes the stats (Official).'
+    : rt.open ? 'Side by side, play by play. A stats approver finalizes the stats there (Official).'
+    : 'Side by side, play by play.';
+  const compareBtn = `<div class="aui-stack">${button(c.over ? 'Compare and finalize stats' : 'Compare so far', { kind: c.over ? 'primary' : 'secondary', href: `${base}/compare` })}<p class="aui-muted">${finalizeNote}</p></div>`;
   // Keep the saved one: an approver makes it official too; anyone else just throws the re-track away.
   const keepIt = c.over && rt.approver && rt.open;
   const keep = rt.holder ? '' : post(keepIt ? 'Keep the saved one' : 'Start over', `${base}/scoring/review`, { action: 'discard', keep: keepIt }, { kind: 'ghost', confirm: { title: keepIt ? 'Keep the saved one?' : 'Start over?', body: keepIt ? 'The re-track is thrown away (kept on record, never counted) and the saved box score becomes official.' : 'The re-track is thrown away (kept on record, never counted). The saved box score isn’t touched.', send: keepIt ? 'Keep it' : 'Throw it away' } });
   const go = rt.holder ? `<p class="aui-muted">${escHtml(rt.holder)} is re-tracking it.</p>` : `<div>${button(c.over ? 'Back to the re-track' : 'Continue the re-track', { kind: c.over ? 'ghost' : 'primary', size: 'sm', href: videoHref })} ${keep}</div>`;
   return section({ title: 'Re-track vs saved', note: `· ${c.over ? 'Game over' : `${escHtml(c.at)}, ${c.pct}%`}`, bodyHtml: `<div class="aui-panel aui-stack" id="retrack">${done}
     <p>Saved (${escHtml(c.source)}): <b>${escHtml(game.team_a_name)} ${sc2(c.saved)} ${escHtml(game.team_b_name)}</b> · Re-track${c.over ? '' : ' so far'}: <b>${sc2(c.re)}</b></p>
-    ${c.pbp ? `<p><b>Play by play</b> <span class="aui-muted">· ${c.pbp.segs.length ? `${c.pbp.segs.length} difference${c.pbp.segs.length === 1 ? '' : 's'}` : 'every play matches'}${c.over ? '' : ` so far (re-track at ${escHtml(c.pbp.through)})`}${c.pbp.orderCount ? `; ${c.pbp.orderCount} in another order, not counted` : ''}</span> · <a href="${base}/compare">Open the full compare</a></p>
+    ${compareBtn}
+    ${c.pbp ? `<p><b>Play by play</b> <span class="aui-muted">· ${c.pbp.segs.length ? `${c.pbp.segs.length} difference${c.pbp.segs.length === 1 ? '' : 's'}` : 'every play matches'}${c.over ? '' : ` so far (re-track at ${escHtml(c.pbp.through)})`}${c.pbp.orderCount ? `; ${c.pbp.orderCount} in another order, not counted` : ''}</span></p>
     ${c.pbp.segs.length ? `<div class="aui-table-wrap"><table class="aui-table"><thead><tr><th>Difference</th><th>When</th><th>Saved</th><th>Re-track</th><th>Box score</th></tr></thead><tbody>${c.pbp.segs.slice(0, 60).flatMap(h => h.items.map(x => `<tr><td><a href="${base}/compare#h-${h.n}">${escHtml(x.title)}</a></td><td>${escHtml(h.when)} · at ${escHtml(h.at)}</td><td>${escHtml(x.saved) || '—'}</td><td>${escHtml(x.re) || '—'}</td><td>${escHtml(x.effect)}</td></tr>`)).join('')}</tbody></table></div>` : ''}` : ''}
     ${c.over ? `<div class="aui-table-wrap"><table class="aui-table"><thead><tr><th>Team</th>${KEYS.map(k => `<th>${k}</th>`).join('')}</tr></thead><tbody>${teamRows}</tbody></table></div>${playerTable}` : '<p class="aui-muted">Player by player opens when the re-track reaches Game over.</p>'}
     ${c.over && !rt.canReplace && !rt.holder ? `<p class="aui-muted">${rt.open ? 'A stats approver replaces the box score.' : 'These stats are official: a stats approver reopens them for review first.'}</p>` : ''}${replace}${go}</div>` });

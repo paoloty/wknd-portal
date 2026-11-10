@@ -1739,7 +1739,7 @@ export async function mount(el) {
     if (O.compare && !ui.locked) {
       return `<div class="sc-over" role="status"><div class="sc-over__h"><b>Game over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>
         <p class="sc-over__s${n ? ' is-wait' : ''}">${sendLine}</p><p class="sc-over__n">${n ? 'Every play has to be saved first.' : 'The saved box score is still up. Compare the two, then replace it or keep the saved one.'}</p>
-        <div class="sc-over__b">${n ? `<span class="sc-over__btn" aria-disabled="true">Compare and replace</span>` : `<a class="sc-over__btn" href="${esc(O.compare)}">Compare and replace</a>`}${back}</div></div>`;
+        <div class="sc-over__b">${n ? `<span class="sc-over__btn" aria-disabled="true">Compare and finalize stats</span>` : `<a class="sc-over__btn" href="${esc(O.compare)}">Compare and finalize stats</a>`}${back}</div></div>`;
     }
     const acts = ui.published && ui.next ? `<a class="sc-over__btn" href="${esc(ui.next)}">Finish the game</a>${back}`
       : ui.locked || ui.published ? back
