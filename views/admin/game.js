@@ -154,7 +154,19 @@ function coverBlock(game) {
 
 function contentTab({ game, st, stats, colors, colorOfTeam }) {
   if (st === 'upcoming') return emptyState({ title: 'Content comes after the game', sub: 'Import the game file first. Then write the recap and pick the player of the game here.' });
-  if (st === 'score') return section({ title: 'Cover', note: '· the recap and player of the game need the box score', bodyHtml: `<div class="aui-panel">${coverBlock(game)}</div>` });
+  // No box score yet: the recap and POTG wait for it, but the cover and the video can go on now
+  // (the video is what you re-track the box score from).
+  if (st === 'score') return `<form id="game-content" data-json-action="/admin/games/${attr(game.id)}/save" data-done="Video link saved." data-dirty-watch class="aui-page agd-content">
+    ${section({
+      title: 'Cover and video',
+      note: '· the recap and player of the game need the box score',
+      bodyHtml: `<div class="aui-panel agd-media">
+        ${coverBlock(game)}
+        ${field({ label: 'YouTube link', name: 'youtube_url', type: 'url', value: game.youtube_url || '', placeholder: 'https://youtube.com/watch?v=…', wide: true })}
+      </div>`,
+    })}
+  </form>
+  ${saveBar({ label: 'Save video link', form: 'game-content' })}`;
 
   // Player of the game: the winners' top five by PER (plus hand-picked ones from outside it).
   // Tick one, or two to share the award: the first ticked is the POTG, the second the co-POTG
@@ -335,7 +347,7 @@ function scoringTab({ game, sc, colors }) {
       <p><b>${escHtml(game.team_a_name)} ${Number(game.team_a_score) || 0}–${Number(game.team_b_score) || 0} ${escHtml(game.team_b_name)}</b> is the result, and stays the result.</p>
       <p class="aui-muted">Add the plays to fill in the box score: re-track them from the video, or enter them from your notes. Nobody gets a bell, and the site doesn’t show it as a live score while you work.</p>
       <div class="agd-rv__acts">${go('Re-track from the video', 'video', `${base}/score?pass=video`, game.youtube_url ? 'primary' : 'secondary')} ${go('Enter the plays', 'plays', `${base}/score`, game.youtube_url ? 'secondary' : 'primary')}</div>
-      ${game.youtube_url ? '' : '<p class="aui-muted">No video on this game yet: add its YouTube link on the Game tab to re-track from it.</p>'}</div>` });
+      ${game.youtube_url ? '' : '<p class="aui-muted">No video on this game yet: add its YouTube link on the Content tab to re-track from it.</p>'}</div>` });
   }
   if (!sc.on) {
     return section({ title: 'Scoring', note: '· score this game live in the app instead of importing a wknd-stats file', bodyHtml: `<div class="aui-panel">
