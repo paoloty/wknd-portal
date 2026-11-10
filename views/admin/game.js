@@ -152,7 +152,24 @@ function coverBlock(game) {
   </div>`;
 }
 
-function contentTab({ game, st, stats, colors, colorOfTeam }) {
+// Key plays (server.js keyPlaysAdmin): what the game page shows, and Rewrite key plays.
+function keyPlaysSection(game, kp) {
+  if (!kp) return '';
+  const when = kp.at ? new Date(kp.at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const status = kp.cards.length
+    ? `<p class="aui-muted">Written by Claude${kp.by ? ` (${escHtml(kp.by)})` : ''}${when ? ` · ${escHtml(when)}` : ''}. This is what the game page and the app show.</p>`
+    : kp.writing ? '<p class="aui-muted">Being written right now: refresh in a minute.</p>'
+    : `<p class="aui-muted">${kp.stale ? 'The plays changed since the last version: it is written again on the next page view.' : 'Not written yet: the game page shows the rule-picked list until it is.'}</p>`;
+  const list = kp.cards.length ? `${kp.story ? `<p><b>${escHtml(kp.story)}</b></p>` : ''}<div class="agd-kp">${kp.cards.map(c => `<div class="agd-kp__row${c.big ? ' is-big' : ''}">
+      <span class="agd-kp__t">${escHtml(c.qLabel)} ${escHtml(c.clock || '')}<br><b>${c.score.a}–${c.score.b}</b></span>
+      <span><b>${escHtml(c.strong)}</b><br><span class="aui-muted">${escHtml(c.why)}</span></span>
+    </div>`).join('')}</div>` : '';
+  const btn = kp.blocked ? `<p class="aui-muted">${escHtml(kp.blocked)}</p>`
+    : `<div class="aui-row">${button(kp.cards.length ? 'Rewrite key plays' : 'Write key plays now', { kind: 'secondary', attrs: `data-post-json="/admin/games/${attr(game.id)}/key-plays/rewrite" data-then="/admin/games/${attr(encodeURIComponent(game.id))}?tab=content#key-plays" data-done="Key plays rewritten."${kp.cards.length ? ' data-confirm data-confirm-title="Rewrite the key plays?" data-confirm-body="Claude reads every play again and writes a new set. It replaces the current one on the game page and in the app, and takes about 20 seconds." data-confirm-send="Rewrite"' : ''}` })}<span class="aui-muted">About 20 seconds.</span></div>`;
+  return `<div id="key-plays">${section({ title: 'Key plays', note: '· read from every play by Claude', bodyHtml: `<div class="aui-panel aui-stack">${status}${list}${btn}</div>` })}</div>`;
+}
+
+function contentTab({ game, st, stats, colors, colorOfTeam, keyPlays }) {
   if (st === 'upcoming') return emptyState({ title: 'Content comes after the game', sub: 'Import the game file first. Then write the recap and pick the player of the game here.' });
   // No box score yet: the recap and POTG wait for it, but the cover and the video can go on now
   // (the video is what you re-track the box score from).
@@ -233,6 +250,7 @@ function contentTab({ game, st, stats, colors, colorOfTeam }) {
       </div>`,
     })}
   </form>
+  ${keyPlaysSection(game, keyPlays)}
   ${saveBar({ label: 'Save content', form: 'game-content' })}`;
 }
 
@@ -552,7 +570,7 @@ function playsGrid(sc, base, editable) {
   });
 }
 
-export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [], picksPanel = null, players = [], teams = [], colorById = {}, box, courts = [], scoring = null }) {
+export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers = [], quarterScores = [], statCorrections = [], picksPanel = null, players = [], teams = [], colorById = {}, box, courts = [], scoring = null, keyPlays = null }) {
   const st = gameState(game);
   const colorByName = Object.fromEntries(teams.map(t => [String(t.name).toUpperCase(), t.color || '']));
   const colorOfTeam = name => colorByName[String(name || '').toUpperCase()] || '';
@@ -584,7 +602,7 @@ export function adminGameDetailBody({ game, tab = 'box', stats = [], dnpPlayers 
 
   const body = {
     box: () => boxTab({ game, st, stats, dnpPlayers, quarterScores, colors, potgId, teamA: game.team_a_name, teamB: game.team_b_name, ...box }),
-    content: () => contentTab({ game, st, stats, colors, colorOfTeam }),
+    content: () => contentTab({ game, st, stats, colors, colorOfTeam, keyPlays }),
     picks: () => picksTab({ game, st, pp: picksPanel, colors, colorById }),
     scoring: () => (scoring ? scoringTab({ game, sc: scoring, colors }) : ''),
     settings: () => settingsTab({ game, st, statCorrections, nameById, courts }),

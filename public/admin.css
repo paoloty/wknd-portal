@@ -2224,6 +2224,13 @@ a.agd-name:hover { color: var(--amber-ink); }
 .agd-recap .ql-snow .ql-tooltip { background: var(--surface-2); color: var(--text); border-color: var(--aui-line-2); box-shadow: none; }
 .agd-ai { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(var(--ink),.05); }
 .agd-potgwrap, .agd-media { display: flex; flex-direction: column; gap: 14px; }
+/* Key plays (Content tab): the cards the game page shows, one row each */
+.agd-kp { display: flex; flex-direction: column; border: 1px solid var(--aui-line-2); border-radius: 10px; }
+.agd-kp__row { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.45; border-top: 1px solid var(--aui-line-2); }
+.agd-kp__row:first-child { border-top: 0; }
+.agd-kp__row.is-big b { color: var(--amber-ink, var(--amber)); }
+.agd-kp__t { font-size: 11px; color: var(--text-muted); }
+.agd-kp__t b { color: var(--text); font-size: 13px; }
 .agd-potg .aui-choice__body .aui-cell__stack { flex: 1; }
 /* Pick one, or two to share the award: a tick box, and a POTG / CO-POTG tag on the ticked
    rows. Once two are ticked the rest grey out. */

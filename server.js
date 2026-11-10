@@ -15585,6 +15585,7 @@ app.get('/admin/games/:id', requireAuth, (req, res) => {
       game: { ...game, court_name: getPapawisCourtById(game.court_id)?.name || '' },
       tab: String(req.query.tab || 'box'), players, stats, dnpPlayers, quarterScores, statCorrections, picksPanel,
       scoring: req.query.tab === 'scoring' ? adminScoringPanel(game, players, req) : null,
+      keyPlays: req.query.tab === 'content' ? keyPlaysAdmin(game) : null,
       teams: getAllTeams(), colorById: adminTeamColorByPlayer(), box: buildBoxScoreData(game, stats, dnpPlayers), courts: getAllPapawisCourts(),
     }),
   }));
@@ -23207,6 +23208,47 @@ function keyPlaysFor(game, rulePlays) {
   }
   return { plays: rulePlays, story: '' };
 }
+// The admin game page's Key plays section (Content tab): what the page shows now, who wrote it
+// and when, and whether a rewrite can run (2026-11-11: Paolo wanted a button, not a DB edit).
+function keyPlaysAdmin(game) {
+  const kd = keyPlaysData(game);
+  let stored = null;
+  try { stored = JSON.parse(getSetting(`key_plays_ai_${game.id}`, '') || 'null'); } catch {}
+  const current = !!(kd && stored && stored.key === kd.key && String(stored.provider || '').startsWith('anthropic'));
+  const cards = current ? keyPlayCards(stored, kd.rows) : null;
+  const sg = getScoreGame(game.id);
+  const official = !sg || sg.status !== 'published' || statsState(sg) === 'official';
+  const blocked = !kd ? 'This game has too few plays in its scoring log for key plays: the page shows its final score story only.'
+    : !process.env.ANTHROPIC_API_KEY ? 'Key plays are written by Claude, and the server has no Claude key.'
+    : !official ? 'The stats aren’t official yet: key plays are written once an approver makes them official.'
+    : keyPlaysInFlight.size ? 'Key plays are being written right now. Try again in a minute.' : '';
+  return {
+    blocked, writing: keyPlaysInFlight.has(`key_plays_ai_${game.id}`),
+    story: cards ? stored.story || '' : '', cards: cards || [],
+    by: current ? String(stored.provider || '').replace(/^anthropic /, '') : '', at: current ? stored.at || 0 : 0,
+    stale: !!(stored && !current && kd),
+  };
+}
+// Rewrite now, awaited (about 20 seconds): the page reloads with the new cards.
+app.post('/admin/games/:id/key-plays/rewrite', requireAuth, express.json(), async (req, res) => {
+  const game = getGameById(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+  const kp = keyPlaysAdmin(game);
+  if (kp.blocked) return res.status(409).json({ error: kp.blocked });
+  const settingKey = `key_plays_ai_${game.id}`;
+  keyPlaysInFlight.add(settingKey);
+  keyPlaysFailedAt.delete(settingKey);
+  try {
+    const d = await writeKeyPlays(game);
+    res.json({ ok: true, message: `Key plays rewritten: ${d.plays.length} plays.` });
+  } catch (err) {
+    console.error(`Key plays (${game.id}) rewrite failed:`, err.message);
+    if (err.code === 'checks') return writerError(res, err);
+    res.status(502).json({ error: `Claude didn’t answer: ${String(err.message).slice(0, 140)}. Try again in a bit.` });
+  } finally {
+    keyPlaysInFlight.delete(settingKey);
+  }
+});
 async function writeKeyPlays(game, kd = keyPlaysData(game)) {
   if (!kd) throw new Error('not enough plays');
   const { rows, key } = kd;
