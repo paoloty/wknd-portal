@@ -1697,7 +1697,9 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-th { display: flex; align-items: center; gap: 8px; }
 .sc-th__n { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 40px; color: var(--text); font: 600 15px/1 var(--font-num); letter-spacing: .08em; text-transform: uppercase; }
 .sc-th__n svg { width: 12px; height: 12px; color: var(--muted); }
-.sc-tb { position: relative; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair); color: var(--text); font-size: 13px; font-weight: 600; line-height: 1; }
+/* Sub (2026-11-10): the scorer's filled button (like ••• and End), condensed caps, swap arrows. */
+.sc-tb { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: var(--r-in); border: 0; background: var(--surface-2); color: var(--text); font: 700 15px/1 var(--font-num); letter-spacing: .04em; text-transform: uppercase; }
+.sc-tb svg, .sc-tmn__sub svg { flex: none; width: 15px; height: 15px; }
 .sc-tb:disabled { opacity: .35; }
 .sc-th__n::before, .sc-tb::before { content: ''; position: absolute; inset: -2px 0; }
 /* Face cards (public/scorer.js tile, CLAUDE.md "Scorer player cards"): flat, a 2px border in the
@@ -1893,7 +1895,7 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-tmn__h { display: flex; align-items: center; gap: 10px; margin: -2px -2px 0 0; }
 .sc-tmn__dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--sb); box-shadow: inset 0 0 0 1px var(--shirt-edge); }
 .sc-tmn__name { font: 800 20px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; }
-.sc-tmn__sub { display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--hair); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; }
+.sc-tmn__sub { display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; border-radius: var(--r-in); border: 0; background: var(--surface-2); color: var(--text); font: 700 15px/1 var(--font-num); letter-spacing: .04em; text-transform: uppercase; }
 .sc-tmn__sub:disabled { opacity: .4; }
 .sc-tmn__x { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); color: var(--muted); }
 .sc-tmn__x svg { width: 18px; height: 18px; }
@@ -2045,9 +2047,11 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-bx__n i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .sc-bx__n i.on { background: var(--text); }
 /* Play-by-play */
-.sc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.sc-chip { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--hair); color: var(--text); font-size: 13px; font-weight: 600; line-height: 1; }
-.sc-chip.on { background: var(--amber); border-color: transparent; color: #111; }
+.sc-chips { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; scrollbar-width: none; }
+.sc-chips::-webkit-scrollbar { display: none; }
+/* The Plays filter (2026-11-10): filled like the pad's buttons, amber for the one showing. */
+.sc-chip { flex: none; display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 10px; white-space: nowrap; border-radius: var(--r-in); border: 0; background: var(--surface-2); color: var(--text); font: 700 14px/1 var(--font-num); letter-spacing: .04em; text-transform: uppercase; }
+.sc-chip.on { background: var(--amber); color: #14110d; }
 .sc-pbp__h { display: flex; justify-content: space-between; align-items: center; min-height: 32px; font-size: 12px; letter-spacing: .08em; color: var(--muted); border-bottom: 1px solid var(--hair); }
 .sc-pbp__r { display: grid; grid-template-columns: 40px 9px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; width: 100%; min-height: 48px; border-bottom: 1px solid var(--hair); color: var(--text); text-align: left; }
 .sc-pbp__fx { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--muted); }

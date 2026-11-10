@@ -271,7 +271,7 @@ export const PW_SCORER_GUIDE = [
         '<b>A guest</b> who isn’t on the list: type their name and tap <i>+ Light</i> or <i>+ Dark</i>.',
         '<b>From the waitlist:</b> someone waitlisted who came for a no-show’s place. Tap <i>+ Light</i> or <i>+ Dark</i> beside their name. Their stats go on their profile.',
         '<b>Start Game 1.</b> The clock starts with the first play, or tap ▶.',
-        '<b>The last 2 minutes:</b> your clock turns amber, and red in the last 10 seconds. A table display does the same, big, with a chime and a buzzer (tap <i>Turn on sound</i> on the tablet).',
+        '<b>The last 2 minutes:</b> your clock turns amber, and red in the last 10 seconds. A table display does the same: its clock grows under the two scores, with a chime and a buzzer (tap <i>Turn on sound</i> on the tablet). Tap the clock on the tablet to keep it that big all game.',
       ]],
     ],
   },

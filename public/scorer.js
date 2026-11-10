@@ -46,6 +46,8 @@ const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const ARROW_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>';
 const ARROW_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>';
+// Sub's swap arrows (Paolo, 2026-11-10: Sub matches the scorer's filled buttons).
+const SWAP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg>';
 const SHEET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>';
 const LIVE_BALL = new Set(['shot', 'reb', 'stl', 'blk']);
 // Plays that stop the clock (on either scorer's phone).
@@ -1287,7 +1289,7 @@ export async function mount(el) {
     if (part === 'bench') return benchHtml ? `<section class="sc-upbench"><span class="sc-upbench__n"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)} bench</span>${benchHtml}</section>` : '';
     return `<section class="sc-team${multi && ui.lane === t ? ' sc-team--solo' : ''}">
       <div class="sc-th"><button type="button" class="sc-th__n" data-act="teammenu" data-team="${t}" aria-label="${esc(team[t].name)}: team stats, DNP"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}${CHEV}</button>${ui.ask && ui.ask.kind === 'rebound' ? `<span class="sc-th__ans">${ui.ask.miss === t ? 'Offensive' : 'Defensive'}</span>` : ''}
-        <button type="button" class="sc-tb" data-act="subq" data-team="${t}"${noSub ? ` disabled aria-label="${esc(team[t].name)}: nobody on the bench"` : ` aria-label="${esc(team[t].name)}: sub"`}>Sub</button>
+        <button type="button" class="sc-tb" data-act="subq" data-team="${t}"${noSub ? ` disabled aria-label="${esc(team[t].name)}: nobody on the bench"` : ` aria-label="${esc(team[t].name)}: sub"`}>${SWAP_ICON}Sub</button>
 </div>
       <div class="sc-five">${on.map(tile).join('')}${fillable(t).length ? Array.from({ length: openSpots(t) }, () => `<button type="button" class="sc-p sc-p--open" data-act="fill" data-team="${t}" aria-label="${esc(team[t].name)}: open spot. Tap to put a bench player on"><span class="sc-p__open" aria-hidden="true"><b>+</b>Open</span></button>`).join('') : ''}</div>
       ${part === 'five' ? '' : benchHtml}
@@ -1345,7 +1347,7 @@ export async function mount(el) {
     const tech = pw ? '' : `<div class="sc-tmn__g">${label('Technical')}<div class="sc-tmn__two"><button type="button" class="sc-tmn__tech" data-ask="coach T">Coach</button><button type="button" class="sc-tmn__tech" data-ask="bench T">Bench</button></div></div>`;
     const noSub = !subBench(t).length;
     return `<div class="sc-q sc-q--menu sc-tmn" role="group" aria-label="${esc(nm)} team menu">
-      <div class="sc-tmn__h"><span class="sc-tmn__dot" style="${sideLook(t)}"></span><b class="sc-tmn__name">${esc(nm)}</b><span class="sc-q__sp"></span><button type="button" class="sc-tmn__sub" data-ask="subq"${noSub ? ' disabled' : ''}>Sub</button><button type="button" class="sc-tmn__x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
+      <div class="sc-tmn__h"><span class="sc-tmn__dot" style="${sideLook(t)}"></span><b class="sc-tmn__name">${esc(nm)}</b><span class="sc-q__sp"></span><button type="button" class="sc-tmn__sub" data-ask="subq"${noSub ? ' disabled' : ''}>${SWAP_ICON}Sub</button><button type="button" class="sc-tmn__x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
       ${timeoutBtn}${tos}${players}
       ${tech ? `<div class="sc-tmn__split">${tech}<div class="sc-tmn__g">${label('Lineup')}${dnp}</div></div>` : `<div class="sc-tmn__g">${label('Lineup')}${dnp}</div>`}
     </div>`;

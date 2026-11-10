@@ -13,7 +13,8 @@ const fmt = secs => { const s = Math.max(0, Math.ceil(secs)); return `${Math.flo
 const IDLE_MS = 20000;
 
 // ── Papawis clock (Paolo, 2026-11-01): big, and it warns. The layout: A (big clock, the normal
-// one) or B (clock first: tap the clock), kept per tablet. Amber in the last 2 minutes with a
+// one) or B (clock first: tap the clock), kept per tablet; the last 2 minutes are always B
+// (2026-11-10). Amber in the last 2 minutes with a
 // chime at 2:00, red with tenths in the last 10 s with a tick each second from 0:05, a buzzer at
 // 0:00. Sounds are small WAV files made here and played as ordinary audio, which an iPad plays
 // even with the silent switch on; a tablet only plays sound after a tap (Turn on sound).
@@ -73,7 +74,7 @@ function paintClock() {
   if (pw && !S.final) c.innerHTML = pwClock(secs); else c.textContent = fmt(secs);
   const a = pw && !S.final ? alertOf(secs) : '';
   const board = $('[data-board]');
-  board.classList.toggle('board--pw', pw); board.classList.toggle('board--first', pw && clockFirst);
+  board.classList.toggle('board--pw', pw); board.classList.toggle('board--first', pw && (clockFirst || !!a));
   for (const k of ['warn', 'last', 'end']) board.classList.toggle(`is-${k}`, a === k);
   const cue = $('[data-cue]'); cue.hidden = !a;
   cue.textContent = a === 'end' ? `End of ${S.period}` : a === 'last' ? 'Last 10 s' : a === 'warn' ? 'Last 2 min' : '';

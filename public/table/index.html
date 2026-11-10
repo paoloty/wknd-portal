@@ -72,16 +72,27 @@
   .clock small { font-size: .5em; }
   /* Papawis (Paolo, 2026-11-01: players couldn't read the clock from the court). A, the normal
      layout: the clock as big as the scores (Papawis has no fouls or timeouts under them). B,
-     clock first (tap the clock): the score in a band on top, the clock fills the screen. */
+     clock first (tap the clock; 2026-11-10 mockup claude.ai/artifact/YJih4W19waNjZxVztAkgsa, the
+     scores were too small): both scores big on top with the quarter between them, the clock
+     centred under them. The last 2 minutes switch to B by themselves, the clock bigger still. */
   .board--pw .sb { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
   .board--pw .score, .board--pw .clock { font-size: clamp(110px, min(17vw, 30vh), 240px); }
   .board--pw .marks { display: none; }
-  .board--first .sb { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "a b" "mid mid"; gap: 16px 24px; }
-  .board--first [data-side="a"] { grid-area: a; } .board--first [data-side="b"] { grid-area: b; } .board--first .mid { grid-area: mid; }
-  .board--first .side { flex-direction: row; justify-content: center; gap: 28px; padding: 10px 24px; border-radius: 22px; background: var(--surface); border: 1px solid var(--border); }
-  .board--first .side__n { font-size: clamp(24px, 3vw, 36px); }
-  .board--first .score { font-size: clamp(80px, min(10vw, 15vh), 130px); }
-  .board--first .clock { font-size: clamp(160px, min(31vw, 46vh), 440px); }
+  .mid__tags { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .board--first .sb { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "a per b" "a tags b" "clock clock clock"; gap: 12px 20px; align-items: center; }
+  .board--first .mid { display: contents; }
+  .board--first [data-side="a"] { grid-area: a; } .board--first [data-side="b"] { grid-area: b; }
+  .board--first [data-side="b"] .side__n { flex-direction: row-reverse; }
+  .board--first .per { grid-area: per; align-self: end; height: 64px; padding: 0 30px; font-size: 44px; }
+  .board--first .mid__tags { grid-area: tags; align-self: start; }
+  .board--first .clock { grid-area: clock; justify-self: center; font-size: clamp(170px, min(32vw, 46vh), 380px); }
+  .board--first .side { flex-direction: row; justify-content: space-between; gap: 20px; height: clamp(150px, 29vh, 236px); padding: 0 36px; border-radius: 24px; background: var(--surface); border: 1px solid var(--border); }
+  .board--first .side__n { font-size: clamp(26px, 3.4vw, 40px); }
+  .board--first .side[data-side="b"] { flex-direction: row-reverse; }
+  .board--first .score { font-size: clamp(110px, min(19vw, 28vh), 230px); }
+  .board--first.is-warn .side, .board--first.is-last .side, .board--first.is-end .side { height: clamp(140px, 25vh, 200px); }
+  .board--first.is-warn .score, .board--first.is-last .score, .board--first.is-end .score { font-size: clamp(100px, min(16vw, 24vh), 196px); }
+  .board--first.is-warn .clock, .board--first.is-last .clock, .board--first.is-end .clock { font-size: clamp(190px, min(36vw, 52vh), 430px); }
   /* The last 2 minutes (amber), the last 10 s (red, with tenths), time (blinks red). */
   .cue { display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 999px; font: 700 22px/1 var(--num); letter-spacing: .14em; text-transform: uppercase; }
   .board--pw.is-warn .clock { color: var(--amber); } .board--pw.is-warn .cue { background: rgba(245,147,50,.16); color: var(--amber); }
@@ -184,7 +195,7 @@
   <div class="banner" data-lost hidden></div>
   <div class="sb">
     <div class="side" data-side="a"></div>
-    <div class="mid"><span class="per" data-per>Q1</span><button type="button" class="clock" data-act="clockmode" data-clock>10:00</button><span class="cue" data-cue hidden></span><span class="run" data-run></span></div>
+    <div class="mid"><span class="per" data-per>Q1</span><button type="button" class="clock" data-act="clockmode" data-clock>10:00</button><span class="mid__tags"><span class="cue" data-cue hidden></span><span class="run" data-run></span></span></div>
     <div class="side" data-side="b"></div>
   </div>
   <div class="strip"><span class="strip__last" data-last></span><span class="strip__prev" data-prev></span><button type="button" class="btn btn--ghost" data-act="players">Players ›</button></div>
