@@ -85,6 +85,10 @@
 .crt-ident { margin: -4px 0 0; font-size: 13px; color: var(--text-muted); line-height: 1.45; }
 .crt-ident a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
 .crt-ident a:hover { color: var(--text); }
+/* "Is this your venue?": the owner's way in, under the court name (partner switch on, not yet claimed). */
+.crt-kicker .crt-pill { margin-left: 6px; letter-spacing: 0; vertical-align: middle; }
+.crt-claim a { color: var(--amber); text-decoration: none; font-weight: 600; }
+.crt-claim a:hover { color: var(--amber); text-decoration: underline; }
 .crt-line { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--c-soft); line-height: 1.35; }
 .crt-rateline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--c-soft); line-height: 1; }
 .crt-rateline b { font-size: 16px; font-weight: 800; color: var(--text); }
@@ -137,8 +141,6 @@
 .crt-price b { font-size: 34px; line-height: 1; color: var(--text); }
 .crt-price span { font-size: 13px; color: var(--text-muted); }
 .crt-book__btns { display: flex; flex-direction: column; gap: 8px; }
-.crt-partnerline { padding: 16px var(--c-pad); display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--c-soft); line-height: 1; }
-.crt-partnerline a { display: inline-flex; align-items: center; gap: 4px; color: var(--amber); font-weight: 700; white-space: nowrap; }
 
 /* Jump bar (desktop) and the phone dock */
 /* Sticky section bar: the site's .gd-snav (styles.css) with the run button at its right end */

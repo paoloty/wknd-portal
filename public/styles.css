@@ -7144,6 +7144,15 @@ a.po-gl__row:hover { background: rgba(255,255,255,.02); }
    Every homepage section below the hero: same outer spacing, standard .section-header,
    cards on --radius with --border, 14px grid gaps, four across on desktop. */
 .home-section { margin: 8px 0 28px; }
+/* Homepage "Where we play": one card per court with a page, then the city pages. */
+.home-courts__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.home-court { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; color: var(--text); text-decoration: none; }
+.home-court b { font-size: 14px; font-weight: 600; line-height: 1.25; }
+.home-court span { font-size: 12px; color: var(--text-muted); line-height: 1.35; }
+.home-court:hover { border-color: rgba(245,147,50,.35); }
+.home-courts__cities { margin: 12px 0 0; font-size: 13px; color: var(--text-muted); }
+.home-courts__cities a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
+.home-courts__cities a:hover { color: var(--text); }
 
 /* AI summary panel above Game headlines / Season race / League leaders */
 .hs-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin: 0 0 16px; }

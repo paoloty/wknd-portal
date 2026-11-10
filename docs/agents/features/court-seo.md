@@ -1,6 +1,6 @@
 # Court SEO project
 
-Started 2026-11-11. Main target: the Activate Hoop Arena court page. Then the Mandaluyong and Pasig city pages for general searches like "basketball court mandaluyong". A second goal: Activate Sports (the owner) notices WKND.
+Started 2026-11-11. Main targets (reset the same day): the homepage, Gameville Central Park, Activate Hoop Arena and Delta Sports Arena court pages. Then the Mandaluyong and Pasig city pages for general searches like "basketball court mandaluyong". A second goal: Activate Sports (the owner) notices WKND.
 
 Fable audited the plan on 2026-11-10. Its main call: automate measuring and fresh facts, not the page text. With our traffic, a weekly AI change to titles can't be measured, and constant AI edits look like spam to Google.
 
@@ -16,24 +16,42 @@ Live site only, from 7am Manila, once a day. Kill switch and settings: Admin →
 
 Every run is a row in `seo_runs` and a line in `/admin/logs`. Every change to what Google reads on a court page (admin save, city intro, weekly note) is a row in `seo_changes`.
 
+## Main pages (reset 2026-11-11)
+
+`/`, Gameville Central Park, Activate Hoop Arena, Delta Sports Arena. Gameville has the most searches (1,132 a quarter for its bare name, at #10.5), Activate converts best, Delta is small but winnable.
+
 ## Targets (`lib/seo-report.js` `SEO_TARGETS`)
 
-These are estimates from the audit. The first weeks of real data should reset them.
+Reset 2026-11-11 from 90 days of Search Console data and a second Fable audit. For a venue's bare name, its own Facebook, site and booking page hold the top 3 under the Maps pack, so the realistic goal is the first result that isn't the venue (#5-6). The longer searches (…basketball court, …reviews, …parking) and the small venues can reach the top 3. Each target names the page that should rank (`page`).
 
-| Search | Goal | By | Range |
+| Search | Was (90 days) | Goal | By |
 |---|---|---|---|
-| activate hoop arena | top 5 | 2027-01-06 | 4–8 weeks; top 3 is 2–4 months and may never hold |
-| activate hoops arena | page 1 | 2027-01-06 | 4–8 weeks |
-| activate sports mandaluyong | page 1 | 2027-02-10 | |
-| basketball league mandaluyong | page 1 | 2027-02-10 | 1–3 months |
-| indoor basketball court mandaluyong | page 1 | 2027-03-10 | 2–4 months |
-| basketball court mandaluyong | page 1 | 2027-05-10 | 3–6 months, about 50/50; needs links |
-| basketball court pasig / indoor … pasig | page 1 | 2027-07-10 | 4–8 months |
+| gameville central park | #10.5 | 6 | 2027-02-10 |
+| activate hoop arena | #8.6 | 5 | 2027-01-13 |
+| delta sports arena makati | #8.4 | 4 | 2027-01-13 |
+| gameville central park mandaluyong | #10.6 | 6 | 2027-02-10 |
+| gameville central park basketball court | #4.5 | 3 | 2027-01-13 |
+| gameville central park reviews | #5.4 | 3 | 2027-02-10 (needs 5 ratings for stars) |
+| gameville central park parking | #6.7 | 4 | 2027-02-10 |
+| activate hoops | #10.4 | 7 | 2027-02-10 |
+| activate pioneer | #6.8 | 5 | 2027-01-13 |
+| delta arena makati / delta sports arena | #8.1 / #7.8 | 4 / 5 | 2027-01-13 / 2027-02-10 |
+| wknd basketball | #1 | 1 | 2026-12-01 |
+| basketball court / league mandaluyong | not shown | 10 | 2027-05-10 |
+
+## What the 2026-11-11 audit changed (code)
+
+- Automatic titles say what a searcher of the venue wants: "Rates, Photos & Reviews" (rate + 5 ratings), "Rates & Photos", "Indoor Basketball Court", else "Basketball Court Guide". Descriptions lead with the court, its address or building, hours, rate, parking and transit, then what's on the page. Activate's seeded title was cleared to use it.
+- Opening hours (one daily range) and the venue's public phone: admin fields, shown under Getting there, sent as `openingHoursSpecification` / `telephone`.
+- Good to know asks the venue's questions first (where, hours, parking, getting there), then WKND's.
+- Homepage "Where we play" row links every live court and the city pages.
+- Owners: "Is this your venue? Claim this page, free" under the court name (partner switch on, not claimed); Partner court pill once claimed; the claim opens Messenger with the court named; partner page clicks count per court; "Could be better" tags stay off the partner page below 5 ratings.
+- Monthly court report: from the 4th, 9 AM, to each partner court with an email (`court_reports_enabled`, default on). Players and games, page views (Google split), Google searches, taps for directions and venue links (only when above 0), ratings. Admin: preview, test to me, send now on the court's Partner panel.
 
 ## Setup Paolo does once
 
-1. Search Console API access, following the steps at the top of `lib/seo-gsc.js`. Then set `GSC_SERVICE_ACCOUNT_FILE` and `GSC_SITE_URL` in the production `.env`.
-2. Activate Battlegrounds: add a photo and map pin in court admin, then switch on "Publish before anything is played here".
+1. Done 2026-11-11: Search Console API access (`GSC_SERVICE_ACCOUNT_FILE`, `GSC_SITE_URL=sc-domain:wkndbasketball.com` in the production `.env`).
+2. Activate Battlegrounds: redirects to Hoop Arena until it's live (`COURT_STAND_INS` in server.js). When WKND plays there, add a photo and map pin and publish it; the redirect ends by itself.
 3. Optional: write the city intros on `/admin/seo/report`.
 
 ## Stays human

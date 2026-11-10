@@ -100,6 +100,9 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
       ${field({ label: text.contact.label, name: 'info_contact', value: info.contact || '', placeholder: `e.g. ${text.contact.placeholder}`, wide: true, help: 'Only you see this, unless you tick the box below.' })}`)}
     <label class="aui-check acrt-check"><input type="checkbox" name="info_contact_public" value="1"${info.contact_public ? ' checked' : ''}><span>Show the court contact on the public page</span></label>
     ${fieldGrid(`${field({ label: 'Court rental rate', name: 'info_rate', value: info.rate || '', placeholder: 'e.g. From ₱2,800 (per activatesports.ph)', wide: true, help: 'As the venue posts it publicly. Shown on the page and sent to Google. Blank = hidden.' })}
+      ${field({ label: 'Opens', name: 'info_hours_open', type: 'time', value: info.hours_open || '', help: 'Daily opening time, as the venue posts it. Both times or neither.' })}
+      ${field({ label: 'Closes', name: 'info_hours_close', type: 'time', value: info.hours_close || '', help: '12:00 AM = midnight. Earlier than Opens = runs past midnight.' })}
+      ${field({ label: 'Venue phone (public)', name: 'info_phone', value: info.phone || '', placeholder: 'e.g. (02) 8890-4488', help: 'The venue’s own front desk number from its website or page. Shown on the page and sent to Google.' })}
       ${COURT_LINK_FIELDS.map(f => field({ label: f.label, name: `link_${f.key}`, type: 'url', value: info.links?.[f.key] || '', placeholder: f.placeholder })).join('')}`)}
     ${fieldGrid(COURT_IDENTITY_FIELDS.map(f => field({ label: f.label, name: `info_${f.key}`, value: info[f.key] || '', placeholder: `e.g. ${f.placeholder}`, help: `${f.help} Shown under the court name and sent to Google.` })).join(''))}
     ${fieldGrid(field({ label: 'Map pin', name: 'map_pin', value: court.map_lat != null ? `${court.map_lat}, ${court.map_lng}` : '', placeholder: 'Paste a Google Maps link or 14.5806, 121.0536', wide: true,
@@ -223,6 +226,12 @@ export function adminPapawisCourtBody({ court, p, info = {}, aiOn = true, flags 
     ${toggleRow({ label: 'Partner court', help: 'The court claimed its page: a "Partner court" mark on owner replies, and rent requests go to the email below too.', name: 'partner_on', on: !!court.partner })}
     ${fieldGrid(field({ label: 'Court email for rent requests', name: 'partner_email', type: 'email', value: court.partner_email || '', placeholder: 'bookings@court.com', wide: true, help: 'Optional. Only used for rent requests; never shown on the site.' }))}
     ${facts([['Partner page', `<a class="acrt-link" href="${attr(partnerUrl)}" target="_blank" rel="noopener">wkndbasketball.com${escHtml(partnerUrl)} ↗</a>`]])}
+    <div class="acrt-actions">
+      ${button('Preview last month’s report', { kind: 'secondary', size: 'sm', href: `/admin/papawis/courts/${id}/report`, attrs: 'target="_blank" rel="noopener"' })}
+      ${button('Send a test to me', { kind: 'ghost', size: 'sm', attrs: `data-post-json="/admin/papawis/courts/${id}/report/send" data-body='{"test":true}'` })}
+      ${court.partner && court.partner_email ? button('Send to the court now', { kind: 'ghost', size: 'sm', attrs: `data-post-json="/admin/papawis/courts/${id}/report/send" data-confirm data-confirm-title="Send last month’s report to ${attr(court.partner_email)}?" data-confirm-body="It also goes out by itself from the 4th of each month." data-confirm-send="Send"` }) : ''}
+    </div>
+    <p class="aui-muted acrt-foot" style="margin:0">The court report goes to the court email by itself from the 4th of each month, while Partner court is on. Players, games, page views, Google searches and taps for directions.</p>
   </div>`;
 
   return `<div class="aui-page">

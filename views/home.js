@@ -1210,7 +1210,20 @@ function latestPosts(posts) {
 // Page order: hero → registration banner → game headlines → season race → league leaders
 // → posts → coming up → (guests) what you get + closing CTA. Game headlines are the four
 // recaps *before* the hero's four, so the two never show the same games.
-export function homePage({ teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, papawisHero = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', headlineCards = {}, playoffBlock = '' }) {
+// "Where we play": the courts with a page and their city pages, named the way people search
+// them (Fable SEO audit, 2026-11-11: the homepage is our strongest page, so it passes its
+// weight to the court pages through these links).
+function whereWePlaySection(d) {
+  if (!d?.courts?.length) return '';
+  const what = c => [c.games && `${c.games} league game${c.games === 1 ? '' : 's'}`, c.runs && `${c.runs} Papawis run${c.runs === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+  return `<section class="home-section home-courts" aria-labelledby="courts-heading">
+  <div class="section-header"><h2 id="courts-heading">Where we play</h2><a href="/courts" class="section-header__link">All courts <span>&rarr;</span></a></div>
+  <div class="home-courts__grid">${d.courts.map(c => `<a class="card home-court" href="/courts/${encodeURIComponent(c.slug)}" data-cta="home-court"><b>${escHtml(c.name)}</b><span>${escHtml([c.city, what(c)].filter(Boolean).join(' · '))}</span></a>`).join('')}</div>
+  ${d.cities.length ? `<p class="home-courts__cities">Basketball courts in ${d.cities.map(x => `<a href="/courts/${encodeURIComponent(x.slug)}" data-cta="home-court">${escHtml(x.city)}</a>`).join(', ').replace(/, ([^,]*)$/, ' and $1')}</p>` : ''}
+</section>`;
+}
+
+export function homePage({ whereWePlay = null, teams, players, games, highlights = [], mvpRace = null, nextUp = null, standings = null, papawisHero = null, regCloser = null, memberPerks = null, leaderSeason = '', leaderPlayers = [], rosterMovers = [], regBanner = null, signupBanner = null, posts = [], awardsGallery = [], summaries = {}, isAdmin = false, picksWidgetHtml = '', headlineCards = {}, playoffBlock = '' }) {
   const completedGames = games
     .filter(g => !g.scheduled && !g.under_review && (Number(g.team_a_score) + Number(g.team_b_score)) > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1252,6 +1265,7 @@ ${nextUpSection(nextUp, summaries.comingup, isAdmin)}
 
 ${memberPerksSection(memberPerks)}
 
+${whereWePlaySection(whereWePlay)}
 ${closingCta(regCloser)}
 ${regenScript}`;
 }

@@ -7,9 +7,11 @@ import { escHtml } from './layout.js';
 import { avatarStack, shareIcon, playerPhotoUrl, initials, displayPlayerName } from './utils.js';
 import { gameCard, gameCardScript } from './games.js';
 import { sectionNavScript } from './section-nav.js';
-import { courtInfoTags, courtLinks, parseJson, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, RATING_MIN_FOR_SCORE } from '../lib/court-page.js';
+import { courtInfoTags, courtLinks, courtHoursLabel, courtPhone, parseJson, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, RATING_MIN_FOR_SCORE } from '../lib/court-page.js';
 
 const MESSENGER_URL = 'https://m.me/wkndbasketball';
+// The claim button opens Messenger with the first line already typed, so we know which page.
+const claimUrl = (name, slug) => `${MESSENGER_URL}?text=${encodeURIComponent(`Hi WKND! I run ${name} and I'd like to claim our page: wkndbasketball.com/courts/${slug}`)}`;
 const ymdLabel = (ymd, opts) => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-US', opts);
 const plural = (n, w, ws = `${w}s`) => `${n} ${n === 1 ? w : ws}`;
 const dh = h => { const t = Math.round(h); return t < 24 ? `${t}h` : `${Math.floor(t / 24)}d ${t % 24}h`; };
@@ -80,9 +82,10 @@ function head(p, court, x, isAdmin) {
   const citySlug = cityPageSlug(p.city);
   return `<header class="crt-head">
       <div class="crt-head__top"><nav class="crt-crumbs" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">/</span><a href="/courts">Courts</a>${citySlug ? `<span aria-hidden="true">/</span><a href="/courts/${citySlug}">${escHtml(p.city)}</a>` : ''}</nav>${isAdmin ? `<a class="crt-link" href="/admin/papawis/courts/${encodeURIComponent(court.id)}">Edit this court</a>` : ''}</div>
-      <span class="crt-kicker">Basketball court${p.city ? ` · ${escHtml(p.city)}` : ''}</span>
+      <span class="crt-kicker">Basketball court${p.city ? ` · ${escHtml(p.city)}` : ''}${court.partner ? ' <span class="crt-pill crt-pill--amber">Partner court</span>' : ''}</span>
       <h1 class="crt-h1">${escHtml(p.name)}</h1>
       ${identity ? `<p class="crt-ident">${identity}</p>` : ''}
+      ${x.flags.partner && !court.partner ? `<p class="crt-ident crt-claim">Is this your venue? <a href="/courts/${encodeURIComponent(court.slug)}/partner" data-cta="court-partner">Claim this page, free</a></p>` : ''}
       ${commute ? `<p class="crt-line">${ICON.pin}<span>${escHtml(commute)}</span></p>` : ''}
       ${r ? `<div class="crt-rateline">${stars(r.avg)}<b>${r.avg.toFixed(1)}</b><span>${plural(r.n, 'player rating')}</span><a href="#crt-say">What players say</a></div>` : ''}
       ${chips.length ? `<dl class="crt-chips crt-chips--${chips.length}">${chips.map(([l, val, sub]) => `<div class="crt-chip"><dt>${escHtml(l)}</dt><dd><b class="crt-num">${escHtml(val)}</b><span>${escHtml(sub)}</span></dd></div>`).join('')}</dl>` : ''}
@@ -93,14 +96,13 @@ function head(p, court, x, isAdmin) {
 
 function runPanel(p, court, x) {
   const r = p.nextRun;
-  const partnerLine = x.flags.partner ? `<div class="card crt-partnerline"><span>Run this court?</span><a href="/courts/${encodeURIComponent(court.slug)}/partner" data-cta="court-partner">Become a partner ${ICON.chev}</a></div>` : '';
   if (!r) {
     return `<aside class="crt-panel" aria-label="Next run"><div class="card crt-book">
       <span class="crt-kicker">Next Papawis run</span>
-      <b class="crt-book__none">No run posted here yet</b>
-      <p class="crt-muted">Runs go up on the Papawis page. ${x.flags.votes && x.slots?.length ? 'Vote for one below.' : 'Follow it to catch the next one.'}</p>
+      <b class="crt-book__none">${p.playedRuns ? 'No run posted right now' : 'No run posted here yet'}</b>
+      <p class="crt-muted">${p.playedRuns ? `${plural(p.playedRuns, 'run')} played here so far. ` : ''}Runs go up on the Papawis page. ${x.flags.votes && x.slots?.length ? 'Vote for one below.' : 'Follow it to catch the next one.'}</p>
       <a class="crt-btn crt-btn--amber crt-btn--block" href="/papawis" data-cta="court-papawis">See Papawis runs</a>
-    </div>${partnerLine}</aside>`;
+    </div></aside>`;
   }
   const max = Number(r.max_slots) || 0;
   const conf = x.nextConfirmed ?? r.confirmed;
@@ -123,7 +125,7 @@ function runPanel(p, court, x) {
       ${x.nextPrice ? `<div class="crt-price"><b class="crt-num">₱${escHtml(String(x.nextPrice))}</b><span>per player${r.has_referee ? ' · ref included' : ''} · estimate</span></div>` : ''}
       <div class="crt-book__btns"><a class="crt-btn crt-btn--amber crt-btn--block" href="${href}" data-cta="court-signup">${full ? 'Join the waitlist' : 'Sign up'}</a>
         ${x.shareUrl ? `<button type="button" class="crt-btn crt-btn--ghost crt-btn--block" data-share="${escHtml(x.shareUrl)}" data-cta="court-share">${shareIcon(15)}<span>Share this run</span></button>` : ''}</div>
-    </div>${partnerLine}</aside>`;
+    </div></aside>`;
 }
 
 // ── Sections ──
@@ -219,7 +221,7 @@ function ratingsSection(p, court, x) {
       <div><span class="crt-rt__h">The court</span><div class="crt-rt__body">${R.aspects.length ? R.aspects.map(a => `<div class="crt-bar"><span>${escHtml(a.label)}</span><span class="crt-track" role="meter" aria-valuemin="0" aria-valuemax="5" aria-valuenow="${a.avg}" aria-label="${escHtml(`${a.label} ${a.avg} out of 5`)}"><i${a.avg < 3.5 ? ' class="lo"' : ''} style="width:${Math.round(a.avg / 5 * 100)}%"></i></span><em>${a.avg.toFixed(1)}</em></div>`).join('') : '<p class="crt-empty">No court scores yet.</p>'}</div></div>
     </div>
     ${R.good.length || R.bad.length ? `<div class="crt-tagline"><span>Players love</span><div>${R.good.map(t => `<span class="crt-pill">${escHtml(`${t.label} · ${t.n}`)}</span>`).join('') || '<span class="crt-muted">Nothing yet</span>'}${R.bad.length ? `<span class="crt-tagsep">Could be better</span>${R.bad.map(t => `<span class="crt-pill">${escHtml(`${t.label} · ${t.n}`)}</span>`).join('')}` : ''}</div></div>` : ''}`
-    : `<div class="crt-rate-empty"><b>${R.n ? `${plural(R.n, 'rating')} so far` : 'Ratings are open'}</b><span>${escHtml(`The score shows once ${RATING_MIN_FOR_SCORE} players have rated this court${R.n ? `: ${plural(left, 'more')} to go` : ''}. Only players who played a run or a league game here can rate it.`)}</span></div>`;
+    : `<div class="crt-rate-empty"><b>${R.n ? `${plural(R.n, 'rating')} so far` : 'Ratings are open'}</b><span>${escHtml(`The score shows once ${RATING_MIN_FOR_SCORE} players have rated this court${R.n ? `: ${left} more to go` : ''}. Only players who played a run or a league game here can rate it.`)}</span></div>`;
   const reviews = R.reviews.slice(0, 6).map(r => {
     const mine = x.viewerId === r.player_id;
     const on = x.helpfulByMe?.has(r.id);
@@ -322,7 +324,8 @@ const VENUE_ICON = {
 function there(p, court, x) {
   const info = p.info || {};
   const tags = courtInfoTags(info);
-  const notes = [['Court rental', info.rate], ['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
+  const hours = courtHoursLabel(info);
+  const notes = [['Opening hours', hours && `${hours}, every day (as the venue posts it)`], ['Court rental', info.rate], ['Phone', courtPhone(info)], ['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
   const links = courtLinks(info);
   // Only an exact pin (set by an admin) gets drawn: the address lookup can land on the city
   // centre, so without one the card links out to Google Maps' own search for the address.
@@ -355,7 +358,22 @@ function there(p, court, x) {
 // The Good to know questions (also the page's FAQPage structured data, via courtFaqItems).
 export function courtFaqItems(p, flags = {}) {
   const pw = p.numbers.papawis;
+  const info = p.info || {};
+  const feats = info.features || [];
+  const hours = courtHoursLabel(info);
+  const phone = courtPhone(info);
+  const transit = [feats.includes('near_mrt') && 'an MRT station', feats.includes('near_lrt') && 'an LRT station'].filter(Boolean).join(' and ');
+  const parking = feats.includes('free_parking') ? 'free' : feats.includes('paid_parking') ? 'paid' : '';
+  // Directions that only repeat the street address add nothing to "Where is".
+  const dirText = info.directions && info.directions !== p.street && !/^\d+\s/.test(info.directions) ? info.directions : '';
   return [
+    // The venue's own questions first (what people search: where, hours, parking, getting
+    // there), only from what an admin filled in. Then what WKND does there.
+    (p.street || info.building) && [`Where is ${p.name}?`, `${[info.building && `Inside ${info.building}`, p.street, p.city].filter(Boolean).join(', ')}.`],
+    hours && [`What are ${p.name}'s hours?`, `${p.name} is open ${hours}, every day, as the venue posts it.${phone ? ` Call ${phone} to check before you go.` : ''}`],
+    parking && [`Is there parking at ${p.name}?`, `Yes, ${parking} parking${info.building ? ` at ${info.building}` : ''}.`],
+    (dirText || transit) && [`How do I get to ${p.name}?`, [dirText, transit ? `It's near ${transit}.` : ''].filter(Boolean).join(' ')],
+    phone && !hours && [`How do I contact ${p.name}?`, `Call the venue at ${phone}.`],
     p.playedRuns && p.avgPrice && ['How much is a run here?', `About ₱${p.avgPrice} a player${p.usualHours ? ` for a ${p.usualHours}-hour run` : ''}${p.runSlots ? ` with ${p.runSlots} players` : ''}. The exact price is set per run and moves with the headcount.${pw.refereed === pw.runs ? ' The referee is included.' : ''}`],
     p.playedRuns && ['May ref ba?', pw.refereed === pw.runs ? `Yes. ${pw.runs === 1 ? 'The run' : `All ${pw.runs} runs`} here so far had a referee calling the game.` : `${pw.refereed} of ${pw.runs} runs here had a referee. Each run says whether it has one.`],
     ['How do I join a run?', 'Sign up on the Papawis page. When a run is full, join the waitlist and you’re in if someone drops.'],
@@ -363,7 +381,6 @@ export function courtFaqItems(p, flags = {}) {
     flags.requests && ['Can I book the court for my own group?', 'Yes. Send a request under Rent the court. The court confirms with you directly and you pay the court.'],
     // Court-specific answers, only from what an admin filled in or what was played here.
     p.finalsCount && [`Is there a basketball league at ${p.name}?`, `Yes. WKND Basketball plays league games here: ${plural(p.finalsCount, 'game')}${p.numbers.league.since ? ` since ${p.numbers.league.since}` : ''}, with box scores and recaps on the site. Sign-ups open before every season.`],
-    (p.street || p.info.building) && [`Where is ${p.name}?`, [`${[p.info.building && `Inside ${p.info.building}`, p.street, p.city].filter(Boolean).join(', ')}.`, p.info.directions && p.info.directions !== p.street && !/^\d+\s/.test(p.info.directions) ? p.info.directions : ''].filter(Boolean).join(' ')],
     !flags.requests && (courtLinks(p.info).some(l => l.key === 'booking') || p.info.rate) && [`Can I rent ${p.name} for my own group?`, [`Yes, book it directly with ${p.info.operator || 'the venue'}${courtLinks(p.info).some(l => l.key === 'booking') ? ' through their booking page (under Official links)' : ''}.`, p.info.rate ? `Posted rate: ${p.info.rate}.` : ''].filter(Boolean).join(' ')],
     p.altNames.length && [`Is this the same as ${p.altNames[0]}?`, `Yes. ${p.name} is also listed as ${p.altNames.join(' and ')}${p.info.operator ? `, run by ${p.info.operator}` : ''}.`],
   ].filter(Boolean);
@@ -667,14 +684,14 @@ export function courtPartnerPage({ court, p, ratings, flags }) {
     [String(pw.runs), 'runs hosted'], [String(p.checkins), 'check-ins'], [String(n.players), 'different players'],
     [String(p.firstHere), 'first Papawis ever'], [pw.fastestH != null ? dh(pw.fastestH) : '—', 'fastest sell-out'], [String(pw.waitlist), 'on waitlists'],
   ];
-  return `<div class="page-content crt">
+  return `<div class="page-content crt" data-cta-ref="court:${escHtml(court.id)}">
   <nav class="crt-crumbs crt-crumbs--top" aria-label="Breadcrumb"><a href="/courts/${encodeURIComponent(court.slug)}">${escHtml(p.name)}</a><span aria-hidden="true">/</span><span>Partner</span></nav>
   <div class="crt-top crt-top--partner">
     <section class="card crt-pt-hero">
       <span class="crt-kicker">For the ${escHtml(p.name)} team</span>
       <h1 class="crt-h1">${escHtml(`${plural(n.players, 'player')} have played at your court${since}`)}</h1>
       <p>WKND Basketball runs Papawis pickup games and league seasons around Makati, Mandaluyong and Pasig. Here’s what our games at your court look like, and what partner courts get. It costs nothing.</p>
-      <div class="crt-pt-btns"><a class="crt-btn crt-btn--amber" href="${MESSENGER_URL}" target="_blank" rel="noopener" data-cta="court-claim">Message us to claim this page</a><a class="crt-btn crt-btn--ghost" href="/courts/${encodeURIComponent(court.slug)}">See your court page</a></div>
+      <div class="crt-pt-btns"><a class="crt-btn crt-btn--amber" href="${escHtml(claimUrl(p.name, court.slug))}" target="_blank" rel="noopener" data-cta="court-claim">Message us to claim this page</a><a class="crt-btn crt-btn--ghost" href="/courts/${encodeURIComponent(court.slug)}">See your court page</a></div>
     </section>
     <aside class="card crt-badge" aria-label="Badge">
       ${badgeOk ? `<div class="crt-badge__row"><span class="crt-badge__ball"><b class="crt-num">${ratings.avg.toFixed(1)}</b></span><span class="crt-badge__txt"><span>WKND PLAYERS’ PICK</span><b>${escHtml(p.name)}</b><small>${escHtml(`Rated by ${plural(ratings.n, 'player')} · ${new Date().getFullYear()}`)}</small></span></div>
@@ -693,7 +710,7 @@ export function courtPartnerPage({ court, p, ratings, flags }) {
   <section class="crt-sec">${sh('Court report preview', { sub: n.since ? `since ${n.since}` : '' })}
     <div class="card"><div class="crt-report__head"><b>${escHtml(p.name)} × WKND</b><span class="crt-muted">What a partner court gets each month</span></div>
       <div class="crt-report">${report.map(([v, l]) => `<div><b class="crt-num">${escHtml(v)}</b><span>${escHtml(l)}</span></div>`).join('')}</div>
-      ${ratings && (ratings.good.length || ratings.bad.length) ? `<p class="crt-foot"><b>Players say:</b> ${escHtml(ratings.good.slice(0, 3).map(t => t.label.toLowerCase()).join(', '))}${ratings.bad.length ? `. Could be better: ${escHtml(ratings.bad.slice(0, 2).map(t => t.label.toLowerCase()).join(', '))}` : ''}.</p>` : ''}
+      ${ratings && ratings.good.length ? `<p class="crt-foot"><b>Players say:</b> ${escHtml(ratings.good.slice(0, 3).map(t => t.label.toLowerCase()).join(', '))}${ratings.showScore && ratings.bad.length ? `. Could be better: ${escHtml(ratings.bad.slice(0, 2).map(t => t.label.toLowerCase()).join(', '))}` : ''}.</p>` : ''}
     </div></section>
   <section class="crt-sec">${sh('How it works')}<div class="card crt-faq">
     <details open><summary>Does it cost anything?</summary><p>No. Partner courts pay nothing, and we keep renting your court the way we do now.</p></details>
