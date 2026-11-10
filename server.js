@@ -22988,6 +22988,8 @@ ${facts}`;
       provider = `${out.provider}${out.model ? ` ${out.model}` : ''}`;
       const d = out.data || {};
       if (Array.isArray(d.plays)) {
+        // Oldest first and once each, whatever order they came back in.
+        d.plays = d.plays.filter((x, i, all) => all.findIndex(y => Number(y.play) === Number(x.play)) === i).sort((x, y) => Number(x.play) - Number(y.play));
         while (d.plays.length > 7) { const i = d.plays.findIndex(x => !x.big); d.plays.splice(i < 0 ? 0 : i, 1); }
         // At most 3 big: the latest ones keep it (the finish decides a game).
         let bigs = d.plays.filter(x => x.big).length;
