@@ -17608,7 +17608,7 @@ function matchupStoryFacts(m) {
   const scorerLines = m.scorers.filter(Boolean).map(s => `${s.name} (${T(s.team)}) ${s.ppg.toFixed(1)} points per game against ${T(s.opp)} over ${s.games} games, scoring ${s.series.join(', ')} in those games, oldest first`);
   const basis = m.firstMeeting
     ? `The two teams have not met before. Per-game averages below are each team's Season ${m.season} games against anyone.`
-    : `Head to head since Season 3 (every meeting: regular season and playoffs, earlier games of this series included; this is not the series score): ${m.meetings} meetings, ${T(m.a)} has won ${m.winsA}, ${T(m.b)} has won ${m.winsB}.\nMost recent meetings, newest first: ${meetLines.join('; ')}.\nPer-game averages in their meetings${m.boxMeetings < m.meetings ? ` (box-score stats exist for ${m.boxMeetings} of the ${m.meetings} meetings; points cover all of them)` : ''}:`;
+    : `Head to head since Season 3 (every meeting: regular season and playoffs, earlier games of this series included; this is not the series score): ${m.meetings} meetings, ${T(m.a)} has won ${m.winsA}, ${T(m.b)} has won ${m.winsB} (${Math.max(m.winsA, m.winsB)}-${Math.min(m.winsA, m.winsB)} all-time).\nMost recent meetings, newest first: ${meetLines.join('; ')}.\nPer-game averages in their meetings${m.boxMeetings < m.meetings ? ` (box-score stats exist for ${m.boxMeetings} of the ${m.meetings} meetings; points cover all of them)` : ''}:`;
   // What the game is (the round, the game number, what it decides): a semifinal used to read
   // exactly like a regular-season game. Records are the regular season's.
   const situation = gameSituationBefore(m.game);
@@ -20289,7 +20289,7 @@ function picksSummaryFacts(w) {
       const parts = [`${title(g.a)} (${g.recA.w}-${g.recA.l} in the regular season) vs ${title(g.b)} (${g.recB.w}-${g.recB.l} in the regular season)`];
       if (sit) parts.unshift(sit.replace(/\.$/, ''));
       if (g.marginGuess) parts.push('Finals Game 1 also asks pickers to guess the winning margin (the Pickmaster tiebreaker)');
-      parts.push(g.h2h.meetings ? `all-time head to head ${title(g.a)} ${g.h2h.a}, ${title(g.b)} ${g.h2h.b}` : 'first ever meeting');
+      parts.push(g.h2h.meetings ? `all-time head to head ${title(g.a)} ${g.h2h.a}, ${title(g.b)} ${g.h2h.b} (${Math.max(g.h2h.a, g.h2h.b)}-${Math.min(g.h2h.a, g.h2h.b)} all-time)` : 'first ever meeting');
       if (g.odds?.fav) parts.push(`the odds favour ${title(g.odds.fav === 'a' ? g.a : g.b)} at ${g.odds.fav === 'a' ? g.odds.pctA : g.odds.pctB}%`);
       const lean = leanOf(g);
       if (lean) parts.push(`most pickers so far are taking ${lean}`);
