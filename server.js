@@ -26832,6 +26832,9 @@ function courtCityPageData(slug) {
   return { city, slug, live, others, cities: courtCities(all), summary, intro: getSetting(`seo_city_intro_${slug}`, '') };
 }
 
+// Until WKND has played Activate Battlegrounds (Paolo, 2026-11-11), its page sends visitors to
+// Hoop Arena. Only while the court isn't live: publishing it ends the redirect by itself.
+const COURT_STAND_INS = { 'activate-battlegrounds': 'activate-hoop-arena' };
 app.get('/courts/:slug', (req, res, next) => {
   if (CITY_PAGES[req.params.slug]) {
     const d = courtCityPageData(req.params.slug);
@@ -26863,8 +26866,9 @@ app.get('/courts/:slug', (req, res, next) => {
   const notFound = () => res.status(404).send(renderPage(req, { title: 'Not Found', currentPath: '/papawis', body: '<div class="container"><p style="padding:40px;color:var(--text-muted)">Court not found.</p></div>' }));
   if (!court) return notFound();
   const { p, games } = courtPageData(court);
-  // A hidden or not-yet-played court: admins can still preview it, everyone else gets a 404.
-  if (!p.live && !req.session?.isAdmin) return notFound();
+  // A hidden or not-yet-played court: admins can still preview it, everyone else gets a 404,
+  // or a temporary redirect to a sister court we do play at (COURT_STAND_INS).
+  if (!p.live && !req.session?.isAdmin) return COURT_STAND_INS[court.slug] ? res.redirect(302, `/courts/${COURT_STAND_INS[court.slug]}`) : notFound();
   trackEntityView(req, 'court', court.id);
   // A star tapped in the rating email while logged out: log in first, then back here with
   // the stars picked.
