@@ -6255,7 +6255,7 @@ import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
 import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince, addBarkadahanGreeting, getBarkadahanGreeting, getBarkadahanGreetedIds, getBarkadahanGreets, toggleBarkadahanGreet, addBarkadahanGreets, setBarkadahanWish, hasOpenedBarkadahan } from './lib/portal-db.js';
-import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
+import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, getScorerSpot, setScorerSpot, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
@@ -7587,7 +7587,7 @@ app.get('/app/practice/play', requireApp, requireScoringMenu, (req, res) => {
   const bundle = { ...base, opensAt: 0, status: 'live', events: [], rules: { ...base.rules, periodMin: q },
     practice: { id, log: `/api/practice/${id}`, teams: [ta.name, tb.name] }, over: { finish: 'practice', back: '/app/practice', review: false } };
   res.set('Cache-Control', 'private, no-store');
-  sendApp(res, { title: `Practice · ${ta.name} vs ${tb.name} · WKND`, bare: true, body: appScorerPage({ bundle, back: { href: '/app/practice', label: 'Practice' } }) });
+  sendApp(res, { title: `Practice · ${ta.name} vs ${tb.name} · WKND`, bare: true, body: appScorerPage({ bundle, back: { href: '/app/practice', label: 'Practice' }, spot: scorerSpotFor(req) }) });
 });
 // How far a practice got (public/scorer.js report): never the plays themselves.
 app.post('/api/practice/:id', requireAppData, express.json(), (req, res) => {
@@ -7654,7 +7654,7 @@ app.get('/app/papawis/practice/play', requireApp, requirePwScoring, (req, res) =
     over: { back: '/app/papawis/practice' },
   };
   res.set('Cache-Control', 'private, no-store');
-  sendApp(res, { title: 'Practice run · WKND', bare: true, body: appScorerPage({ bundle, back: { href: '/app/papawis/practice', label: 'Practice' } }) });
+  sendApp(res, { title: 'Practice run · WKND', bare: true, body: appScorerPage({ bundle, back: { href: '/app/papawis/practice', label: 'Practice' }, spot: scorerSpotFor(req) }) });
 });
 app.get('/app/help/papawis', requireApp, requirePwScoring, (req, res) => {
   sendTab(res, appMe(req), { title: 'How to score Papawis · WKND', tab: 'me', body: appScorerGuidePage({ back: { href: '/app/scoring', label: 'Scoring' }, opts: PW_GUIDE_OPTS }) });
@@ -8097,7 +8097,7 @@ const sendScorer = (req, res, back) => {
   const sg = getScoreGame(game.id);
   const isReview = pass === 'video' || !!sg.settings.review || !!sg.settings.reviewOnly;
   const bundle = { ...scoreBundle(game, pass), over: { review: isReview, publish: isReview && access === 'admin' && req.session?.isAdmin ? `/admin/games/${encodeURIComponent(game.id)}/scoring/publish` : '', finish: !isReview && pass === 'live' ? `/api/score/${encodeURIComponent(game.id)}/finish` : '', official: gameFinalSet(game) ? { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 } : null, back: back.href, liveOff: sg.settings.live_public === false } };
-  sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle, back }) });
+  sendApp(res, { title: `Scoring · ${scoreGameTitle(game)} · WKND`, bare: true, body: appScorerPage({ bundle, back, spot: scorerSpotFor(req) }) });
 };
 app.get('/app/score/:id', requireApp, (req, res) => {
   // A review (a video re-track, or one under way): Back goes to the game and its Review card.
@@ -8131,6 +8131,19 @@ app.get('/admin/games/:id/score', requireAuth, (req, res) => sendScorer(req, res
 const scoreLanes = createLanes();
 // The last few play times per phone, for the impossibly-fast check (POST events).
 const scoreTapLog = new Map();
+// Spotter (2026-11-10): the scorer's own follow-up questions, saved to their account so they
+// follow them to any phone. The phone keeps a copy and sends it here on every change (and on
+// opening, if its copy is newer). An admin signed in without a player account keeps it on the phone.
+const scorerSpotFor = req => getScorerSpot(req.session?.playerPlayerId) || null;
+app.post('/api/score/spot', express.json(), (req, res) => {
+  const pid = req.session?.playerPlayerId;
+  if (!pid) return res.status(204).end();
+  const cur = getScorerSpot(pid);
+  if (cur && Number(cur.at) >= Number(req.body?.at || 0)) return res.json({ ok: true, spot: cur });
+  const spot = setScorerSpot(pid, req.body || {});
+  if (!spot) return res.status(400).json({ error: 'Not a Spotter setting.' });
+  res.json({ ok: true, spot });
+});
 app.post('/api/score/:id/lanes', express.json(), (req, res) => {
   const game = getGameById(req.params.id);
   if (!game) return res.status(404).json({ error: 'Game not found.' });
@@ -8638,7 +8651,7 @@ function sendPapawisScorer(req, res, back) {
   if (!run) return say(404, 'This run isn’t on the list.');
   if (!pwScoreAccess(req, run)) return say(403, 'Papawis runs are scored by Papawis scorers. An admin adds you in Papawis → Scorers.');
   res.set('Cache-Control', 'private, no-store');
-  sendApp(res, { title: `Scoring · ${run.title || 'Papawis'} · WKND`, bare: true, body: appScorerPage({ bundle: pwScoreBundle(run), back }) });
+  sendApp(res, { title: `Scoring · ${run.title || 'Papawis'} · WKND`, bare: true, body: appScorerPage({ bundle: pwScoreBundle(run), back, spot: scorerSpotFor(req) }) });
 }
 function pwScoreEventsGet(req, res) {
   const run = pwRunOfScore(req.params.id);

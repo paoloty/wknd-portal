@@ -57,13 +57,33 @@ const WHISTLES = new Set(['foul', 'timeout', 'team_tech', 'team_to', 'stoppage']
 // the skip button, a tap on empty space, or by themselves after FOLLOW_MS. The foul panel (free throws owed) is not a follow-up: it stays until answered.
 const OPTIONAL = new Set(['ast', 'lost', 'blocked', 'wentoff', 'andone', 'foulout', 'rebound']);
 // Menus (team stats, foul kind, Fix…) close the same ways, minus the timer: the scorer opened them.
-const CLOSABLE = new Set([...OPTIONAL, 'menu']);
+const CLOSABLE = new Set([...OPTIONAL, 'menu', 'spot']);
 const FOLLOW_MS = 12000;
 // Rebound? is the most frequent question and the moment passes fastest (Fable review, 2026-10-27).
 const followMs = a => (a.kind === 'rebound' ? 8000 : FOLLOW_MS);
 // The follow-ups the Follow-up questions switch (game menu, per phone) turns off. Not Who comes on?
 // (a foul-out needs a sub), the and-one's Who fouled? (the scorer asked for it), nor free throws.
 const SKIPPABLE = new Set(['rebound', 'ast', 'lost', 'blocked', 'wentoff']);
+// Spotter (Paolo, 2026-11-10, mockup claude.ai/artifact/JZrmjV3ww94BnmU9wRV6Ym): the scorer's own
+// pick of those questions, saved to their account (POST /api/score/spot) with a copy on the
+// phone. Two lists: full (league games, Papawis Full) and basic (Papawis Basic: makes, REB and
+// AST, so only Assisted? and Who went off? can come up). Presets Off / Light / Full; any other
+// pick is "Your mix". Basic starts Off (as before); full starts Full, or Off for a phone that
+// had the old Follow-up questions switch off.
+const SPOT = { full: ['rebound', 'ast', 'lost', 'blocked', 'wentoff'], basic: ['ast', 'wentoff'] };
+const SPOT_PRESETS = { full: { off: [], light: ['rebound', 'ast'], full: SPOT.full }, basic: { off: [], light: ['ast'], full: SPOT.basic } };
+const SPOT_NAMES = { off: 'Off', light: 'Light', full: 'Full', mix: 'Your mix' };
+const SPOT_Q = {
+  rebound: ['Rebound?', 'After a miss: the offensive or defensive board'],
+  ast: ['Assisted?', 'After a made basket: the assist'],
+  lost: ['Who lost it?', 'After a steal: the turnover'],
+  blocked: ['Whose shot?', 'After a block: their missed shot'],
+  wentoff: ['Who went off?', 'When a bench player makes a play: who sat'],
+};
+const SPOT_BLURB = {
+  full: { off: 'No questions: just the play you tap. Foul-outs and free throws still ask.', light: 'Rebound? and Assisted? only: the two that fill most of the box score.', full: 'Every question, for the most complete stats.', mix: 'Your own pick. Tap Off, Light or Full to go back to one.' },
+  basic: { off: 'No questions: one tap per play.', light: 'Assisted? after a made basket.', full: 'Assisted? after a made basket, and who sat when a bench player makes a play.', mix: 'Your own pick. Tap Off, Light or Full to go back to one.' },
+};
 // Reduced motion: no countdown at all; a follow-up stays until answered, skipped or the next play.
 const calm = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Someone asks for this phone's side: the alert counts down this long, then it's a no.
@@ -247,7 +267,7 @@ export async function mount(el) {
   }
   // Plays the server set aside as late (POST answer) stay on the phone but out of its game.
   const counted = () => list().filter(e => !e.late && (!pw || gameOf(e) === ui.game));
-  // Papawis Basic stats: makes only, REB and AST, no follow-ups.
+  // Papawis Basic stats: makes only, REB and AST; the Spotter's basic list (Assisted?, Who went off?).
   const basic = () => !!pw && (setupFor(ui.game) || {}).stats !== 'full';
   const unsent = () => list().filter(e => !sent.has(e.id));
   // Everything is on the phone after every change: the plays, what's been sent, and the clock
@@ -577,9 +597,17 @@ export async function mount(el) {
   }
   const other = t => (t === 'a' ? 'b' : 'a');
   const soundOn = () => pref.get('wknd-sc-sound', 'on') !== 'off';
-  // Follow-up questions (Paolo, 2026-10-27): on by default; a scorer who knows the game can turn
-  // off the optional ones (SKIPPABLE) on their phone.
-  const followOn = () => !basic() && pref.get('wknd-sc-follow', 'on') !== 'off';
+  // Spotter (see SPOT): the newer of the account's copy (B.spot) and this phone's wins.
+  const spotMode = () => (basic() ? 'basic' : 'full');
+  const spotOk = v => !!v && Array.isArray(v.full) && Array.isArray(v.basic);
+  const spotLocal = (() => { try { return JSON.parse(pref.get('wknd-sc-spot', '') || 'null'); } catch (e) { return null; } })();
+  let spot = [B.spot, spotLocal].filter(spotOk).sort((x, y) => (Number(y.at) || 0) - (Number(x.at) || 0))[0]
+    || { full: pref.get('wknd-sc-follow', 'on') === 'off' ? [] : SPOT.full.slice(), basic: [], at: 0 };
+  const spotSend = () => { try { fetch('/api/score/spot', { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spot) }).catch(() => {}); } catch (e) {} };
+  if (spot === spotLocal && spot.at > ((B.spot && Number(B.spot.at)) || 0)) spotSend();
+  const setSpot = list => { spot = { ...spot, [spotMode()]: SPOT[spotMode()].filter(k => list.includes(k)), at: Date.now() }; pref.set('wknd-sc-spot', JSON.stringify(spot)); spotSend(); };
+  const spotOn = kind => spot[spotMode()].includes(kind);
+  const spotPreset = () => { const on = spot[spotMode()], P = SPOT_PRESETS[spotMode()]; return Object.keys(P).find(k => P[k].length === on.length && P[k].every(x => on.includes(x))) || 'mix'; };
   const periodSecs = () => (isOvertime(G.period) ? rules.otMin : rules.periodMin) * 60;
   // Which five: the five who played last (topped up from the roster). Where they sit: tiles
   // never move (Paolo, 2026-10-25: the scorer learns where a player is). A player coming in
@@ -766,6 +794,7 @@ export async function mount(el) {
       if (id) { const tiles = [...five(a.team)], auto = tiles.find(x => !G.lastActive[a.team].includes(x)); add({ type: 'sub', team: a.team, in: id, out: a.pid }); if (auto && auto !== id) slots[a.team] = tiles.map(x => (x === auto ? id : x)); }
       ui.ask = null;
     } else if (a.kind === 'menu') { ui.ask = null; if (id === '__cancel') return paint(); a.act(id); return; }
+    else if (a.kind === 'spot') ui.ask = null;
     paint();
   }
   // Every menu ends with Cancel: closes it, nothing saved.
@@ -934,7 +963,7 @@ export async function mount(el) {
     if (phone && file && navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file], title: 'My plays' }).catch(err => { if (!err || err.name !== 'AbortError') download(); });
     download();
   }
-  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ...(basic() ? [] : [['follow', followOn() ? 'Follow-up questions: on (tap to turn off)' : 'Follow-up questions: off (tap to turn on)']]), ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : []),
+  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ['spot', `Spotter: ${SPOT_NAMES[spotPreset()]} ›`], ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : []),
     ...(!wide.matches ? [['thumb', thumbOn() ? 'Thumb mode: on (tap to turn off)' : 'Thumb mode: off (tap to turn on)'], ...(thumbOn() ? [['hand', leftHand() ? 'Hand: left (tap for right)' : 'Hand: right (tap for left)']] : [])] : []),
     ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game of this run…']] : []), ...(pw ? [['pw-finish', 'Finish the run…']] : []), ['table', tblOn() ? 'Table display: linked ✓' : 'Table display (tablet)…']], k => {
     if (k === 'send') return sendMyPlays();
@@ -943,7 +972,7 @@ export async function mount(el) {
     if (k === 'pw-finish') { if (unsent().length) { ui.tip = `Finish the run once every play is sent: ${unsent().length} still on this phone.`; return paint(); } location.href = pw.finish; return; }
     if (k === 'table') return tableOpen();
     if (k === 'sheet') { ui.sheet = true; return paint(); }
-    if (k === 'follow') { pref.set('wknd-sc-follow', followOn() ? 'off' : 'on'); ui.tip = followOn() ? 'Follow-up questions on: Rebound?, Assisted? and the rest.' : 'Follow-up questions off. Foul-outs and free throws still ask.'; return paint(); }
+    if (k === 'spot') { ui.ask = { kind: 'spot', opened: Date.now() }; return paint(); }
     if (k === 'thumb') { pref.set(thumbKey, thumbOn() ? 'off' : 'on'); ui.tip = thumbOn() ? 'Thumb mode on: everything you tap is in the bottom half.' : 'Thumb mode off.'; return paint(); }
     if (k === 'hand') { pref.set('wknd-sc-hand', leftHand() ? 'right' : 'left'); ui.tip = leftHand() ? 'Left hand: the clock and buttons mirror to your side.' : 'Right hand.'; return paint(); }
     if (k === 'sound') { pref.set('wknd-sc-sound', soundOn() ? 'off' : 'on'); ui.tip = soundOn() ? 'Sounds on.' : 'Sounds off.'; if (soundOn()) chime('yes'); return paint(); }
@@ -1347,6 +1376,18 @@ export async function mount(el) {
     return `<div class="sc-q sc-q--line${timed ? ' sc-q--timed' : ''}" role="group" aria-label="${esc(a.q)} ${esc(HINTS[a.kind] || 'Tap a player')}. Optional"><div class="sc-q__h"><b>${esc(a.q)}</b><small class="sc-q__hint">${esc(HINTS[a.kind] || 'Tap a player')}</small><span class="sc-q__sp"></span>${extra}<button type="button" class="sc-q__skip" data-ask="">${esc(a.skip)}</button></div>
       ${loose.length ? `<div class="sc-q__opts">${loose.map(id => optBtn(id)).join('')}</div>` : ''}${timed ? `<i class="sc-q__timer" style="animation-duration:${ms}ms;animation-delay:-${gone}ms" aria-hidden="true"></i>` : ''}</div>`;
   };
+  // The Spotter panel (••• → Spotter): a preset, then a switch per question this game can ask.
+  function spotPanel() {
+    const m = spotMode(), cur = spotPreset(), on = spot[m];
+    const seg = Object.keys(SPOT_PRESETS[m]).map(k => `<button type="button" class="${cur === k ? 'on' : ''}" data-spot-preset="${k}" aria-pressed="${cur === k}">${SPOT_NAMES[k]}</button>`).join('');
+    const rows = SPOT[m].map(k => `<button type="button" class="sc-spot__row" role="switch" aria-checked="${on.includes(k)}" data-spot-kind="${k}"><span class="sc-spot__t"><b>${esc(SPOT_Q[k][0])}</b><small>${esc(SPOT_Q[k][1])}</small></span><span class="sc-spot__sw" aria-hidden="true"></span></button>`).join('');
+    const always = m === 'full' ? '<p class="sc-spot__always">Always asked: Who comes on? after a foul-out, the and-one\'s Who fouled?, and free throws.</p>' : '';
+    return `<div class="sc-q sc-q--menu sc-spot" role="group" aria-label="Spotter"><div class="sc-q__h"><b>Spotter${m === 'basic' ? ' · Basic stats' : ''}</b><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
+      <p class="sc-spot__sub">The questions after a play. Yours, on any phone you score on.</p>
+      <div class="sc-spot__seg" role="group" aria-label="Preset">${seg}</div>
+      <p class="sc-spot__blurb">${esc(SPOT_BLURB[m][cur])}</p>
+      <div class="sc-spot__list">${rows}</div>${always}</div>`;
+  }
   function question() {
     const a = ui.ask;
     if (a && a.kind === 'fp') {
@@ -1376,6 +1417,7 @@ export async function mount(el) {
     }
     if (a && a.kind === 'fix') return fixPanel(a);
     if (a && a.kind === 'menu' && a.tm) return teamMenuPanel(a.tm);
+    if (a && a.kind === 'spot') return spotPanel();
     if (a && a.kind === 'menu') {
       const chips = opts => `<div class="sc-menu">${opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}"${String(o.id).startsWith('wait:') ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>`;
       return `<div class="sc-q sc-q--menu" role="group" aria-label="${esc(a.q)}"><div class="sc-q__h"><b>${esc(a.q)}</b><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
@@ -1440,7 +1482,7 @@ export async function mount(el) {
   const pad = () => {
     const arm = k => (ui.arm && ui.arm.key === k ? ' arm' : '');
     const lab = p => (p === 1 ? 'FT' : p + 'PT');
-    // Papawis Basic: makes only, then REB and AST. One tap per play, no follow-ups.
+    // Papawis Basic: makes only, then REB and AST. One tap per play; Spotter questions only if the scorer turned them on.
     if (basic()) return `<div class="sc-pad sc-pad--${shots.length} sc-pad--basic">
         ${shots.map(p => `<button type="button" class="sc-st sc-st--made${arm(`s${p}m`)}" data-shot="${p}" data-made="1" aria-pressed="${!!arm(`s${p}m`)}" aria-label="${lab(p)} made">${lab(p)}</button>`).join('')}
       </div>
@@ -2052,7 +2094,7 @@ export async function mount(el) {
     if (pw && !setupFor(ui.game) && !ui.locked) { root.innerHTML = suShell(setupView().replace('<div class="su">', `<div class="su">${practice ? tipBox() : ''}`)); ui.tip = ''; paintPill(); return; }
     // A practice run's Finish the run: what a real one does, from this phone's plays.
     if (pw && practice && ui.pracFinish) { root.innerHTML = pracFinishView(); paintPill(); return; }
-    const quiet = a => !!a && SKIPPABLE.has(a.kind) && !followOn();
+    const quiet = a => !!a && SKIPPABLE.has(a.kind) && !spotOn(a.kind);
     if (quiet(ui.ask)) ui.ask = null;
     while (!ui.ask && ui.queue.length && !ui.subs && !ui.dnp) { ui.ask = ui.queue.shift(); if (quiet(ui.ask)) ui.ask = null; }
     clockNow();
@@ -2249,6 +2291,8 @@ export async function mount(el) {
     if (b.hasAttribute('data-pick')) return pickPlayer(b.getAttribute('data-pick'));
     // A menu just opened (a hold, the team's name): the lifting finger's tap isn't a choice.
     if (b.hasAttribute('data-ask')) return ui.ask && ui.ask.kind === 'menu' && Date.now() - (ui.ask.opened || 0) < 300 ? undefined : answer(b.getAttribute('data-ask'));
+    if (b.hasAttribute('data-spot-preset')) { setSpot(SPOT_PRESETS[spotMode()][b.getAttribute('data-spot-preset')] || []); return paint(); }
+    if (b.hasAttribute('data-spot-kind')) { const k = b.getAttribute('data-spot-kind'); setSpot(spotOn(k) ? spot[spotMode()].filter(x => x !== k) : [...spot[spotMode()], k]); return paint(); }
     if (b.hasAttribute('data-fix')) return fixMenu(b.getAttribute('data-fix'));
     if (b.hasAttribute('data-fx')) return ui.ask && ui.ask.kind === 'fix' && Date.now() - (ui.ask.opened || 0) < 300 ? undefined : fixAct(b.getAttribute('data-fx'));
     if (b.hasAttribute('data-fxwho')) return ui.ask && ui.ask.kind === 'fix' && ui.ask.step === 'who' ? fixWho(b.getAttribute('data-fxwho')) : undefined;

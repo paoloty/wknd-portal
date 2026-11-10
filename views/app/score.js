@@ -23,10 +23,11 @@ export function appScorerListPage({ games, back }) {
 }
 
 // bundle: server.js scoreBundle(). back: { href, label }. readOnly: published (nothing to add).
-export function appScorerPage({ bundle, back }) {
+// spot: the scorer's Spotter setting from their account (server.js scorerSpotFor), or null.
+export function appScorerPage({ bundle, back, spot = null }) {
   // </script> can't appear inside the JSON (player names are escaped by JSON already, but
   // a "<" is turned into its unicode form to be safe).
-  const json = JSON.stringify(bundle).replace(/</g, '\\u003c');
+  const json = JSON.stringify({ ...bundle, spot }).replace(/</g, '\\u003c');
   const video = bundle.pass === 'video';
   // A practice game: a slim amber strip across the top that never goes away (Paolo, 2026-10-27).
   const prac = bundle.practice ? `<div class="sc-prac" role="note"><b class="num">PRACTICE</b><span>· only on this phone</span><button type="button" data-prac-reset>Reset</button></div>` : '';

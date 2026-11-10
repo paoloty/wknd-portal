@@ -34,7 +34,16 @@ test('the special cases are explained: a block asks twice, the questions switch 
   // Block: Whose shot? then Rebound? (public/scorer.js answer 'blocked' → reboundAsk only if answered).
   assert.match(scorer, /ui\.ask = id \? reboundAsk\(a\.o\) : null/, 'the block still asks Rebound? only after Whose shot? is answered: update the guide if this changed');
   assert.ok(/after a block: up to two questions/i.test(guide), 'the guide explains the block’s two questions');
-  assert.ok(/turning the questions off/i.test(guide) && guide.includes('Follow-up questions: on'), 'the guide shows how to switch the questions off');
+  assert.ok(/the spotter: pick your questions/i.test(guide) && guide.includes('Spotter') && /\bLight\b/.test(guide), 'the guide shows how to pick the questions (the Spotter)');
+});
+
+// The Spotter (2026-11-10): every preset and every question it can switch off are in the guides,
+// and Papawis Basic's trimmed list is explained in the Papawis guide.
+test('the Spotter: presets and questions are explained', () => {
+  assert.match(scorer, /SPOT = \{ full: \[[^\]]*\], basic: \['ast', 'wentoff'\] \}/, 'the Spotter lists changed: update both guides');
+  for (const s of ['Off', 'Light', 'Full', 'Your mix']) assert.ok(guide.includes(s), `the league guide names the "${s}" preset`);
+  const pw = PW_SCORER_GUIDE.flatMap(ch => [ch.title, ...ch.blocks.flat(2)]).join(' ').replace(/<[^>]+>/g, '');
+  for (const s of ['Spotter', 'Assisted?', 'Who went off?']) assert.ok(pw.includes(s), `the Papawis guide explains "${s}"`);
 });
 
 test('the Try tips moves are covered by the guide', () => {

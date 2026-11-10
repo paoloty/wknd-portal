@@ -70,14 +70,15 @@ export const SCORER_GUIDE = [
         '<b>Rebound?</b> comes straight after. Tap who got the ball.',
         'Skip <b>Whose shot?</b> and the scorer doesn’t ask about the rebound either.',
       ]],
-      ['h', 'Turning the questions off'],
-      ['p', 'Know the game well and want fewer taps? You can switch the questions off on your phone.'],
+      ['h', 'The Spotter: pick your questions'],
+      ['p', 'On a stat crew, the spotter is the one who calls out who got the board or the assist. Here the Spotter is your setting for these questions: all of them, a few, or none.'],
       ['steps', [
         'Tap <b>•••</b> beside the clock to open the game menu.',
-        'Tap <b>Follow-up questions: on</b>. It changes to <i>off</i>.',
-        'Tap it again any time to turn the questions back on.',
+        'Tap <b>Spotter</b>. It shows what you have now: <i>Off</i>, <i>Light</i>, <i>Full</i> or <i>Your mix</i>.',
+        'Pick <b>Off</b> (no questions), <b>Light</b> (Rebound? and Assisted? only) or <b>Full</b> (every question).',
+        'Or switch single questions on and off below. Anything that isn’t one of the three shows as <i>Your mix</i>.',
       ]],
-      ['tip', 'Good to know', 'With the questions off, you won’t be asked Rebound?, Assisted?, Who lost it?, Whose shot? or Who went off?. Record those plays with the stat buttons instead. Who comes on? after a foul-out, the and-one’s Who fouled? and the free throws always ask. The switch is only for your phone.'],
+      ['tip', 'Good to know', 'The Spotter is yours: it’s saved to your account, so it’s the same on any phone you score on. A question you’ve switched off isn’t asked; record that play with the stat buttons instead. Who comes on? after a foul-out, the and-one’s Who fouled? and the free throws always ask. Full is where everyone starts.'],
       ['h', 'If it goes wrong'],
       ['p', 'Tapped the wrong player? Tap <b>Undo</b> on the last play and answer again.'],
     ],
@@ -257,7 +258,7 @@ export const PW_SCORER_GUIDE = [
   },
   {
     slug: 'basic', title: 'Scoring: Basic stats', blocks: [
-      ['p', 'Basic records the makes, rebounds and assists. One tap for the player, one for what they did. No misses, no follow-up questions.'],
+      ['p', 'Basic records the makes, rebounds and assists. One tap for the player, one for what they did. No misses, and no questions after a play unless you ask for them (the Spotter, below).'],
       ['img', 'basic.jpg', 'Basic stats: the players at the bottom, then FT, 2PT, 3PT, REB, AST and ⇄.'],
       ['steps', [
         '<b>A basket:</b> tap the player, then <b>2PT</b> or <b>3PT</b> (or <b>4PT</b> at a court with a 4-point line). The other way round works too.',
@@ -270,7 +271,15 @@ export const PW_SCORER_GUIDE = [
         ['A guest', 'The card’s border is dashed.'],
         ['Two with one surname', 'Their first initials tell them apart: <i>T. BRINGAS</i>, <i>JP BRINGAS</i>.'],
       ]],
-      ['tip', 'Good to know', 'Full stats work like a league game: misses, the Rebound? and Assisted? questions, steals, blocks, turnovers and fouls. How to score (the league guide) explains each.'],
+      ['h', 'The Spotter: Assisted? after a basket'],
+      ['p', 'Want the assists without remembering to tap AST? Turn on the Spotter and the scorer asks after each made basket. It starts off, so Basic stays one tap per play until you choose.'],
+      ['steps', [
+        'Tap <b>•••</b>, then <b>Spotter: Off</b>.',
+        '<b>Light</b> asks <b>Assisted?</b> after a made 2PT, 3PT or 4PT. Tap who passed, or <i>No assist</i>.',
+        '<b>Full</b> also asks <b>Who went off?</b> when a player from the bench makes a play, so the five on the court stay right.',
+        '<b>Off</b> goes back to no questions. You can also switch each one on or off by itself.',
+      ]],
+      ['tip', 'Good to know', 'The Spotter is saved to your account, so it follows you to any phone. Basic and Full stats keep their own setting: questions on for league games don’t turn them on for a Basic run. Full stats work like a league game: misses, the Rebound? and Assisted? questions, steals, blocks, turnovers and fouls. How to score (the league guide) explains each.'],
     ],
   },
   {
