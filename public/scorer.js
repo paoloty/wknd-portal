@@ -963,7 +963,7 @@ export async function mount(el) {
     if (phone && file && navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file], title: 'My plays' }).catch(err => { if (!err || err.name !== 'AbortError') download(); });
     download();
   }
-  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ['send', `Send my plays (${list().length})…`], ['spot', `Spotter: ${SPOT_NAMES[spotPreset()]} ›`], ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : []),
+  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ...(video && B.over && B.over.compare ? [['compare', 'Compare with the saved box score']] : []), ['send', `Send my plays (${list().length})…`], ['spot', `Spotter: ${SPOT_NAMES[spotPreset()]} ›`], ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : []),
     ...(!wide.matches ? [['thumb', thumbOn() ? 'Thumb mode: on (tap to turn off)' : 'Thumb mode: off (tap to turn on)'], ...(thumbOn() ? [['hand', leftHand() ? 'Hand: left (tap for right)' : 'Hand: right (tap for left)']] : [])] : []),
     ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game of this run…']] : []), ...(pw ? [['pw-finish', 'Finish the run…']] : []), ['table', tblOn() ? 'Table display: linked ✓' : 'Table display (tablet)…']], k => {
     if (k === 'send') return sendMyPlays();
@@ -980,6 +980,8 @@ export async function mount(el) {
     if (k === 'end') return endPeriod();
     if (k === 'clock') return clockMenu();
     if (k === 'video') { ui.showVideo = !ui.showVideo; showVideo(); return paint(); }
+    // A re-track of a saved box score: the compare so far (every play this phone has is saved on it).
+    if (k === 'compare') { if (unsent().length) { ui.tip = 'Every play has to be saved first: wait for signal.'; return paint(); } location.href = B.over.compare; return; }
   });
 
   // ── Subs ──
@@ -1693,6 +1695,12 @@ export async function mount(el) {
     const O = B.over || {};
     const back = O.back ? `<a class="sc-over__btn sc-over__btn--ghost" href="${esc(O.back)}">${practice ? 'Back to practice' : O.review ? 'Back to the game' : 'Back to games'}</a>` : '';
     // Saved: the next step, the POTG and the recap (the site's Content tab).
+    // A re-track of a saved box score (2026-11-10): the compare, where it's replaced or kept.
+    if (O.compare && !ui.locked) {
+      return `<div class="sc-over" role="status"><div class="sc-over__h"><b>Game over</b><span class="num">${esc(team.a.name)} ${G.score.a}–${G.score.b} ${esc(team.b.name)}</span></div>
+        <p class="sc-over__s${n ? ' is-wait' : ''}">${sendLine}</p><p class="sc-over__n">${n ? 'Every play has to be saved first.' : 'The saved box score is still up. Compare the two, then replace it or keep the saved one.'}</p>
+        <div class="sc-over__b">${n ? `<span class="sc-over__btn" aria-disabled="true">Compare and replace</span>` : `<a class="sc-over__btn" href="${esc(O.compare)}">Compare and replace</a>`}${back}</div></div>`;
+    }
     const acts = ui.published && ui.next ? `<a class="sc-over__btn" href="${esc(ui.next)}">Finish the game</a>${back}`
       : ui.locked || ui.published ? back
       : O.publish ? `<button type="button" class="sc-over__btn" data-act="publish"${n || ui.publishing ? ' disabled' : ''}>${ui.publishing ? 'Saving…' : 'Save the box score'}</button>${back}`
@@ -1705,7 +1713,7 @@ export async function mount(el) {
   }
   // A live game at the court (Paolo, 2026-10-26): the scorer keeping the clock sets the final
   // score (from the plays, fixable) and taps the player of the game, then publishes. The box
-  // score shows at once, tagged "Stats pending review" until a games admin checks it; the recap
+  // score shows at once, tagged "Unofficial stats" until a stats approver makes them official; the recap
   // and write-ups stay with the admins. The other scorer's phone just waits for it.
   // The site's PER (views/admin/game.js perOf), on the plays' lines.
   const perOf = L => { const fgm = (L.fg2m || 0) + (L.fg3m || 0) + (L.fg4m || 0), fga = fgm + (L.fg2m_miss || 0) + (L.fg3m_miss || 0) + (L.fg4m_miss || 0);
@@ -1732,18 +1740,18 @@ export async function mount(el) {
       <div class="sc-fin"><span class="sc-fin__l">Player of the game${w ? ` · ${esc(team[w].name)}` : ''}</span>
         ${w ? `<div class="sc-q__opts">${cands.map(id => optBtn(id, 'data-finpotg', ui.fin.potg === id)).join('')}</div>` : '<small class="sc-fin__n">A tied score has no winner: fix the final score.</small>'}</div>
       <div class="sc-over__b"><button type="button" class="sc-over__btn" data-act="court-publish"${ready ? '' : ' disabled'}>${ui.publishing ? 'Publishing…' : 'Publish the game'}</button></div>
-      <p class="sc-over__n">${practice ? 'In a real game the box score goes up now, marked “Stats pending review” until an admin checks it. Here nothing is sent.' : 'The box score goes up now, marked “Stats pending review” until an admin checks it. The recap comes later.'}</p></div>`;
+      <p class="sc-over__n">${practice ? 'In a real game the box score goes up now, marked “Unofficial stats” until an admin makes them official. Here nothing is sent.' : 'The box score goes up now, marked “Unofficial stats” until an admin makes them official. The recap comes later.'}</p></div>`;
   }
   function courtPublish() {
     const O = B.over || {}, w = finWinner();
     if (!O.finish || unsent().length || ui.publishing || !w) return;
     const name = ui.fin.potg ? short(ui.fin.potg) : 'none picked';
     // Practice: the real last step, without sending anything.
-    if (practice) return confirm('Publish the practice game?', `${team.a.name} ${ui.fin.a}–${ui.fin.b} ${team.b.name} · POTG: ${name}. In a real game this puts the box score on the site, marked pending review. Here nothing is sent`, 'up', 'Publish', () => {
-      ui.published = 'Practice finished. In a real game the box score would now be on the site, marked Stats pending review.'; ui.locked = true;
+    if (practice) return confirm('Publish the practice game?', `${team.a.name} ${ui.fin.a}–${ui.fin.b} ${team.b.name} · POTG: ${name}. In a real game this puts the box score on the site, marked Unofficial stats. Here nothing is sent`, 'up', 'Publish', () => {
+      ui.published = 'Practice finished. In a real game the box score would now be on the site, marked Unofficial stats.'; ui.locked = true;
       report({ finished: true }, true); save(); if (soundOn()) chime('yes'); paint();
     });
-    confirm('Publish the game?', `${team.a.name} ${ui.fin.a}–${ui.fin.b} ${team.b.name} · POTG: ${name}. The stats show as pending review until an admin checks them`, 'up', 'Publish', () => {
+    confirm('Publish the game?', `${team.a.name} ${ui.fin.a}–${ui.fin.b} ${team.b.name} · POTG: ${name}. The stats show as Unofficial until an admin makes them official`, 'up', 'Publish', () => {
       ui.publishing = true; paint();
       fetch(O.finish, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ a: ui.fin.a, b: ui.fin.b, potg: ui.fin.potg, device: deviceId }) })
         .then(r => r.text().then(t => { let j = null; try { j = JSON.parse(t); } catch (e) {} if (!j) throw new Error('Not published. Try again.'); if (!r.ok || j.error) { const e = new Error(j.error || 'Not published. Try again.'); e.published = !!j.published; throw e; } return j; }))

@@ -1737,6 +1737,9 @@
           admBusy = false; b.disabled = false; b.classList.remove('is-busy');
           if (sheet && sheet.contains(b)) closeSheet();
           toast(admShort(j.message) || b.getAttribute('data-adm-done') || 'Done');
+          // data-adm-then: the screen it leads back to (the Compare screen → the game, fresh).
+          var then = b.getAttribute('data-adm-then');
+          if (then) { setTimeout(function () { location.replace(then); }, 900); return; }
           refreshScreen(true);
         }, function (err) { admBusy = false; b.disabled = false; b.classList.remove('is-busy'); toast(err.message, 'err'); });
         return;

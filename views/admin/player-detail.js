@@ -204,12 +204,16 @@ function settingsTab(p, { teams, slug, isSuperAdmin, canDelete, deleteReason, na
     // Papawis scorer: its own switch (2026-10-30), separate from league games.
     + toggleRow({ label: 'Papawis scorer', name: 'pw_scorer', on: !!p.is_pw_scorer, post: `/admin/papawis/scorers/${id}`,
       help: 'Can score any Papawis run from the app. Separate from league games: one doesn’t include the other.' }) });
+  // Stats approver (super admin only, 2026-11-10): makes a game's stats official, reopens them
+  // for review, replaces a box score with a re-track. Only counts for a games admin.
+  const approver = isSuperAdmin ? formSection({ title: 'Stats approver', sub: 'Super admin only. Counts for admins with the games section.', bodyHtml: toggleRow({ label: 'Stats approver', name: 'stats_approver', on: !!p.is_stats_approver, post: `/admin/players/${id}/stats-approver`,
+    help: 'Can make a game’s stats official, reopen official stats for review, replace a box score with a video re-track (and undo it), and fix the plays of a published game. Any games admin can still re-track; this is who makes it count.' }) }) : '';
   // Premium share cards without the lock while they owe (super admin only).
   const premium = isSuperAdmin ? formSection({ title: 'Premium share cards', sub: 'Super admin only.', bodyHtml: toggleRow({ label: 'Unlocked even with a balance', name: 'premium_cards', on: !!p.premium_cards_pass, post: `/admin/players/${id}/premium-cards`,
     help: 'Premium share templates normally save with a lock while a player owes. On: this player gets them without the lock. Their balance and reminders don’t change.' }) }) : '';
   // Their GA User-ID: what GA shows in Explore → User explorer (server.js gaUserId).
   const gaRow = ga ? formSection({ title: 'Google Analytics', sub: ga.off ? 'They turned Analytics off in the app.' : 'Their visits in GA carry this ID.', bodyHtml: `<code class="apl-ga">${escHtml(ga.id)}</code>` }) : '';
-  return formCard(teamStatus + scorer + premium + gaRow + address + del);
+  return formCard(teamStatus + scorer + approver + premium + gaRow + address + del);
 }
 
 export function adminPlayerDetailBody({

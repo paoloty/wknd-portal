@@ -160,7 +160,7 @@ export const SCORER_GUIDE = [
         'Wait until every play is sent. The panel tells you if some are still sending.',
         '<b>Check the final score.</b> It comes from the plays; fix it if the court’s scoreboard says otherwise.',
         '<b>Pick the player of the game</b> from the winners’ top five.',
-        '<b>Publish the game.</b> The box score goes on the site and in the app straight away, marked <i>Stats pending review</i>.',
+        '<b>Publish the game.</b> The box score goes on the site and in the app straight away, marked <i>Unofficial stats</i> until a stats approver makes them official.',
       ]],
       ['tip', 'Good to know', 'With two scorers, the phone keeping the clock publishes; the other one just waits. After that a games admin checks the plays, and writes the recap.'],
     ],
@@ -219,6 +219,25 @@ export const SCORER_GUIDE = [
       ['img', 'fix-panel.jpg', 'Fix a play: the play, then what’s wrong.'],
       ['tip', 'Good to know', 'Missed a play a while back? Fix the play just before it and choose <i>Missed a play</i>. It goes in at the right spot.'],
       ['p', 'Still not right after the game? Tell a games admin: they check every game before the stats are final.'],
+    ],
+  },
+  {
+    // Re-track a saved box score (2026-11-10, mockup claude.ai/artifact/BNeRKL2kkH25NLsqZr45Z2).
+    slug: 'retrack', title: 'Admins: re-track a saved game', blocks: [
+      ['p', 'A game whose box score is saved can be scored again from the video, start to finish, while that box score stays on the site. Players see nothing new until it’s replaced.'],
+      ['dl', [
+        ['Unofficial stats', 'Published from the court. Any games admin can re-track it; a stats approver makes it official.'],
+        ['Official stats', 'Final. A stats approver can <i>Reopen for review</i> (the other admins get a bell).'],
+        ['Stats under review', 'Reopened. Players see the tag and keep the current box score. Any games admin can re-track it; a stats approver replaces it or taps <i>Keep as official</i>.'],
+      ]],
+      ['steps', [
+        '<b>On the game’s Review card,</b> tap <i>Re-track from the video</i> (Unofficial or Under review stats). The scorer opens on an empty game, just admins, and it scores like a real one: the clock, quarters, fouls and every question.',
+        '<b>Watch it anywhere.</b> On the TV is fine: the scorer runs its own clock, so pause it when you pause the video. If the game has a YouTube link, ••• → <i>Show the video</i> puts it above the scorer (it starts hidden).',
+        '<b>Check as you go:</b> ••• → <i>Compare with the saved box score</i> shows both scores, and the saved game at the same moment when it was scored live.',
+        '<b>At Game over,</b> tap <i>Compare and replace</i>: team totals and only the players whose lines differ.',
+        '<b>A stats approver</b> taps <i>Replace the box score</i>: one step, the stats become official, the old box score is kept on record and <i>Undo the replace</i> puts it back. Or <i>Keep the saved one</i>: the re-track goes and the saved box score becomes official.',
+      ]],
+      ['tip', 'Good to know', '<i>Start over</i> throws away the re-track only; the saved box score isn’t touched. Stats approvers are picked by the super admin (player page → Settings).'],
     ],
   },
 ];
