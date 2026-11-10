@@ -190,6 +190,7 @@ import { computeSeasonBadges, statCatCount, qualifyingCats, BADGE_ICONS } from '
 import { leaderMinGames, awardMinGames, qualifiesPerGame, meetsLeaderRule, CAREER_MIN_GP } from './lib/qualification.js';
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
+import { keyPlayRows, keyPlayFacts, keyPlayProblems, keyPlayCopy, keyPlayCards, qName as keyPlayQ } from './lib/key-plays.js';
 import { runWriter, numberProblems, claimProblems, bannedProblems, storyProblems, shorthandProblems, zeroStatProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary, oddsPoints } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
@@ -6977,7 +6978,7 @@ function appGameRecap(g, stats, me) {
     }
   }
   return {
-    quarters, flow, plays: keyPlays(flow, g, quarters), totals: [A, B], won: stats.length ? howItWasWon(g, A, B) : [],
+    quarters, flow, ...(kp => ({ plays: kp.plays, playsStory: kp.story }))(keyPlaysFor(g, keyPlays(flow, g, quarters))), totals: [A, B], won: stats.length ? howItWasWon(g, A, B) : [],
     usual: !asOf.firstMeeting && asOf.boxMeetings ? { rows: asOf.rows, n: asOf.boxMeetings } : null,
     watch, story: getGamePreview(g.id)?.story || null, called,
     series: results.length > 1 || meetings.length ? { results, meetings, thisId: g.id, season: g.season } : null,
@@ -14459,7 +14460,8 @@ app.get('/games/:ref', (req, res) => {
   const potgPlayerId = potgIds[0] || null;
   const quarterScores = extractQuarterScores(game);
   const flow = gameFlow(game);
-  const plays = keyPlays(flow, game, quarterScores);
+  const kp = keyPlaysFor(game, keyPlays(flow, game, quarterScores));
+  const plays = kp.plays, playsStory = kp.story, playsAi = !!kp.ai;
   const won = stats.length ? howItWasWon(game, teamTotals(stats, game.team_a_name, game.team_a_to_team), teamTotals(stats, game.team_b_name, game.team_b_to_team)) : [];
   const history = stats.length ? playerHistory(stats.map(s => s.player_id), game) : {};
   const dc = stats.length ? duelAndCast(stats, game, history, potgIds) : null;
@@ -14526,7 +14528,7 @@ app.get('/games/:ref', (req, res) => {
     metaTags: buildGameOgTags(req, game, court),
     body: gamePage({
       ...common, state: 'final', stats, dnpPlayers, potgPlayerId, coPotg: potgIds.length > 1, quarterScores, boxCards: boxCardPeople(game, stats),
-      flow, plays, won, dc, verdict, called, upNext, upNextLabel, myGame, usual, watch, series, storyline,
+      flow, plays, playsStory, playsAi, won, dc, verdict, called, upNext, upNextLabel, myGame, usual, watch, series, storyline,
       shareLocked: shareCardsLocked(req),
       duelHist: dc ? Object.fromEntries([dc.a, dc.b].map(s => [s.player_id, meetingPoints(game, sorted, s.player_id)])) : {},
       // A finished game is an archive: a missing writeup is written on the first page view
@@ -20379,7 +20381,7 @@ function strictSummaryIssue(headline, body, facts) {
 // The temperature-0 second opinion for any longer copy (the recap): every claim in `text`
 // against `facts`. Returns the problems ([] = all supported). Run as a { costly } check in
 // runWriter, so it only fires once the free code checks pass.
-async function factCheckCopy(facts, text, what = 'game recap') {
+async function factCheckCopy(facts, text, what = 'game recap', { model = '' } = {}) {
   const prompt = `Check this ${what} for a recreational basketball league against the facts it was written from.
 
 COPY
@@ -20404,7 +20406,7 @@ Not problems: opinions, tone, slang, voice and wording; "league record" / "recor
     properties: { accurate: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } },
     required: ['accurate', 'problems'],
   };
-  const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 600, openaiModel: FACT_CHECK_MODEL });
+  const { data } = await generateJson(prompt, schema, { tier: 'check', temperature: 0, maxTokens: 600, openaiModel: model || FACT_CHECK_MODEL });
   if (data?.accurate) return [];
   const raw = (data?.problems || []).map(p => String(p).slice(0, 200)).filter(Boolean);
   const problems = realFactProblems(raw);
@@ -22885,6 +22887,131 @@ function sectionSummaries(factsMap, { keep = false } = {}) {
       .finally(() => sectionSummaryInFlight.delete(settingKey));
   }
   return out;
+}
+
+// ── Key plays read by the AI (2026-11-11, mockup claude.ai/artifact/MNb5v9oq4KiuvBumemtRZv) ──
+// The rules (lib/game-detail.js keyPlays) pick the same moments every game; Claude reads every
+// play and picks the ones that shaped this game, with a line on why each mattered. It picks
+// real plays by number, so the clock, score and dot always come from the log (lib/key-plays.js).
+// Written once per scoring log: a game whose plays change (a re-track replaced the box score)
+// is written again. Never for Unofficial or Under review stats; until it's written, or when
+// every draft fails the checks, the page shows the rules' list. Setting key_plays_ai_<game id>.
+const KEY_PLAYS_VERSION = 1;
+const KEY_PLAYS_MODEL = process.env.KEY_PLAYS_MODEL || 'claude-sonnet-5-5';
+// The fact check (OpenAI, never the writer judging itself): the full model, not the mini one.
+const KEY_PLAYS_CHECK_MODEL = process.env.KEY_PLAYS_CHECK_MODEL || 'gpt-4.1';
+const keyPlaysInFlight = new Set();
+const keyPlaysFailedAt = new Map();
+let keyPlaysCooldownUntil = 0;
+function keyPlaysData(game) {
+  const names = new Map(getAllPlayers().map(p => [p.id, displayPlayerName(p.name || '')]));
+  const rows = keyPlayRows(game, pid => names.get(pid) || '');
+  // Too few plays to read (an imported final score, a game scored in part): the rules' list.
+  if (rows.length < 60) return null;
+  const key = `k${KEY_PLAYS_VERSION}|${createHash('sha1').update(rows.map(r => `${r.id}:${r.what}:${r.a}-${r.b}`).join('|')).digest('hex').slice(0, 16)}`;
+  return { rows, key };
+}
+// → { plays, story, ai } for the page: Claude's cards when written for this log, else the rules'.
+function keyPlaysFor(game, rulePlays) {
+  const kd = keyPlaysData(game);
+  if (!kd) return { plays: rulePlays, story: '' };
+  const settingKey = `key_plays_ai_${game.id}`;
+  let stored = null;
+  try { stored = JSON.parse(getSetting(settingKey, '') || 'null'); } catch {}
+  if (stored && stored.key === kd.key) {
+    const cards = keyPlayCards(stored, kd.rows);
+    if (cards) return { plays: cards, story: stored.story || '', ai: true };
+  }
+  // Only once the stats are official (a court save stays Unofficial until an approver checks it).
+  // One at a time across the site, so a crawler walking old games only queues them.
+  const sg = getScoreGame(game.id);
+  const official = !sg || sg.status !== 'published' || statsState(sg) === 'official';
+  if (official && aiAvailable() && !keyPlaysInFlight.size && Date.now() >= keyPlaysCooldownUntil
+    && Date.now() - (keyPlaysFailedAt.get(settingKey) || 0) >= SECTION_SUMMARY_RETRY_MS) {
+    keyPlaysInFlight.add(settingKey);
+    writeKeyPlays(game, kd)
+      .catch(err => {
+        console.error(`Key plays (${game.id}) failed:`, err.message);
+        if (err.code === 'checks') keyPlaysFailedAt.set(settingKey, Date.now());
+        else keyPlaysCooldownUntil = Date.now() + HOME_SUMMARY_COOLDOWN_MS;
+      })
+      .finally(() => keyPlaysInFlight.delete(settingKey));
+  }
+  return { plays: rulePlays, story: '' };
+}
+async function writeKeyPlays(game, kd = keyPlaysData(game)) {
+  if (!kd) throw new Error('not enough plays');
+  const { rows, key } = kd;
+  const players = getGameDetailStats(game.id).map(p => ({ ...p, name: displayPlayerName(p.name || '') }));
+  const { facts, numbersFacts, patterns } = keyPlayFacts(game, rows, players);
+  // The checker gets the counted facts and the plays around each card (the whole log, 500+
+  // plays, lost a small checker: it disputed lines the facts give word for word).
+  const checkFacts = d => `${patterns}\n\nPLAYS AROUND EACH CARD (oldest first, score after each play):\n${(d.plays || []).map((p, i) => `Card ${i + 1}:\n${rows.slice(Math.max(0, p.play - 9), p.play + 2).map(r => `${keyPlayQ(r.q)} ${r.clock} ${r.side === 'a' ? String(game.team_a_name).toUpperCase() : String(game.team_b_name).toUpperCase()} ${r.who}: ${r.what} | ${String(game.team_a_name).toUpperCase()} ${r.a}-${r.b} ${String(game.team_b_name).toUpperCase()}`).join('\n')}`).join('\n')}`;
+  const prompt = `You pick the key plays of one game in a recreational basketball league (WKND Basketball) for its game page. The page shows each pick as a card: the quarter, clock and score of that play (taken from the log), your title, and one line under it.
+
+Read every play below and pick 5 to 7 moments (never more than 7) that shaped THIS game. The PATTERNS lines (RUN, DROUGHT, STRAIGHT POINTS, QUARTER, LEADS…) are counted for you from the plays; use their numbers instead of counting yourself.
+
+What makes a good pick: it tells the reader something the score alone doesn't. Who did it and how (blocks, steals, misses, threes, free throws, an and-one), and what it changed. The page's old list already showed every run and each team's biggest lead, so a card that only restates a RUN or BIGGEST LEAD line ("Started a 9-0 run") adds nothing: say who drove it and how. Look first for the stretch that decided the game (often a DROUGHT: how long, how many misses, and who forced them), then a player's burst (STRAIGHT POINTS, a QUARTER line), then how it was closed out (AHEAD FOR GOOD, LAST MINUTE FREE THROWS). A card can sit on a play inside a stretch and describe the stretch.
+
+Rules:
+- Each pick is one play number from EVERY PLAY ("play"). Never write a play number ("#162") in a title, line or story: the card shows the play. Pick the play whose score fits what the card says (for a run or a drought, the play that ends or completes it). Oldest first.
+- title: 3 to 8 words, said like a headline about what happened: "[TEAM] go [time] without a point", "[Player]'s third three in three minutes", "[Player]'s and-one ties it". Not a play label like "[Player] three-pointer". Players as written in the plays ("Moe DEL ROSARIO"). No score in the title (the card shows it).
+- why: one sentence, at most 25 words, on why the moment mattered. Every number must be in the facts; never add, subtract or estimate.
+- big: true for the 1 to 3 moments that decided the game, false for the rest.
+- story: one sentence, at most 20 words, on the one thing that decided the game (not a list of moments). The DECIDING STRETCH line, when there is one, is where to look first.
+- Skip moments that happen in every game ("led at the half", "won the 4th") unless something happened there.
+- The log only says 2pt, 3pt or 4pt: write "basket", "three" or "four-pointer", never "layup", "jumper", "dunk" or "floater".
+- Plain English, short and concrete. No hype words: ${BANNED_HINT}. Never say "career high", "record", "season high" or "streak".
+
+FACTS
+${facts}`;
+  const schema = {
+    type: 'object',
+    properties: {
+      story: { type: 'string' },
+      plays: { type: 'array', items: { type: 'object', properties: { play: { type: 'integer' }, title: { type: 'string' }, why: { type: 'string' }, big: { type: 'boolean' } }, required: ['play', 'title', 'why', 'big'], additionalProperties: false } },
+    },
+    required: ['story', 'plays'], additionalProperties: false,
+  };
+  let provider = '';
+  const A = String(game.team_a_name).toUpperCase(), B = String(game.team_b_name).toUpperCase();
+  // The fact checker sees each pick with its play, so "Black's first lead" is checked against the score there.
+  const forCheck = d => `Story line: ${d.story}\n\n${(d.plays || []).map((p, i) => { const r = rows[p.play - 1]; return `Card ${i + 1}. The play it sits on: ${r ? `${keyPlayQ(r.q)} ${r.clock}, ${r.who} ${r.what}; score after it ${A} ${r.a}-${r.b} ${B}` : 'unknown'}.\nTitle: ${p.title}\nLine: ${p.why}`; }).join('\n\n')}`;
+  // The checker sometimes lists statements it agrees with; those aren't problems.
+  const agreed = /\b(is|are) (supported|correct|accurate)\b|\bsupported by the facts\b|\bconsistent with the facts\b/i;
+  const res = await runWriter({
+    label: `Key plays (${game.id})`, prompt,
+    // Claude Sonnet: picking moments means reading the whole game (Haiku re-listed the runs).
+    // One write per game, so the cost stays at cents. More than 7 picks: the earliest minor ones go.
+    generate: async p => {
+      const out = await generateJson(p, schema, { tier: 'long', primaryProvider: 'anthropic', anthropicModel: KEY_PLAYS_MODEL, temperature: 0.6, maxTokens: 1500 });
+      provider = `${out.provider}${out.model ? ` ${out.model}` : ''}`;
+      const d = out.data || {};
+      if (Array.isArray(d.plays)) {
+        while (d.plays.length > 7) { const i = d.plays.findIndex(x => !x.big); d.plays.splice(i < 0 ? 0 : i, 1); }
+        // At most 3 big: the latest ones keep it (the finish decides a game).
+        let bigs = d.plays.filter(x => x.big).length;
+        for (const x of d.plays) if (bigs > 3 && x.big) { x.big = false; bigs--; }
+      }
+      return d;
+    },
+    text: keyPlayCopy,
+    checks: [
+      (copy, d) => keyPlayProblems(d, rows),
+      copy => numberProblems(copy, numbersFacts),
+      copy => claimProblems(copy, facts),
+      { style: true, fn: copy => bannedProblems(copy) },
+      { costly: true, fn: async (copy, d) => (await factCheckCopy(checkFacts(d), forCheck(d), 'list of key plays (each card is a title and a line about the play it sits on; a line may describe the stretch around that play)', { model: KEY_PLAYS_CHECK_MODEL })).filter(p => !agreed.test(p)) },
+    ],
+  });
+  if (res.fatal) { const e = new Error(`no draft passed the checks: ${res.problems.slice(0, 2).join(' | ')}`); e.code = 'checks'; e.problems = res.problems; throw e; }
+  const d = res.draft;
+  setSetting(`key_plays_ai_${game.id}`, JSON.stringify({
+    key, story: String(d.story || '').trim(), at: Date.now(), provider,
+    plays: d.plays.map(p => ({ n: p.play, id: rows[p.play - 1].id, title: String(p.title).trim(), why: String(p.why).trim(), big: !!p.big })),
+  }));
+  console.log(`[key plays] written game=${game.id} by ${provider}: ${d.plays.length} plays${res.problems.length ? ` (style notes: ${res.problems.join(' | ')})` : ''}`);
+  return d;
 }
 
 // Stamps block + key onto each section's facts.

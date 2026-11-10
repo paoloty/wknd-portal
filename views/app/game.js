@@ -168,12 +168,12 @@ function flowCard(flow, plays, teams) {
   return `<section class="fc gr" id="gr-flow">${head('Game flow', 'Lead by play')}${chart}${tiles}</section>`;
 }
 // Key plays: the runs, biggest leads and go-ahead basket, swiped sideways.
-function keyPlaysCard(plays, teams) {
+function keyPlaysCard(plays, teams, story = '') {
   if (!plays.length) return '';
   const when = p => (p.qLabel === 'FINAL' ? 'Final' : [p.qLabel, p.clock && p.clock !== '0:00' ? p.clock : ''].filter(Boolean).join(' · '));
-  return `<section class="fc gr" id="gr-plays">${head('Key plays', swipe)}<div class="gr-hs">${plays.map(p => `<div class="gr-kp">
+  return `<section class="fc gr" id="gr-plays">${head('Key plays', swipe)}${story ? `<p class="gr-kp__story">${esc(story)}</p>` : ''}<div class="gr-hs">${plays.map(p => `<div class="gr-kp">
       <div class="gr-kp__top"><span>${esc(when(p))}</span><b class="num">${p.score.a}–${p.score.b}</b></div>
-      <p>${dot(teams[p.side === 'b' ? 1 : 0].color)}<b>${esc(p.strong)}</b> ${esc(p.rest)}</p></div>`).join('')}</div></section>`;
+      <p>${dot(teams[p.side === 'b' ? 1 : 0].color)}<b>${esc(p.strong)}</b> ${esc(p.rest)}</p>${p.why ? `<p class="gr-kp__why">${esc(p.why)}</p>` : ''}</div>`).join('')}</div></section>`;
 }
 
 // The full box score: one team at a time, swipes sideways, names stay put, tap a column to sort.
@@ -280,7 +280,7 @@ export function gameRecapSections(g, { potgHtml = '', commentsHtml = '', comment
     ['', '', two ? howCard(g.teams, f.won) : ''],
     ['gr-stats', 'Team stats', two ? teamStatsCard(g.teams, f.totals, f.usual) : ''],
     ['gr-flow', 'Game flow', two ? flowCard(f.flow, f.plays, g.teams) : ''],
-    ['', '', two ? keyPlaysCard(f.plays, g.teams) : ''],
+    ['', '', two ? keyPlaysCard(f.plays, g.teams, f.playsStory) : ''],
     ['gr-box', 'Box score', g.teams.length ? boxCard(g.teams, g.meId, g.myTeamId, f.dnp, g.cards || []) : ''],
     ['gr-picks', 'Picks', two ? calledCard(f.called, g.teams) : ''],
     ['gr-series', 'Series', two ? seriesCard(f.series, g.teams) : ''],

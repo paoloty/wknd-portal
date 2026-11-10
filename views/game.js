@@ -2231,17 +2231,19 @@ function boxSection(game, stats, dnpPlayers, A, B, statsPanel = '', usual = null
 }
 
 // ── Final: key plays ──────────────────────────────────────────────────────────────────────
-function playsBlock(game, plays) {
+// story / ai: Claude read the plays (server.js keyPlaysFor): a one-line story on top and a line
+// under each play on why it mattered; otherwise the rules' list.
+function playsBlock(game, plays, story = '', ai = false) {
   let hasLog = false;
   try { hasLog = JSON.parse(game.game_log_json || '[]').length > 0; } catch {}
   if (!plays.length && !hasLog) return '';
   const color = side => (side ? teamColor(side === 'a' ? game.team_a_name : game.team_b_name) : '#5b6475');
   return `<section id="plays" class="gd-plays-sec" aria-labelledby="plays-h">
-    ${sh('plays', 'Key plays', { sub: plays.length ? 'Picked from the scoring log: runs, the biggest leads and the go-ahead basket.' : '' })}
-    ${plays.length ? `<div class="card gd-plays">${plays.map(p => `<div class="gd-pl${p.big ? ' gd-pl--big' : ''}">
+    ${sh('plays', 'Key plays', { sub: !plays.length ? '' : ai ? 'Read from every play in the scoring log.' : 'Picked from the scoring log: runs, the biggest leads and the go-ahead basket.' })}
+    ${plays.length ? `<div class="card gd-plays">${story ? `<p class="gd-plays__story">${escHtml(story)}</p>` : ''}${plays.map(p => `<div class="gd-pl${p.big ? ' gd-pl--big' : ''}">
       <span class="gd-pl__t">${escHtml(p.qLabel)}${p.qLabel !== 'HALF' && p.qLabel !== 'FINAL' && p.clock ? `<b class="font-condensed">${escHtml(p.clock)}</b>` : ''}</span>
       <span class="gd-pl__dot" style="background:${p.big ? '#f59332' : color(p.side)}"></span>
-      <span class="gd-pl__x"><b>${escHtml(p.strong)}</b>${p.rest ? ` ${escHtml(p.rest)}` : ''}</span>
+      <span class="gd-pl__x"><b>${escHtml(p.strong)}</b>${p.rest ? ` ${escHtml(p.rest)}` : ''}${p.why ? `<span class="gd-pl__why">${escHtml(p.why)}</span>` : ''}</span>
       <span class="gd-pl__s font-condensed">${p.score.a}<i>–</i>${p.score.b}</span>
     </div>`).join('')}</div>` : ''}
     ${hasLog ? `<details class="gd-pbp"><summary>Full play-by-play</summary>${playByPlayTab(game)}</details>` : ''}
@@ -2596,7 +2598,7 @@ ${scripts}`;
   const mini = `${escHtml(String(game.team_a_name).slice(0, 3))} ${fa} <i>–</i> ${fb} ${escHtml(String(game.team_b_name).slice(0, 3))}`;
   const rail = [v.showCalled ? calledCard(game, d.called, d.isPlayer) : '', upNextCard(d.upNext, d.upNextLabel, d.isPlayer, `/games/${encodeURIComponent(gameSlug(game))}`), railTalkCard(v, 'Comments')].filter(Boolean).join('');
   const talk = talkSection(v, 'Comments');
-  const plays = playsBlock(game, d.plays);
+  const plays = playsBlock(game, d.plays, d.playsStory, d.playsAi);
   // Section writeups (server.js gameSectionFacts): d.sections = { perf, stats }.
   const secPanel = key => sectionPanel(d.sections?.[key] || null, `game_${key}:${game.id}`, d.isAdmin);
   return `<div class="page-content gd-page">

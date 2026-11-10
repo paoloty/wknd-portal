@@ -8696,6 +8696,9 @@ a.gd-chip--amber:hover { color: #0a0e16; opacity: .9; }
 .gd-pl__x { font-size: 14px; line-height: 1.5; color: #c7d0da; }
 .gd-pl__x b { color: #fff; }
 .gd-pl--big .gd-pl__x b { color: var(--amber); }
+.gd-plays__story { margin: 0; padding: 14px 0 12px; border-bottom: 1px solid rgba(255,255,255,.05); font-size: 14px; line-height: 1.5; color: var(--text); }
+.gd-plays__story + .gd-pl { border-top: 0; }
+.gd-pl__why { display: block; margin-top: 3px; font-size: 13px; line-height: 1.45; color: var(--text-muted); }
 .gd-pl__s { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; }
 .gd-pl__s i { font-style: normal; color: var(--text-subtle); margin: 0 3px; }
 .gd-pbp { margin-top: 12px; }

@@ -1556,6 +1556,8 @@ html.tk-lock { overflow: hidden; }
 .fc .gr-kp p { font-size: 14px; line-height: 1.35; }
 .gr-kp p .dot { display: inline-block; margin-right: 6px; vertical-align: 1px; }
 .gr-kp p b { font-weight: 600; }
+.fc .gr-kp .gr-kp__why { margin-top: 6px; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.fc .gr-kp__story { margin-bottom: 10px; font-size: 14px; line-height: 1.4; }
 
 .gr-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 12px; border-radius: var(--r-in); background: var(--surface-2); }
 .gr-seg button { display: flex; align-items: center; justify-content: center; gap: 8px; height: 40px; border-radius: 9px; color: var(--muted); font-size: 14px; font-weight: 600; line-height: 1; }
