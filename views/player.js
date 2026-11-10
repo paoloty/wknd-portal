@@ -1611,7 +1611,7 @@ function prfHero(o) {
           <button type="button" class="player-hero__bio-icon-btn player-hero__bio-icon-btn--save" id="bio-save" aria-label="Save" title="Save">✓</button>
         </div>
       </div>` : (bio ? `<p class="prf-hero__quote">“${escHtml(bio)}”</p>` : '');
-  const shareHref = latestGame ? `/games/${encodeURIComponent(gameSlug(latestGame))}?share=1` : '';
+  const shareHref = latestGame && !o.shareBlocked?.has(latestGame.id) ? `/games/${encodeURIComponent(gameSlug(latestGame))}?share=1` : '';
   const actions = editing
     ? `${shareHref ? `<a class="prf-btn prf-btn--amber" href="${shareHref}">${PRF_ICON.share}Share my stats</a>` : ''}
        <a class="prf-btn" href="?view=public">${PRF_ICON.eye}See public profile</a>`
@@ -1752,7 +1752,7 @@ function prfSeasonCard(o, season, line, games) {
       <td><a href="/games/${encodeURIComponent(gameSlug(g))}" class="prf-table__game">${escHtml(prfDay(g.date))} · <span class="team-dot" style="background:${teamColor(x.opp)}"></span>${escHtml(tcase(x.opp))}</a></td>
       <td class="prf-table__res">${x.won ? 'W' : 'L'} ${x.my}–${x.op}</td>
       <td class="font-condensed">${g.pts ?? 0}</td><td class="font-condensed">${g.reb ?? 0}</td><td class="font-condensed">${g.ast ?? 0}</td>
-      <td class="prf-table__act"><a class="prf-share-btn" href="${share}" aria-label="Share my ${escHtml(prfDay(g.date))} stats vs ${escHtml(tcase(x.opp))}" title="Share my stats">${PRF_ICON.share}</a></td>
+      <td class="prf-table__act">${o.shareBlocked?.has(g.id) ? '' : `<a class="prf-share-btn" href="${share}" aria-label="Share my ${escHtml(prfDay(g.date))} stats vs ${escHtml(tcase(x.opp))}" title="Share my stats">${PRF_ICON.share}</a>`}</td>
     </tr>`;
   }).join('');
   const stat = (v, l) => `<div><div class="prf-big font-condensed">${escHtml(v)}</div><div class="prf-k">${l}</div></div>`;
@@ -2002,7 +2002,7 @@ export function playerPage(o) {
   const latestGame = d.gameLogs.find(g => g.status === 'played') || null;
   const hero = prfHero({
     player: d.player, editing: own, canEditPhoto: own || (!!d.isAdmin && !o.viewPublic), isAdmin: !!d.isAdmin,
-    champSeasons: d.champSeasons, latestGame, canRate: d.canRate, peerRatingsEnabled: d.peerRatingsEnabled, gameRatings: own ? null : d.gameRatings,
+    champSeasons: d.champSeasons, latestGame, shareBlocked: d.shareBlocked, canRate: d.canRate, peerRatingsEnabled: d.peerRatingsEnabled, gameRatings: own ? null : d.gameRatings,
     canReport: !own && d.canReport, reportCategories: d.reportCategories, reportOtherCategoryId: d.reportOtherCategoryId,
   });
   const banner = o.isOwnProfile && o.viewPublic

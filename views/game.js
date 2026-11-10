@@ -1627,7 +1627,7 @@ function yourGameStrip(game, mg) {
         <span class="gd-yg__meta">${mg.badge ? `<span class="gd-hook">${escHtml(mg.badge)}</span>` : ''}${mg.vsAvg != null && mg.vsAvg !== 0 ? `<span><b>${mg.vsAvg > 0 ? '+' : '−'}${Math.abs(mg.vsAvg)}</b> pts ${mg.vsAvg > 0 ? 'over' : 'under'} your season average</span>` : ''}${fga ? `<span>FG ${fgm}/${fga}</span>` : ''}</span>
       </div>
     </div>
-    <div class="gd-yg__r">
+    ${mg.share === false ? `<div class="gd-yg__r"><div class="gd-yg__cta"><span>Stats under review. Share my stats opens once an admin has checked them.</span></div></div>` : `<div class="gd-yg__r">
       <div class="gd-yg__fan">
         <button type="button"${bgCover} data-ssc-open data-template="center" data-bg="${game.has_cover ? 'game' : 'team'}" aria-label="Open the Marquee card"><img src="${card('align=center&focus=all&gauges=1')}" alt="" loading="lazy"></button>
         <button type="button"${bgPlayer} data-ssc-open data-template="premium" data-bg="me" aria-label="Open the Premium card on your photo"><img src="${card('align=premium')}" alt="" loading="lazy"></button>
@@ -1637,7 +1637,7 @@ function yourGameStrip(game, mg) {
         <button type="button" class="gd-yg__btn" data-ssc-open>${ICON_SHARE}Share my stats</button>
         <span>9 story-sized templates to post over your own photo · Save, Copy or Share</span>
       </div>
-    </div>
+    </div>`}
   </section>`;
 }
 
@@ -1706,8 +1706,8 @@ function finalHero(d) {
         <div class="gd-tm gd-tm--b"><span class="gd-tm__nm"><a href="/teams/${encodeURIComponent(game.team_b_id)}">${escHtml(game.team_b_name)}</a>${dot(game.team_b_name, 13)}</span><span class="gd-tm__rec">${oddsPct(heroOdds, 'b')}${recLine(ctx.recB)}</span></div>
       </div>
       ${d.commentsEnabled
-        ? `<div class="gd-hero__bot gd-hero__bot--talk"><span class="gd-meta">${meta.map(m => (m.html ? m.html : escHtml(m))).join('<i>·</i>')}</span><div class="gd-talkrow">${commentBar(d)}${heroActions({ game, commentsEnabled: true, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div></div>`
-        : `<div class="gd-hero__bot"><span class="gd-meta">${meta.map(m => (m.html ? m.html : escHtml(m))).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: false, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame })}</div>`}
+        ? `<div class="gd-hero__bot gd-hero__bot--talk"><span class="gd-meta">${meta.map(m => (m.html ? m.html : escHtml(m))).join('<i>·</i>')}</span><div class="gd-talkrow">${commentBar(d)}${heroActions({ game, commentsEnabled: true, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame && d.myGame.share !== false })}</div></div>`
+        : `<div class="gd-hero__bot"><span class="gd-meta">${meta.map(m => (m.html ? m.html : escHtml(m))).join('<i>·</i>')}</span>${heroActions({ game, commentsEnabled: false, gameReaction: d.gameReaction, watch: !!youtubeEmbedUrl(game.youtube_url), me: !!d.myGame && d.myGame.share !== false })}</div>`}
     </div>
   </section>`;
 }
@@ -2620,7 +2620,7 @@ ${scripts}`;
   </div>
 </div>
 ${floater}
-${myStat ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat, !!d.shareLocked)}` : ''}
+${myStat && d.myGame.share !== false ? `${shareDock(d.myGame)}${shareStatsModal(game, myStat, !!d.shareLocked)}` : ''}
 ${d.isAdmin ? sectionRegenScript() : ''}
 ${d.upNext?.length || v.showCalled ? pickCardScript() : ''}
 ${scripts}`;

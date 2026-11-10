@@ -7041,7 +7041,7 @@ function appFeedItem(it, me, extra) {
     title, excerpt: body, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '',
     // You played it this past week: the card's one button is Share my stats (the box score
     // is a tap on the card). Older games keep "Box score & recap".
-    shareHref: mine && gameYmd(g.date) >= addDaysYmd(manilaTodayStr(), -7) ? `/app/games/${encodeURIComponent(g.id)}/share?from=home` : '',
+    shareHref: mine && gameYmd(g.date) >= addDaysYmd(manilaTodayStr(), -7) && statsShareable(g) ? `/app/games/${encodeURIComponent(g.id)}/share?from=home` : '',
     social: extra.social?.[g.id] || null };
 }
 
@@ -7219,7 +7219,7 @@ app.get('/app/games/:id', requireApp, (req, res) => {
     kicker: gameKicker(g), when: manilaDayLabel(gameYmd(g.date)), meta: court ? `📍 ${court}` : '',
     recap: { title, paras }, potg: appPotg(g, stats), mine: mine ? statLine(mine) : '', teams, thread, meId: me.playerId, cards: boxCardPeople(g, stats, { app: true }),
     myTeamId: mine?.team_id || '', full: appGameRecap(g, stats, me),
-    shareHref: mine ? `/app/games/${encodeURIComponent(g.id)}/share?from=${back.tab}` : '',
+    shareHref: mine && statsShareable(g) ? `/app/games/${encodeURIComponent(g.id)}/share?from=${back.tab}` : '',
     review: reviewCard,
   }) });
 });
@@ -8430,6 +8430,7 @@ app.post('/admin/games/:id/scoring/approve', requireAuth, express.json(), (req, 
   setGameReviewLocked(game.id, true);
   liveChanged(game.id);
   console.log(`[scorer] stats checked game=${game.id} by ${reviewer(req).name}`);
+  notifyStatCards(game.id); // sharing opens now: "Your stat card is ready"
   res.json({ ok: true, message: 'Stats checked. The pending tag is off.' });
 });
 // A done game's final score corrected (Paolo, 2026-10-27: a review said 84–78, the saved final
@@ -9315,6 +9316,7 @@ app.get('/app/games/:id/share', requireApp, async (req, res) => {
   const back = req.query.from === 'me' ? { href: '/app/me', label: 'Me', tab: 'me' }
     : { href: g ? `/app/games/${encodeURIComponent(g.id)}` : '/app/me', label: g ? 'Game' : 'Me', tab: APP_BACK[req.query.from] ? req.query.from : 'home' };
   const stat = g && !g.under_review ? getGameDetailStats(g.id).find(s => s.player_id === me.playerId) : null;
+  if (stat && !statsShareable(g)) return sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, body: appSharePage({ back, missing: true, missingText: 'This game’s stats are still being reviewed. You can share them once the review is done.' }) });
   if (!stat) return sendTab(res, me, { title: 'Share my stats · WKND', tab: back.tab, body: appSharePage({ back, missing: true }) });
   // The opening "stats to show" follows the line (as the site's editor): a defensive night
   // doesn't open on points.
@@ -9817,7 +9819,7 @@ app.get('/app/me', requireApp, (req, res) => {
   // Recent: league games and Papawis runs together, newest first.
   const recent = [
     ...log.slice(0, 5).map(g => { const x = games.find(y => y.href.includes(encodeURIComponent(g.game_id || g.id))); return x ? { ymd: gameYmd(g.date), ...x, title: `vs ${x.opp}`, res: `${x.won ? 'W' : 'L'} ${x.my}–${x.oppScore}`, won: x.won,
-      share: `/app/games/${encodeURIComponent(g.game_id || g.id)}/share?from=me` } : null; }).filter(Boolean),
+      share: statsShareable(getGameById(g.game_id || g.id)) ? `/app/games/${encodeURIComponent(g.game_id || g.id)}/share?from=me` : '' } : null; }).filter(Boolean),
     ...(pw ? pw.runs.slice(0, 5).map(r => ({ ymd: r.date, date: shortDate(r.date), title: 'Papawis', sub: r.side === 'dark' ? 'Dark' : 'Light', res: r.result.replace(/^(Won|Lost|Split|Tied)/, m => m.toUpperCase()), won: r.won, even: r.w === r.l, line: `${r.pts}·${r.reb}·${r.ast}`,
       href: `/app/papawis/${encodeURIComponent(r.id)}?from=me`, share: `/app/papawis/${encodeURIComponent(r.id)}/share?from=me` })) : []),
   ].sort((x, y) => String(y.ymd).localeCompare(String(x.ymd))).slice(0, 4);
@@ -14070,6 +14072,7 @@ app.get('/games/:ref', (req, res) => {
   // The viewer's own line, for the "Your game" strip + Share My Stats buttons.
   const mine = currentPlayerId ? stats.find(s => s.player_id === currentPlayerId) : null;
   const myGame = mine ? {
+    share: statsShareable(game), // false while the stats wait for their review
     stat: mine, badge: badgeFor(mine, history[mine.player_id]),
     vsAvg: history[mine.player_id]?.sGp ? Math.round((Number(mine.pts) - history[mine.player_id].sAvg) * 10) / 10 : null,
   } : null;
@@ -14341,10 +14344,21 @@ function papawisProfileFor(playerId) {
 }
 
 // The game (or Papawis run) and the signed-in player's line for the card routes, or null.
+// Share my stats waits for the review (Paolo, 2026-11-10): no stat card while a game's stats
+// can still change. That is a score-only game (status 'final': its box score isn't saved yet),
+// a court publish still tagged Stats pending review, or a review / re-track under way. Every
+// share entry point checks this: the site's game page and profile, the app's feed, game, Me and
+// share screens, the card image and the "Your stat card is ready" bell (sent once it opens).
+function statsShareable(game) {
+  if (!game || game.under_review || game.status === 'final') return false;
+  const sg = getScoreGame(game.id);
+  return !(sg && (sg.settings.statsPending || sg.settings.review));
+}
+
 function shareTarget(id, playerId) {
   if (isPwScoreId(id)) return pwShareFacts(pwRunOfScore(id), playerId);
   const game = getGameById(id);
-  if (!game || game.under_review) return null;
+  if (!statsShareable(game)) return null;
   const stat = getGameDetailStats(game.id).find(s => s.player_id === playerId);
   return stat ? { game, stat } : null;
 }
@@ -17318,6 +17332,9 @@ function notifyStatCards(gameId) {
   try {
     const game = getGameById(gameId);
     if (!game || game.under_review || !(game.status === 'final' || game.status === 'complete')) return;
+    // Not while the stats wait for their review: the bell goes when it's done (/scoring/approve,
+    // or the admin's save of the box score).
+    if (!statsShareable(game)) return;
     const ymd = gameYmd(game.date);
     if (!ymd || ymd < addDaysYmd(manilaTodayStr(), -7)) return;
     const stats = getGameDetailStats(gameId);
@@ -22983,7 +23000,8 @@ app.get('/players/:ref', async (req, res) => {
     isOwnProfile,
     metaTags: `${buildPlayerOgTags(req, player, totals)}\n  <link rel="stylesheet" href="/profile.css?v=${PROFILE_CSS_VER}">`,
     body: playerPage({
-      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards, badges, pickRecord, papawis: papawisProfileFor(resolved.id),
+      player, totals, statsByType, gameLogs, potgGames, careerHighs, awards,
+      shareBlocked: isOwnProfile ? new Set(gameLogs.filter(g => g.status === 'played').map(g => g.game_id || g.id).filter(id => !statsShareable(getGameById(id)))) : null, badges, pickRecord, papawis: papawisProfileFor(resolved.id),
       isAdmin: !!req.session?.isAdmin, isOwnProfile, viewPublic: isOwnProfile && req.query.view === 'public',
       // Guests only (mostly people who searched the player's name): join / Papawis / Facebook card.
       showGcInvite: isOwnProfile && !playerCtaDone(resolved.id, 'gc'),
