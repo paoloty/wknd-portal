@@ -22918,7 +22918,9 @@ function keyPlaysFor(game, rulePlays) {
   const settingKey = `key_plays_ai_${game.id}`;
   let stored = null;
   try { stored = JSON.parse(getSetting(settingKey, '') || 'null'); } catch {}
-  if (stored && stored.key === kd.key) {
+  // Claude only: an OpenAI draft (written while the server had no Claude key) put lines on the
+  // wrong plays that the checks let through, so one is never shown.
+  if (stored && stored.key === kd.key && String(stored.provider || '').startsWith('anthropic')) {
     const cards = keyPlayCards(stored, kd.rows);
     if (cards) return { plays: cards, story: stored.story || '', ai: true };
   }
@@ -22926,7 +22928,7 @@ function keyPlaysFor(game, rulePlays) {
   // One at a time across the site, so a crawler walking old games only queues them.
   const sg = getScoreGame(game.id);
   const official = !sg || sg.status !== 'published' || statsState(sg) === 'official';
-  if (official && aiAvailable() && !keyPlaysInFlight.size && Date.now() >= keyPlaysCooldownUntil
+  if (official && process.env.ANTHROPIC_API_KEY && !keyPlaysInFlight.size && Date.now() >= keyPlaysCooldownUntil
     && Date.now() - (keyPlaysFailedAt.get(settingKey) || 0) >= SECTION_SUMMARY_RETRY_MS) {
     keyPlaysInFlight.add(settingKey);
     writeKeyPlays(game, kd)
@@ -22986,6 +22988,8 @@ ${facts}`;
     generate: async p => {
       const out = await generateJson(p, schema, { tier: 'long', primaryProvider: 'anthropic', anthropicModel: KEY_PLAYS_MODEL, temperature: 0.6, maxTokens: 1500 });
       provider = `${out.provider}${out.model ? ` ${out.model}` : ''}`;
+      // Claude was down or out of credit and the chain fell through: try again later instead.
+      if (out.provider !== 'anthropic') throw new Error(`Claude unavailable (answered by ${provider})`);
       const d = out.data || {};
       if (Array.isArray(d.plays)) {
         // Oldest first and once each, whatever order they came back in.
