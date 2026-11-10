@@ -229,6 +229,7 @@ import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
 import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
 import { adminGamesListBody } from './views/admin/games.js';
 import { adminGameDetailBody, perOf } from './views/admin/game.js';
+import { adminRetrackCompareBody } from './views/admin/retrack-compare.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt, setGamesTipTime } from './lib/portal-db.js';
 import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin } from './lib/court-page.js';
@@ -6257,6 +6258,7 @@ import { adminBarkadahanBody } from './views/admin/barkadahan.js';
 import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince, addBarkadahanGreeting, getBarkadahanGreeting, getBarkadahanGreetedIds, getBarkadahanGreets, toggleBarkadahanGreet, addBarkadahanGreets, setBarkadahanWish, hasOpenedBarkadahan } from './lib/portal-db.js';
 import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerStatsApprover, getStatsApproverIds, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, getScorerSpot, setScorerSpot, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, publishSnapshotAt, deletePublishSnapshot, renameScorePass, claimScoreReplace, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
+import { alignTracks, sideBySide } from './lib/retrack-diff.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
 import { createLanes } from './lib/score-lanes.js';
 import { foldGame as foldScoredGame, DEFAULT_RULES as SCORE_RULES, periodIndex as scorePeriodIndex, livePlays as scoreLivePlays, playsByGame, setupOf as scoreSetupOf, papawisRules, papawisSides } from './public/score-engine.js';
@@ -7255,7 +7257,7 @@ function appReviewCard(req, g, hasBox = false) {
   const pass = sg && (bgRetrack(sg) || retrackEvents(g, sg).length) ? 'video' : 'live';
   // A re-track of a saved box score (bgRetrack, or a wknd-stats one): the compare, never a blind save.
   if (r && r.by === me.by && (bgRetrack(sg) || (hasBox && pass === 'video'))) {
-    const c = retrackCompare(g);
+    const c = retrackCompare(g, { plays: false });
     return { state: 'mine', kind: 'video', bg: true, action: `/app/games/${encodeURIComponent(g.id)}/review`, compare: `/app/games/${encodeURIComponent(g.id)}/compare`,
       discard: `/admin/games/${encodeURIComponent(g.id)}/scoring/review`, watch: `/app/games/${encodeURIComponent(g.id)}?review=live`,
       over: c.over, pct: c.pct, at: c.at, saved: c.saved, re: c.re, approver, stats: statsState(sg) };
@@ -9290,27 +9292,22 @@ app.post('/admin/games/:id/scoring/unpublish', requireAuth, express.json(), (req
 const hasSavedBox = game => getGameDetailStats(game.id).length > 0;
 const retrackCompareHref = (req, game) => (/^\/app\//.test(req.path) ? `/app/games/${encodeURIComponent(game.id)}/compare` : `/admin/games/${encodeURIComponent(game.id)}?tab=scoring#retrack`);
 const scoreRulesFor = (game, sg) => ({ ...SCORE_RULES, waves: game.game_type === 'playoff' ? 'off' : 'first half', ...(sg?.settings?.rules || {}) });
-// Where a play happened in game time, for lining two tracks up: period, then seconds gone.
-function gameTimeKey(row, rules) {
-  const p = String(row.period || 'Q1'), n = Number(p.replace(/\D/g, '')) || 1;
-  const [m, s] = String(row.clock || '0:00').split(':').map(Number);
-  const len = (/^OT/.test(p) ? 5 : rules.periodMin) * 60;
-  return (/^OT/.test(p) ? 4 + n : n) * 100000 + (len - ((m || 0) * 60 + (s || 0)));
-}
+// Play by play: lib/retrack-diff.js (lined up play by play, never by the clock; spots named
+// Wrong player / Made vs missed / Missing / Extra; plays in another order hidden).
+const scoreTxt = sc => `${sc.a}–${sc.b}`;
 // How much of the game a track has covered, 0–1 (by game time).
 function trackFrac(rows, rules) {
   const last = rows.filter(x => x.clock).slice(-1)[0];
   if (!last) return 0;
   const pm = rules.periodMin * 60, pi = /^OT/.test(last.period) ? 5 : Number(String(last.period).replace(/\D/g, '')) || 1;
   const [m, sec] = String(last.clock).split(':').map(Number);
-  return pi > 4 ? 1 : Math.min(1, ((pi - 1) * pm + (pm - ((m || 0) * 60 + (sec || 0)))) / (4 * pm));
+  return pi > 4 ? 0.99 : Math.min(0.99, ((pi - 1) * pm + (pm - ((m || 0) * 60 + (sec || 0)))) / (4 * pm));
 }
 const RT_KEYS = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK'], ['turnover', 'TO'], ['pf', 'PF'], ['fg3m', '3PM'], ['ftm', 'FTM']];
 const RT_TEAM_KEYS = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['turnover', 'TO'], ['fg3m', '3PM']];
-// The saved box score against the re-track. Player by player (only what differs) once the
-// re-track is at Game over; before that, the scores (and the saved game at the same moment,
-// when it has its plays).
-function retrackCompare(game) {
+// The saved box score against the re-track: play by play lined up by the score (when the saved
+// game has its plays), then player by player (only what differs) once the re-track is at Game over.
+function retrackCompare(game, { full = false, plays = true } = {}) {
   const sg = getScoreGame(game.id);
   if (!sg) return null;
   const rules = scoreRulesFor(game, sg);
@@ -9324,15 +9321,32 @@ function retrackCompare(game) {
   const sideOf = pid => { const tid = saved[pid]?.team_id || byId[pid]?.team_id; return tid === game.team_a_id ? 'a' : tid === game.team_b_id ? 'b' : ''; };
   const over = !!state.final;
   const last = state.rows.filter(x => x.clock).slice(-1)[0];
-  let savedAt = null;
-  if (!over && last && bgRetrack(sg)) {
-    const sev = getScoreEvents(game.id, 'live');
-    if (sev.length) {
-      const cut = gameTimeKey(last, rules);
-      const hit = foldScoredGame(sev, rules).rows.filter(x => x.clock && gameTimeKey(x, rules) <= cut).slice(-1)[0];
-      savedAt = hit ? { a: hit.score.a, b: hit.score.b } : { a: 0, b: 0 };
+  // The saved game's own plays, when it was scored with the scorer (a wknd-stats import has none).
+  const sev = bgRetrack(sg) ? getScoreEvents(game.id, 'live') : [];
+  const nm = id => displayPlayerName(byId[id]?.name || '') || 'Player';
+  const tname = t => titleCase(t === 'a' ? game.team_a_name : game.team_b_name);
+  const describe = e => describeScorePlay(e, nm, tname);
+  const nameOf = e => (e.player ? nm(e.player) : tname(e.team));
+  const savedFold = plays && sev.length && ev.length ? foldScoredGame(sev, rules) : null;
+  const al = savedFold ? alignTracks(savedFold.rows, state.rows, over, { describe, nameOf }) : null;
+  // segs: the spots that differ (the app and the Scoring tab). rows: every play side by side, for
+  // the site's full compare page only. explain: when the plays' final score differs from the
+  // saved one, whether the spots account for it exactly ("the missing 3PT at Q2 3:00").
+  let explain = '';
+  if (al && over) {
+    const pts = { a: 0, b: 0 };
+    const items = al.hunks.flatMap(h => h.items.map(x => ({ ...x, h })));
+    for (const x of items) {
+      if (x.made.s && x.team.s) pts[x.team.s] += x.made.s;
+      if (x.made.r && x.team.r) pts[x.team.r] -= x.made.r;
     }
+    const sf = savedFold.score, gapA = sf.a - state.score.a, gapB = sf.b - state.score.b;
+    const scoring = items.filter(x => x.made.s || x.made.r);
+    if ((gapA || gapB) && pts.a === gapA && pts.b === gapB && scoring.length && scoring.length <= 3)
+      explain = `The ${gapA + gapB === 1 || gapA + gapB === -1 ? 'point' : 'points'} between them: ${scoring.map(x => `${x.title.toLowerCase()} at ${x.h.when}, ${x.saved || x.re}`).join('; ')}.`;
   }
+  const pbp = al ? { segs: al.hunks, through: scoreTxt(state.score), pending: al.pending, orderCount: al.orderCount, truncated: al.truncated, divergeAt: al.divergeAt,
+    rows: full ? sideBySide(al, describe) : null } : null;
   const n = v => Number(v) || 0;
   const teams = ['a', 'b'].map(t => {
     const sum = (lines, k) => Object.entries(lines).filter(([pid]) => sideOf(pid) === t).reduce((x, [, L]) => x + n(L[k]), 0);
@@ -9344,8 +9358,8 @@ function retrackCompare(game) {
   const differ = rows.filter(x => x.diffs.length).sort((x, y) => x.team.localeCompare(y.team) || x.name.localeCompare(y.name));
   return {
     over, count: ev.length, pct: Math.round((over ? 1 : trackFrac(state.rows, rules)) * 100), at: over ? 'Game over' : last ? `${last.period} ${last.clock}` : 'Not started',
-    saved: { a: n(game.team_a_score), b: n(game.team_b_score) }, savedAt, re: { a: state.score.a, b: state.score.b },
-    source: bgRetrack(sg) ? 'Saved from the scorer' : 'wknd-stats import',
+    saved: { a: n(game.team_a_score), b: n(game.team_b_score) }, pbp, explain, re: { a: state.score.a, b: state.score.b },
+    source: bgRetrack(sg) ? 'From the scorer' : 'wknd-stats import',
     teams, players: over ? differ : [], match: over ? rows.length - differ.length : 0,
   };
 }
@@ -9359,32 +9373,37 @@ function replaceScoredBoxScore(game, me, { usePlays = false } = {}) {
   if (!retrackEvents(game, sg).length) return { status: 400, body: { error: 'The re-track has no plays yet.' } };
   if (!claimScoreReplace(game.id)) return { status: 409, body: { error: 'Someone is saving this game’s box score right now.' } };
   const arch = `prev_${Date.now()}`;
-  let moved = false;
   try {
-    const snapAt = snapshotGameBeforePublish(game.id);
-    renameScorePass(game.id, 'live', arch);
-    renameScorePass(game.id, 'video', 'live');
-    moved = true;
-    const players = Object.fromEntries(getAllPlayers().map(p => [p.id, { name: p.name }]));
-    const { payload, orebs, state } = buildPublishPayload(game, getScoreEvents(game.id, 'live'), players, sg.settings);
-    const official = usePlays || !gameFinalSet(game) ? { a: state.score.a, b: state.score.b } : { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 };
-    payload.teamAScore = official.a; payload.teamBScore = official.b;
-    importGameResults(game.id, payload);
-    setGameOrebs(game.id, orebs);
-    saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: 'live', official, review: null, reviewLive: false, reviewedBy: me.name, statsPending: null, underReview: null,
-      replaced: { mode: 'bg', by: me.by, name: me.name, at: Date.now(), snapAt, arch,
-        prev: { official: sg.settings.official || null, reviewedBy: sg.settings.reviewedBy || '', statsPending: sg.settings.statsPending || null, underReview: sg.settings.underReview || null, publishedAt: sg.published_at || null, locked: !!game.review_locked } } } });
-    setGameReviewLocked(game.id, true);
+    // All or nothing: the tracks, the box score, the settings and the lock change together, so a
+    // failure halfway can never leave a replaced box score that Undo doesn't know about.
+    const { payload, state, official } = portalDb.transaction(() => {
+      const snapAt = snapshotGameBeforePublish(game.id);
+      renameScorePass(game.id, 'live', arch);
+      renameScorePass(game.id, 'video', 'live');
+      const players = Object.fromEntries(getAllPlayers().map(p => [p.id, { name: p.name }]));
+      const built = buildPublishPayload(game, getScoreEvents(game.id, 'live'), players, sg.settings);
+      const st = built.state;
+      const off = usePlays || !gameFinalSet(game) ? { a: st.score.a, b: st.score.b } : { a: Number(game.team_a_score) || 0, b: Number(game.team_b_score) || 0 };
+      built.payload.teamAScore = off.a; built.payload.teamBScore = off.b;
+      importGameResults(game.id, built.payload);
+      setGameOrebs(game.id, built.orebs);
+      saveScoreGame(game.id, { status: 'published', publishedAt: Date.now(), settings: { ...sg.settings, publishedPass: 'live', official: off, review: null, reviewLive: false, reviewedBy: me.name, statsPending: null, underReview: null,
+        replaced: { mode: 'bg', by: me.by, name: me.name, at: Date.now(), snapAt, arch,
+          prev: { official: sg.settings.official || null, reviewedBy: sg.settings.reviewedBy || '', statsPending: sg.settings.statsPending || null, underReview: sg.settings.underReview || null, publishedAt: sg.published_at || null, locked: !!game.review_locked } } } });
+      setGameReviewLocked(game.id, true);
+      return { payload: built.payload, state: st, official: off };
+    })();
     console.log(`[scorer] box score replaced game=${game.id} by ${me.name}: re-track ${state.score.a}-${state.score.b}, old plays kept as ${arch}`);
     const off = official.a !== state.score.a || official.b !== state.score.b ? ` The plays add up to ${state.score.a}–${state.score.b}; the final score ${official.a}–${official.b} stays the result.` : '';
     return { status: 200, body: { ok: true, message: `Box score replaced: ${game.team_a_name} ${official.a}, ${game.team_b_name} ${official.b}.${off} The old one is kept: Undo the replace puts it back.` },
       after: () => {
-        afterGameImport(game, Object.keys(payload.playerStats)); liveChanged(game.id); notifyStatCards(game.id);
+        afterGameImport(game, Object.keys(payload.playerStats)); liveChanged(game.id);
+        // "Your stat card is ready" only the first time the stats become official.
+        if (sg.settings.statsPending) notifyStatCards(game.id);
         try { fileScorebookCases(game, state); } catch (e) { console.error('[fines] scorebook cases:', e.message); }
       } };
   } catch (err) {
     console.error('[scorer] replace failed:', err);
-    if (moved) { renameScorePass(game.id, 'live', 'video'); renameScorePass(game.id, arch, 'live'); }
     releaseScorePublish(game.id, 'published');
     return { status: 500, body: { error: 'Replacing failed: ' + err.message } };
   }
@@ -9393,6 +9412,23 @@ function replaceScoredBoxScore(game, me, { usePlays = false } = {}) {
 // re-tracking it (or a super admin), locked game or not: a whole re-track, the compare and a
 // confirm is no casual change, and Undo the replace puts the old one back (Paolo reviews from
 // the app, where nobody is a super admin).
+// The full compare on the site (views/admin/retrack-compare.js): both tracks side by side,
+// Differences or Every play (?all=1), the totals, and Replace / Keep the saved one.
+app.get('/admin/games/:id/compare', requireAuth, (req, res) => {
+  const game = getGameById(req.params.id);
+  const sg = game && getScoreGame(game.id);
+  if (!sg) return res.redirect(game ? `/admin/games/${encodeURIComponent(game.id)}?tab=scoring` : '/admin/games');
+  const c = retrackCompare(game, { full: true });
+  const r = sg.settings.review, me = reviewer(req), sup = isSuperAdminReq(req), approver = canApproveStats(req);
+  const held = r && r.by !== me.by && !sup ? r.name : '';
+  const open = !bgRetrack(sg) || retrackOpen(sg);
+  const fin = gameFinalSet(game) ? c.saved : null;
+  res.send(renderAdminPage(req, { title: `Compare · ${game.team_a_name} vs ${game.team_b_name}`, currentPath: '/admin/games', body: adminRetrackCompareBody({ game, c, d: {
+    all: req.query.all === '1', approver, held: !!held, open,
+    blocked: held ? `${held} is re-tracking it.` : !approver ? 'Only a stats approver can replace the box score.' : !open ? LOCKED_MSG : '',
+    mismatch: c.over && fin && (fin.a !== c.re.a || fin.b !== c.re.b) ? { typed: fin, plays: c.re } : null,
+  } }) }));
+});
 app.post('/admin/games/:id/scoring/replace', requireAuth, express.json(), (req, res) => {
   const game = getGameById(req.params.id);
   const sg = game && getScoreGame(game.id);
@@ -9412,7 +9448,7 @@ app.post('/admin/games/:id/scoring/replace', requireAuth, express.json(), (req, 
     if (!hasSavedBox(game)) return res.status(409).json({ error: 'This game has no saved box score: save the box score instead.' });
     out = saveScoredBoxScore(game, 'video', me.name, {}, { usePlays });
     if (out.status === 200) {
-      saveScoreGame(game.id, { settings: { ...getScoreGame(game.id).settings, replaced: { mode: 'first', by: me.by, name: me.name, at: Date.now() } } });
+      saveScoreGame(game.id, { settings: { ...getScoreGame(game.id).settings, replaced: { mode: 'first', by: me.by, name: me.name, at: Date.now(), snapAt: latestPublishSnapshot(game.id)?.at || null } } });
       out.body.message = `${out.body.message} The old one is kept: Undo the replace puts it back.`;
     }
   }
@@ -9430,7 +9466,7 @@ app.post('/admin/games/:id/scoring/undo-replace', requireAuth, express.json(), (
   if (!canApproveStats(req)) return res.status(403).json({ error: APPROVER_ONLY });
   if (sg.settings.review || (rp.mode === 'bg' && retrackEvents(game, sg).length)) return res.status(409).json({ error: 'A new re-track is under way: throw it away first (Start over), then undo.' });
   if (rp.mode === 'first') {
-    const out = unpublishScored(game, me.name);
+    const out = unpublishScored(game, me.name, rp.snapAt);
     if (out.error) return res.status(409).json({ error: out.error });
     setGameReviewLocked(game.id, false);
     saveScoreGame(game.id, { settings: { ...getScoreGame(game.id).settings, replaced: null } });
@@ -9440,13 +9476,15 @@ app.post('/admin/games/:id/scoring/undo-replace', requireAuth, express.json(), (
   if (!snap) return res.status(409).json({ error: 'The copy of the old box score isn’t there any more: this one can’t be undone.' });
   if (!claimScoreReplace(game.id)) return res.status(409).json({ error: 'Someone is saving this game’s box score right now.' });
   try {
-    restoreGameFromSnapshot(game.id, snap, game.season);
-    deletePublishSnapshot(game.id, rp.snapAt);
-    renameScorePass(game.id, 'live', 'video');
-    renameScorePass(game.id, rp.arch, 'live');
-    const p = rp.prev || {};
-    saveScoreGame(game.id, { status: 'published', publishedAt: p.publishedAt ?? Date.now(), settings: { ...sg.settings, publishedPass: 'live', official: p.official || null, reviewedBy: p.reviewedBy || '', statsPending: p.statsPending || null, underReview: p.underReview || null, replaced: null } });
-    setGameReviewLocked(game.id, !!p.locked);
+    portalDb.transaction(() => {
+      restoreGameFromSnapshot(game.id, snap, game.season);
+      deletePublishSnapshot(game.id, rp.snapAt);
+      renameScorePass(game.id, 'live', 'video');
+      renameScorePass(game.id, rp.arch, 'live');
+      const p = rp.prev || {};
+      saveScoreGame(game.id, { status: 'published', publishedAt: p.publishedAt ?? Date.now(), settings: { ...sg.settings, publishedPass: 'live', official: p.official || null, reviewedBy: p.reviewedBy || '', statsPending: p.statsPending || null, underReview: p.underReview || null, replaced: null } });
+      setGameReviewLocked(game.id, !!p.locked);
+    })();
   } catch (err) {
     console.error('[scorer] undo replace failed:', err);
     releaseScorePublish(game.id, 'published');
@@ -9459,9 +9497,9 @@ app.post('/admin/games/:id/scoring/undo-replace', requireAuth, express.json(), (
 });
 // Back to before the box score was saved (the snapshot); scoring reopens. "Stats pending review"
 // stays on until an admin saves the box score again.
-function unpublishScored(game, by) {
+function unpublishScored(game, by, snapAt = null) {
   const sg = getScoreGame(game.id);
-  const snap = latestPublishSnapshot(game.id);
+  const snap = snapAt ? publishSnapshotAt(game.id, snapAt) : latestPublishSnapshot(game.id);
   if (!snap) return { error: 'No copy from before the box score was saved: this one can’t be undone here.' };
   restoreGameFromSnapshot(game.id, snap, game.season);
   const { publishedPass: _p, ...rest } = sg.settings;

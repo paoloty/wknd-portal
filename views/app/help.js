@@ -233,8 +233,8 @@ export const SCORER_GUIDE = [
       ['steps', [
         '<b>On the game’s Review card,</b> tap <i>Re-track from the video</i> (Unofficial or Under review stats). The scorer opens on an empty game, just admins, and it scores like a real one: the clock, quarters, fouls and every question.',
         '<b>Watch it anywhere.</b> On the TV is fine: the scorer runs its own clock, so pause it when you pause the video. If the game has a YouTube link, ••• → <i>Show the video</i> puts it above the scorer (it starts hidden).',
-        '<b>Check as you go:</b> ••• → <i>Compare</i> shows both scores, and the saved game at the same moment when it was scored live.',
-        '<b>At Game over,</b> tap <i>Compare and replace</i>: team totals and only the players whose lines differ.',
+        '<b>Check as you go:</b> ••• → <i>Compare</i> lines your re-track up with the saved game play by play (the clocks never match). Each difference gets a card: <i>Missing in re-track</i>, <i>Extra in re-track</i>, <i>Wrong player</i> or <i>Made vs missed</i>, with the plays around it and what it changes in the box score. Saved lines are grey (−), yours amber (+). Plays you tapped in another order don’t count.',
+        '<b>At Game over,</b> tap <i>Compare and replace</i>: the differences, then the box score changes. On the site, the game’s Scoring tab → <i>Open the full compare</i> shows both side by side.',
         '<b>A stats approver</b> taps <i>Replace the box score</i>: one step, the stats become official, the old box score is kept on record and <i>Undo the replace</i> puts it back. Or <i>Keep the saved one</i>: the re-track goes and the saved box score becomes official.',
       ]],
       ['tip', 'Good to know', '<i>Start over</i> throws away the re-track only; the saved box score isn’t touched. Stats approvers are picked by the super admin (player page → Settings).'],

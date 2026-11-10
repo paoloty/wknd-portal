@@ -2426,13 +2426,9 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .rt-h { margin: 4px 0 0; font-size: 15px; font-weight: 600; }
 .rt-hrow { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .rt-hrow small { font-size: 12px; }
-.rt-tbl { padding: 0; }
-.rt-row { display: grid; grid-template-columns: 82px repeat(5, minmax(0, 1fr)); align-items: center; gap: 4px; padding: 10px 12px; font-size: 14px; border-top: 1px solid var(--border); }
-.rt-row--h { border-top: 0; padding: 8px 12px; font: 600 11px/1 var(--font-num); letter-spacing: .08em; color: var(--muted); }
-.rt-row .num { font-weight: 700; }
-.rt-team { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .rt-was { color: var(--muted); }
-.rt-same { color: var(--muted); }
+
 .rt-list { padding: 0; }
 .rt-p { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border); }
 .rt-p:first-child { border-top: 0; }
@@ -2440,9 +2436,10 @@ body:has(.test-pill) .sc { padding-bottom: calc(26px + var(--safe-b)); }
 .rt-chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .rt-chip { display: inline-flex; align-items: center; height: 26px; padding: 0 8px; border-radius: 999px; background: var(--surface-2); font-size: 13px; font-weight: 700; line-height: 1; }
 .rt-mm { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+
 .rt-mm b { color: var(--text); }
 .rt-acts { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px calc(14px + var(--safe-b)); }
-.rt-acts__2 { display: flex; flex-direction: column; gap: 8px; }
+
 /* Finish the game: correct the final score (folded away) */
 .fin-final { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .fin-final summary { min-height: 28px; display: flex; align-items: center; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -3449,3 +3446,48 @@ html.iw-ios .iw-only-ios-browser:not(.iw-after) .iw-steps li:nth-child(3) .iw-n 
 .app-toast--undo button { min-height: 36px; padding: 0 14px; border-radius: 999px; background: none; border: 0; font: inherit; font-weight: 700; color: var(--amber-text); }
 /* The sign-up popup holds the page still behind it. */
 html:has(.sp-take) body { overflow: hidden; }
+
+/* Compare, play by play (2026-11-10, after the Fable audit): saved grey, re-track amber, − / + and words carry it */
+.rt-chips--l { justify-content: flex-start; }
+.rt-chip .dot { margin-right: 6px; }
+.rt-acts__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.rt-acts__row > * { flex: 1 1 140px; }
+.rd-sum { display: flex; flex-direction: column; gap: 8px; }
+.rd-sum__h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rd-sum__h b { font-size: 15px; font-weight: 600; }
+.rd-sum__h small, .rd-sum__n { font-size: 12px; color: var(--muted); }
+.rd-strip { position: relative; height: 44px; }
+.rd-strip__bar { position: absolute; left: 0; right: 0; top: 15px; height: 14px; border-radius: 7px; background: var(--surface-2); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; }
+.rd-strip__bar span + span { border-left: 1px solid var(--bg); }
+.rd-strip__off { position: absolute; right: 0; top: 32px; height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--amber) 60%, transparent); }
+.rd-tick { position: absolute; top: 0; width: 24px; height: 44px; margin-left: -12px; display: flex; align-items: center; justify-content: center; }
+.rd-tick i { display: block; width: 6px; height: 26px; border-radius: 3px; background: var(--muted); }
+.rd-tick--extra i { background: var(--amber); }
+.rd-tick--player i, .rd-tick--result i, .rd-tick--many i { background: linear-gradient(180deg, var(--muted) 50%, var(--amber) 50%); }
+.rd-strip__q { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); text-align: center; font: 600 11px/1 var(--font-num); letter-spacing: .1em; color: var(--muted); }
+.rd-card { padding: 0; display: flex; flex-direction: column; scroll-margin-top: 64px; }
+.rd-card__h { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.rd-card__t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rd-card__t b { font-size: 15px; font-weight: 600; }
+.rd-card__t small { font-size: 12px; color: var(--muted); }
+.rd-card__n { font-size: 12px; color: var(--muted); }
+.rd-off { color: var(--amber-text); }
+.rd-ico { flex: none; width: 26px; height: 26px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; line-height: 1; background: var(--surface-2); color: var(--muted); }
+.rd-ico--extra { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber-text); }
+.rd-ico--player, .rd-ico--result, .rd-ico--many { background: linear-gradient(90deg, var(--surface-2) 50%, color-mix(in srgb, var(--amber) 16%, transparent) 50%); color: var(--text); }
+.rd-lines { display: flex; flex-direction: column; }
+.rd-sub { padding: 8px 14px 2px; font-size: 12px; color: var(--muted); }
+.rd-l { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 36px; padding: 6px 14px 6px 10px; font-size: 14px; line-height: 1.3; }
+.rd-l__s { text-align: center; font-weight: 700; }
+.rd-l__sc { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rd-l__tag { font: 600 11px/1 var(--font-num); letter-spacing: .08em; text-transform: uppercase; }
+.rd-l--ctx { color: var(--muted); }
+.rd-l--s { background: var(--surface-2); }
+.rd-l--s .rd-l__s, .rd-l--s .rd-l__tag { color: var(--muted); }
+.rd-l--r { background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.rd-l--r .rd-l__s, .rd-l--r .rd-l__tag { color: var(--amber-text); }
+.rd-l--s .rd-l__hl { background: color-mix(in srgb, var(--text) 14%, transparent); border-radius: 4px; padding: 0 3px; font-weight: 600; }
+.rd-l--r .rd-l__hl { background: color-mix(in srgb, var(--amber) 30%, transparent); border-radius: 4px; padding: 0 3px; font-weight: 600; }
+.rd-eff { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 14px 12px; border-top: 1px solid var(--border); font-size: 14px; }
+.rd-eff span { font: 600 11px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.rd-eff b { font-weight: 600; }
