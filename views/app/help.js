@@ -74,7 +74,7 @@ export const SCORER_GUIDE = [
       ['p', 'On a stat crew, the spotter is the one who calls out who got the board or the assist. Here the Spotter is your setting for these questions: all of them, a few, or none.'],
       ['steps', [
         'Tap <b>•••</b> beside the clock to open the game menu.',
-        'Tap <b>Spotter</b>. It shows what you have now: <i>Off</i>, <i>Light</i>, <i>Full</i> or <i>Your mix</i>.',
+        'Under <i>My settings</i>, tap <b>Spotter</b>. It shows what you have now: <i>Off</i>, <i>Light</i>, <i>Full</i> or <i>Your mix</i>.',
         'Pick <b>Off</b> (no questions), <b>Light</b> (Rebound? and Assisted? only) or <b>Full</b> (every question).',
         'Or switch single questions on and off below. Anything that isn’t one of the three shows as <i>Your mix</i>.',
       ]],
@@ -170,8 +170,8 @@ export const SCORER_GUIDE = [
       ['p', 'Scoring with one hand? <b>Thumb mode</b> puts everything you tap every play in the bottom half of the screen: the clock, the five on court and the buttons. The top keeps what you read or tap now and then: the score, the benches and the plays before the last one.'],
       ['img', 'thumb.jpg', 'Thumb mode: the benches and the last plays up top, the clock, both fives and the buttons at the bottom.'],
       ['steps', [
-        '<b>Turn it on</b> in the game menu (•••): <i>Thumb mode: off (tap to turn on)</i>. It says <i>Thumb mode: on</i> once it’s on. Your phone remembers it for league games.',
-        '<b>Left-handed?</b> ••• → <i>Hand: right (tap for left)</i> moves the clock’s ▶ and mirrors the buttons to your side.',
+        '<b>Turn it on</b> in the game menu (•••): under <i>My settings</i>, switch <i>Thumb mode</i> on. Your phone remembers it for league games.',
+        '<b>Left-handed?</b> ••• → <i>Hand</i> → <i>Left</i> moves the clock’s ▶ and mirrors the buttons to your side.',
         '<b>Subs:</b> the benches are up top, one row per team; swipe a row for more. Tap a bench player, then who comes off, as always. Sub beside the team name works too.',
         '<b>An older play:</b> tap it in the list at the top to fix it. The last play is in the dock with Undo and Fix.',
       ]],
@@ -233,7 +233,7 @@ export const SCORER_GUIDE = [
       ['steps', [
         '<b>On the game’s Review card,</b> tap <i>Re-track from the video</i> (Unofficial or Under review stats). The scorer opens on an empty game, just admins, and it scores like a real one: the clock, quarters, fouls and every question.',
         '<b>Watch it anywhere.</b> On the TV is fine: the scorer runs its own clock, so pause it when you pause the video. If the game has a YouTube link, ••• → <i>Show the video</i> puts it above the scorer (it starts hidden).',
-        '<b>Check as you go:</b> ••• → <i>Compare with the saved box score</i> shows both scores, and the saved game at the same moment when it was scored live.',
+        '<b>Check as you go:</b> ••• → <i>Compare</i> shows both scores, and the saved game at the same moment when it was scored live.',
         '<b>At Game over,</b> tap <i>Compare and replace</i>: team totals and only the players whose lines differ.',
         '<b>A stats approver</b> taps <i>Replace the box score</i>: one step, the stats become official, the old box score is kept on record and <i>Undo the replace</i> puts it back. Or <i>Keep the saved one</i>: the re-track goes and the saved box score becomes official.',
       ]],
@@ -293,7 +293,7 @@ export const PW_SCORER_GUIDE = [
       ['h', 'The Spotter: Assisted? after a basket'],
       ['p', 'Want the assists without remembering to tap AST? Turn on the Spotter and the scorer asks after each made basket. It starts off, so Basic stays one tap per play until you choose.'],
       ['steps', [
-        'Tap <b>•••</b>, then <b>Spotter: Off</b>.',
+        'Tap <b>•••</b>, then <b>Spotter</b> under <i>My settings</i>. It says <i>Off</i> to start.',
         '<b>Light</b> asks <b>Assisted?</b> after a made 2PT, 3PT or 4PT. Tap who passed, or <i>No assist</i>.',
         '<b>Full</b> also asks <b>Who went off?</b> when a player from the bench makes a play, so the five on the court stay right.',
         '<b>Off</b> goes back to no questions. You can also switch each one on or off by itself.',
@@ -329,8 +329,8 @@ export const PW_SCORER_GUIDE = [
     slug: 'thumb', title: 'One hand: thumb mode', blocks: [
       ['p', 'Thumb mode is on for Papawis. Everything you tap every play is in the bottom half: the clock, both sides’ players, the buttons. The top shows the score, the bench and the plays before the last one.'],
       ['steps', [
-        '<b>Left-handed?</b> ••• → <i>Hand: right (tap for left)</i> moves the clock’s ▶ and mirrors the buttons.',
-        '<b>Prefer the old layout?</b> ••• → <i>Thumb mode: on (tap to turn off)</i>. Your phone remembers it.',
+        '<b>Left-handed?</b> ••• → <i>Hand</i> → <i>Left</i> moves the clock’s ▶ and mirrors the buttons.',
+        '<b>Prefer the old layout?</b> ••• → switch <i>Thumb mode</i> off. Your phone remembers it.',
         '<b>An older play:</b> tap it in the list at the top to fix it.',
       ]],
     ],
@@ -340,7 +340,7 @@ export const PW_SCORER_GUIDE = [
       ['steps', [
         '<b>End the last quarter</b> with End beside the clock: <i>Game over</i> (a tie is fine), <i>Extra time</i> if there’s still time, or <i>Not yet</i>.',
         '<b>Start Game 2.</b> It’s set up like the last game: same minutes, sides as they finished. Change anything that’s different, then start.',
-        '<b>Back to an earlier game</b> to fix it: ••• → <i>Another game of this run…</i>.',
+        '<b>Back to an earlier game</b> to fix it: ••• → <i>Another game</i>.',
       ]],
       ['dl', [
         ['No timeouts, penalty or foul-outs', 'Papawis has none of them, so the scoreboard shows no timeout dots or team-foul pips, and nobody fouls out.'],

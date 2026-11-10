@@ -963,9 +963,46 @@ export async function mount(el) {
     if (phone && file && navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file], title: 'My plays' }).catch(err => { if (!err || err.name !== 'AbortError') download(); });
     download();
   }
-  const gameMenu = () => menu(`${G.final ? 'Final' : G.period} · ${clockStr()}`, [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play…'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'], ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ...(video && B.over && B.over.compare ? [['compare', 'Compare with the saved box score']] : []), ['send', `Send my plays (${list().length})…`], ['spot', `Spotter: ${SPOT_NAMES[spotPreset()]} ›`], ...(multi ? [['sound', soundOn() ? 'Sounds: on (tap to turn off)' : 'Sounds: off (tap to turn on)']] : []),
-    ...(!wide.matches ? [['thumb', thumbOn() ? 'Thumb mode: on (tap to turn off)' : 'Thumb mode: off (tap to turn on)'], ...(thumbOn() ? [['hand', leftHand() ? 'Hand: left (tap for right)' : 'Hand: right (tap for left)']] : [])] : []),
-    ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game of this run…']] : []), ...(pw ? [['pw-finish', 'Finish the run…']] : []), ['table', tblOn() ? 'Table display: linked ✓' : 'Table display (tablet)…']], k => {
+  // The game menu (•••, Paolo 2026-11-10, mockup claude.ai/artifact/JZrmjV3ww94BnmU9wRV6Ym):
+  // "This game" as a 2-column grid of icon tiles (an odd last tile spans both), "My settings" as
+  // rows: Spotter ›, then switches. A setting changes in place and the menu stays open.
+  const GM_ICON = {
+    sheet: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+    refs: '<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
+    end: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+    clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M10 2h4"/>',
+    send: '<path d="M4 12l16-8-6 16-2-6-8-2z"/>',
+    table: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
+    video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/>',
+    compare: '<path d="M12 3v18M4 7h5M4 12h5M15 7h5M15 12h5M4 17h5M15 17h5"/>',
+    'pw-games': '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    'pw-finish': '<path d="M20 6L9 17l-5-5"/>',
+  };
+  const CHEVRON = '<svg class="sc-gm__chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+  // [id, label, badge count, second line]
+  const gameTiles = () => [['sheet', 'Scoresheet'], ['refs', 'Refs stopped play'], ...(G.final ? [] : [['end', `End ${G.period}`]]), ['clock', 'Fix the clock'],
+    ...(video && B.video ? [['video', ui.showVideo ? 'Hide the video' : 'Show the video']] : []), ...(video && B.over && B.over.compare ? [['compare', 'Compare', 0, 'With the saved box score']] : []),
+    ['send', 'Send my plays', unsent().length], ...(pw && games().filter(n => setupFor(n)).length > 1 ? [['pw-games', 'Another game']] : []), ...(pw ? [['pw-finish', 'Finish the run']] : []),
+    ['table', 'Table display', 0, tblOn() ? 'Linked ✓' : '']];
+  // One setting row: a switch (role=switch) that answers the menu with its id.
+  const setRow = (id, label, hint, on) => `<button type="button" class="sc-spot__row" role="switch" aria-checked="${on}" data-ask="${id}"><span class="sc-spot__t"><b>${esc(label)}</b><small>${esc(hint)}</small></span><span class="sc-spot__sw" aria-hidden="true"></span></button>`;
+  function gameMenuPanel() {
+    const tiles = gameTiles();
+    const tile = ([id, label, n, sub], i) => `<button type="button" class="sc-gm__act${tiles.length % 2 && i === tiles.length - 1 ? ' sc-gm__act--wide' : ''}" data-ask="${id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GM_ICON[id]}</svg><span class="sc-gm__t">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ''}</span>${n ? `<span class="sc-gm__n" aria-label="${n} not sent yet">${n}</span>` : ''}</button>`;
+    const hand = leftHand() ? 'left' : 'right';
+    const rows = [
+      `<button type="button" class="sc-spot__row" data-ask="spot"><span class="sc-spot__t"><b>Spotter</b><small>The questions after a play</small></span><span class="sc-gm__val">${SPOT_NAMES[spotPreset()]}</span>${CHEVRON}</button>`,
+      multi ? setRow('sound', 'Sounds', 'When the other scorer asks for your side or leaves', soundOn()) : '',
+      !wide.matches ? setRow('thumb', 'Thumb mode', 'Everything you tap in the bottom half', thumbOn()) : '',
+      !wide.matches && thumbOn() ? `<div class="sc-spot__row"><span class="sc-spot__t"><b>Hand</b><small>The clock and buttons on your side</small></span><span class="sc-gm__seg" role="group" aria-label="Hand">${['left', 'right'].map(h => `<button type="button" class="${hand === h ? 'on' : ''}" data-ask="hand-${h}" aria-pressed="${hand === h}">${h === 'left' ? 'Left' : 'Right'}</button>`).join('')}</span></div>` : '',
+    ].join('');
+    return `<div class="sc-q sc-q--menu sc-gm" role="group" aria-label="Game menu"><div class="sc-q__h"><b class="sc-gm__l">${esc(`${G.final ? 'Final' : G.period} · ${clockStr()}`)}</b><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
+      <div class="sc-gm__sec"><span class="sc-gm__l">This game</span><div class="sc-gm__grid">${tiles.map(tile).join('')}</div></div>
+      <div class="sc-gm__sec"><span class="sc-gm__l">My settings</span><div class="sc-spot__list">${rows}</div></div></div>`;
+  }
+  // keep: reopened after a setting changed, so the next tap isn't held back as the opening finger.
+  const gameMenu = keep => { ui.ask = { kind: 'menu', gm: true, q: 'Game menu', opts: [], act: gameAct, opened: keep ? 0 : Date.now() }; ui.peek = null; paint(); };
+  function gameAct(k) {
     if (k === 'send') return sendMyPlays();
     if (k === 'pw-games') return menu('Which game?', games().filter(n => setupFor(n)).map(n => [String(n), `Game ${n}${n === ui.game ? ' · on screen' : ''}`]), v => goGame(Number(v)));
     if (k === 'pw-finish' && practice) { ui.pracFinish = true; if (tipAt() === tipList.length - 1) { pref.set(tipKey, String(tipList.length)); report({}, true); } return paint(); }
@@ -973,16 +1010,16 @@ export async function mount(el) {
     if (k === 'table') return tableOpen();
     if (k === 'sheet') { ui.sheet = true; return paint(); }
     if (k === 'spot') { ui.ask = { kind: 'spot', opened: Date.now() }; return paint(); }
-    if (k === 'thumb') { pref.set(thumbKey, thumbOn() ? 'off' : 'on'); ui.tip = thumbOn() ? 'Thumb mode on: everything you tap is in the bottom half.' : 'Thumb mode off.'; return paint(); }
-    if (k === 'hand') { pref.set('wknd-sc-hand', leftHand() ? 'right' : 'left'); ui.tip = leftHand() ? 'Left hand: the clock and buttons mirror to your side.' : 'Right hand.'; return paint(); }
-    if (k === 'sound') { pref.set('wknd-sc-sound', soundOn() ? 'off' : 'on'); ui.tip = soundOn() ? 'Sounds on.' : 'Sounds off.'; if (soundOn()) chime('yes'); return paint(); }
+    if (k === 'thumb') { pref.set(thumbKey, thumbOn() ? 'off' : 'on'); return gameMenu(true); }
+    if (k === 'hand-left' || k === 'hand-right') { pref.set('wknd-sc-hand', k.slice(5)); return gameMenu(true); }
+    if (k === 'sound') { pref.set('wknd-sc-sound', soundOn() ? 'off' : 'on'); if (soundOn()) chime('yes'); return gameMenu(true); }
     if (k === 'refs') return menu('Refs stopped play: why?', [['injury', 'Injury'], ['equipment', 'Equipment'], ['clock', 'Clock / scoreboard'], ['coach', 'Talking to a coach'], ['other', 'Other']], r => { whistle(); teamPlay(null, 'stoppage', { kind: r }); });
     if (k === 'end') return endPeriod();
     if (k === 'clock') return clockMenu();
     if (k === 'video') { ui.showVideo = !ui.showVideo; showVideo(); return paint(); }
     // A re-track of a saved box score: the compare so far (every play this phone has is saved on it).
     if (k === 'compare') { if (unsent().length) { ui.tip = 'Every play has to be saved first: wait for signal.'; return paint(); } location.href = B.over.compare; return; }
-  });
+  }
 
   // ── Subs ──
   // Tap a bench player, then the court tile of the one coming off (or the Subs sheet). Each
@@ -1420,6 +1457,7 @@ export async function mount(el) {
     if (a && a.kind === 'fix') return fixPanel(a);
     if (a && a.kind === 'menu' && a.tm) return teamMenuPanel(a.tm);
     if (a && a.kind === 'spot') return spotPanel();
+    if (a && a.kind === 'menu' && a.gm) return gameMenuPanel();
     if (a && a.kind === 'menu') {
       const chips = opts => `<div class="sc-menu">${opts.map(o => `<button type="button" class="${o.def ? 'def' : ''}" data-ask="${esc(o.id)}"${String(o.id).startsWith('wait:') ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>`;
       return `<div class="sc-q sc-q--menu" role="group" aria-label="${esc(a.q)}"><div class="sc-q__h"><b>${esc(a.q)}</b><span class="sc-q__sp"></span><button type="button" class="sc-x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>

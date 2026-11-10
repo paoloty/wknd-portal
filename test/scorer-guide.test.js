@@ -23,8 +23,9 @@ test('every follow-up question the scorer asks is in the guide', () => {
   assert.deepEqual(missing, [], `How to score never mentions: ${missing.join(', ')}. Add them to views/app/help.js`);
 });
 
-test('every on/off switch in the game menu is explained', () => {
-  const switches = [...scorer.matchAll(/'([A-Z][\w -]+): (?:on|off) \(tap to turn/g)].map(m => m[1]);
+test('every switch in the game menu is explained', () => {
+  // My settings rows (2026-11-10): setRow('id', 'Label', …).
+  const switches = [...scorer.matchAll(/setRow\('[\w-]+', '([^']+)'/g)].map(m => m[1]);
   assert.ok(switches.length >= 1, 'found the game menu switches');
   const missing = switches.filter(s => s !== 'Sounds' && !guide.includes(s));
   assert.deepEqual(missing, [], `How to score doesn't explain: ${missing.join(', ')}`);
@@ -67,5 +68,5 @@ test('the Papawis guide: screenshots, the switching chapter, thumb mode', () => 
   assert.deepEqual(missing, [], `missing in public/help/papawis: ${missing.join(', ')}`);
   assert.ok(PW_SCORER_GUIDE.some(ch => ch.slug === 'switch'), 'switching Light and Dark has its own chapter');
   const pw = PW_SCORER_GUIDE.flatMap(ch => [ch.title, ...ch.blocks.flat(2)]).join(' ');
-  for (const s of ['Thumb mode', 'Hand: right', '⇄', 'Finish the run']) assert.ok(pw.includes(s), `the Papawis guide explains "${s}"`);
+  for (const s of ['Thumb mode', 'My settings', 'Left', '⇄', 'Finish the run']) assert.ok(pw.includes(s), `the Papawis guide explains "${s}"`);
 });
