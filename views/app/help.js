@@ -37,7 +37,7 @@ export const SCORER_GUIDE = [
       ['steps', [
         'The card flashes what you recorded (<i>+2</i>, <i>MISS</i>, <i>REB</i>) and the play shows in the last-play line.',
         'A bench player’s stat brings them on court and asks who went off.',
-        'Hold a player’s card to see their line so far. Hold a team’s score for the score by quarter.',
+        'Hold a player’s card to see their line so far. Hold a team’s score for the score by quarter. × (or a tap anywhere) closes it.',
         '<b>Scoresheet</b> at the bottom has the box score, every play and the fouls.',
       ]],
       ['tip', 'Good to know', 'A player’s fouls show in the top corner of their card (<i>2F</i>): white when it’s worth watching, red when they’re one away. On a small phone the cards drop the photos, so the numbers and names stay big.'],

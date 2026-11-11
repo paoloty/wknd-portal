@@ -1347,7 +1347,7 @@ export async function mount(el) {
     const tech = pw ? '' : `<div class="sc-tmn__g">${label('Technical')}<div class="sc-tmn__two"><button type="button" class="sc-tmn__tech" data-ask="coach T">Coach</button><button type="button" class="sc-tmn__tech" data-ask="bench T">Bench</button></div></div>`;
     const noSub = !subBench(t).length;
     return `<div class="sc-q sc-q--menu sc-tmn" role="group" aria-label="${esc(nm)} team menu">
-      <div class="sc-tmn__h"><span class="sc-tmn__dot" style="${sideLook(t)}"></span><b class="sc-tmn__name">${esc(nm)}</b><span class="sc-q__sp"></span><button type="button" class="sc-tmn__sub" data-ask="subq"${noSub ? ' disabled' : ''}>${SWAP_ICON}Sub</button><button type="button" class="sc-tmn__x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
+      <div class="sc-tmn__h"><span class="sc-tmn__dot" style="${sideLook(t)}"></span><b class="sc-tmn__name">${esc(nm)}</b><span class="sc-q__sp"></span><button type="button" class="sc-tmn__sub" data-ask="subq"${noSub ? ' disabled' : ''}>${SWAP_ICON}Sub</button><button type="button" class="sc-x" data-ask="__cancel" aria-label="Close">${CLOSE}</button></div>
       ${timeoutBtn}${tos}${players}
       ${tech ? `<div class="sc-tmn__split">${tech}<div class="sc-tmn__g">${label('Lineup')}${dnp}</div></div>` : `<div class="sc-tmn__g">${label('Lineup')}${dnp}</div>`}
     </div>`;
@@ -1361,7 +1361,7 @@ export async function mount(el) {
     const meta = [whenOf(r), ago <= 0 ? 'last play' : `${ago} play${ago === 1 ? '' : 's'} ago`, r.by && r.dev !== deviceId ? `by ${r.by}` : ''].filter(Boolean).join(' · ');
     return `<div class="sc-fx__play${gone ? ' is-gone' : ''}">${r.team ? `<span class="dot" style="--c:${esc(team[r.team].color)}"></span>` : ''}<span class="sc-fx__w"><span class="sc-fx__what">${playText(r)}</span><small>${esc(meta)}</small></span>${scores(r) && r.made ? `<b class="sc-fx__s num">${r.score.a}–${r.score.b}</b>` : ''}</div>`;
   }
-  const fxHead = (icon, title, close = 'cancel', tone = '') => `<div class="sc-tmn__h"><span class="sc-fx__ic${tone}">${tmIcon(icon)}</span><b class="sc-tmn__name">${esc(title)}</b><span class="sc-q__sp"></span><button type="button" class="sc-tmn__x" data-fx="${close}" aria-label="${close === 'cancel' ? 'Cancel the fix' : 'Back'}">${CLOSE}</button></div>`;
+  const fxHead = (icon, title, close = 'cancel', tone = '') => `<div class="sc-tmn__h"><span class="sc-fx__ic${tone}">${tmIcon(icon)}</span><b class="sc-tmn__name">${esc(title)}</b><span class="sc-q__sp"></span><button type="button" class="sc-x" data-fx="${close}" aria-label="${close === 'cancel' ? 'Cancel the fix' : 'Back'}">${CLOSE}</button></div>`;
   function fixPanel(a) {
     const r = G.rows.find(x => x.id === a.id); if (!r) return '';
     if (a.step === 'who') {
@@ -1646,6 +1646,7 @@ export async function mount(el) {
       const cols = Math.max(4, ps.length);
       const per = Array.from({ length: cols }, (_, i) => ps[i] || { period: i < 4 ? `Q${i + 1}` : `OT${i - 3}`, a: null, b: null });
       return `<div class="sc-peek" data-act="peek-close"><div class="sc-pop" role="dialog" aria-label="Score by quarter" style="--cols:${cols}">
+        <div class="sc-pop__bar"><b>Score by quarter</b><button type="button" class="sc-x" data-act="peek-close" aria-label="Close">${CLOSE}</button></div>
         <span></span>${per.map(p => `<span class="sc-pop__h num">${esc(p.period)}</span>`).join('')}<span class="sc-pop__h num">T</span>
         ${['a', 'b'].map(t => `<span class="sc-pop__t"><span class="dot" style="--c:${esc(team[t].color)}"></span>${esc(team[t].name)}</span>${per.map(p => `<span class="num${p[t] == null ? ' dim' : ''}">${p[t] == null ? '–' : p[t]}</span>`).join('')}<b class="num">${G.score[t]}</b>`).join('')}
       </div></div>`;
@@ -1662,6 +1663,7 @@ export async function mount(el) {
     let lastP = null;
     for (let i = G.rows.length - 1; i >= 0 && !lastP; i--) { const r = G.rows[i]; if (r.player === p.id || r.in === p.id) lastP = r; }
     return `<div class="sc-peek" data-act="peek-close"><div class="sc-pop sc-pop--p" role="dialog" aria-label="${esc(short(p.id))}, this game">
+      <div class="sc-pop__bar"><b>This game</b><button type="button" class="sc-x" data-act="peek-close" aria-label="Close">${CLOSE}</button></div>
       <div class="sc-pc">
         <span class="sc-pc__avw"><span class="avatar sc-pc__av" style="--ring:${esc(team[p.team].color)}">${esc(ini)}${p.photo ? `<img src="${esc(p.photo)}" alt="" onerror="this.remove()">` : ''}</span>${potgLeader() === p.id ? '<i class="sc-pc__star" aria-label="Player of the game so far">★</i>' : ''}</span>
         <span class="sc-pc__who"><small class="num">${p.number ? `#${esc(p.number)} · ` : ''}${esc(team[p.team].name)} · ${onCourt(p.team, p.id) ? 'on court' : 'bench'}</small><b>${esc(p.name)}</b>

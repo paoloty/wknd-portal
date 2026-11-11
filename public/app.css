@@ -36,6 +36,8 @@
   --pick-white: #d7dce5; --pick-black: #8a94a6; /* pick bar edges: Black runs lighter so it shows on the row */
   --shirt-light: #e7eaf0; --shirt-dark: #262d3b; --shirt-edge: rgba(255,255,255,0.32); /* Papawis Light / Dark swatches */
   --sc-card: #26304a; --sc-light-edge: var(--shirt-light); --sc-num: #fff; --sc-num-shadow: 0 1px 0 rgba(4,6,10,.7); /* scorer face cards */
+  /* Scorer overlays (sheets, pop-ups, Table display): a lighter fill, a light top edge, a shadow and a deep dim, so they sit above the scorer (Paolo, 2026-11-11) */
+  --ov-scrim: rgba(3,5,9,.72); --ov-fill: #161c29; --ov-raised: #202839; --ov-edge: rgba(255,255,255,.12); --ov-shadow: 0 -18px 48px rgba(0,0,0,.6); --ov-pop-shadow: 0 24px 60px rgba(0,0,0,.7);
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -46,6 +48,7 @@
   --win: #047857; --loss: #dc2626; --danger: #dc2626;
   --team-white: #8d97a8; --team-black: #4a5263; --pick-white: #79839a; --pick-black: #4a5263; --shirt-light: #ffffff; --shirt-dark: #2a3140; --shirt-edge: #8a93a4;
   --sc-card: #dde1e9; --sc-light-edge: #8a93a4; --sc-num: #111827; --sc-num-shadow: 0 1px 0 rgba(255,255,255,.6);
+  --ov-scrim: rgba(10,14,22,.42); --ov-fill: #ffffff; --ov-raised: #eceef3; --ov-edge: transparent; --ov-shadow: 0 -12px 40px rgba(10,14,22,.22); --ov-pop-shadow: 0 20px 50px rgba(10,14,22,.28);
   color-scheme: light;
 }
 @media (prefers-color-scheme: light) {
@@ -57,6 +60,7 @@
     --win: #047857; --loss: #dc2626; --danger: #dc2626;
     --team-white: #8d97a8; --team-black: #4a5263; --pick-white: #79839a; --pick-black: #4a5263; --shirt-light: #ffffff; --shirt-dark: #2a3140; --shirt-edge: #8a93a4;
     --sc-card: #dde1e9; --sc-light-edge: #8a93a4; --sc-num: #111827; --sc-num-shadow: 0 1px 0 rgba(255,255,255,.6);
+    --ov-scrim: rgba(10,14,22,.42); --ov-fill: #ffffff; --ov-raised: #eceef3; --ov-edge: transparent; --ov-shadow: 0 -12px 40px rgba(10,14,22,.22); --ov-pop-shadow: 0 20px 50px rgba(10,14,22,.28);
     color-scheme: light;
   }
 }
@@ -1812,8 +1816,12 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-q--opt { position: relative; overflow: hidden; gap: 6px; padding: 6px 6px 10px 12px; border: 1px solid var(--hair); }
 .sc-q--opt .sc-q__h { min-height: 44px; }
 .sc-q__optl { font-size: 12px; color: var(--muted); }
-.sc-x { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 10px; color: var(--muted); }
-.sc-x svg { width: 18px; height: 18px; }
+/* The one close button in the scorer: a 32px round chip inside a 44px tap area, see-through so it sits on any card or sheet (Paolo, 2026-11-11) */
+.sc-x { position: relative; flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); }
+.sc-x::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: color-mix(in srgb, var(--text) 8%, transparent); box-shadow: inset 0 0 0 1px var(--hair); }
+.sc-x:active::before { background: color-mix(in srgb, var(--text) 16%, transparent); }
+.sc-x:active { color: var(--text); }
+.sc-x svg { position: relative; width: 16px; height: 16px; }
 .sc-q--opt .sc-q__opts { padding-right: 6px; }
 .sc-q--opt .sc-opt { min-height: 44px; }
 .sc-q__timer { position: absolute; left: 0; bottom: 0; width: 100%; height: 3px; background: var(--amber); transform-origin: left; }
@@ -1849,6 +1857,8 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-alert__t b { font-size: 15px; font-weight: 700; line-height: 1.2; }
 .sc-alert__t small { font-size: 12px; font-weight: 500; line-height: 1.3; color: #3a2a14; }
 .sc-alert .sc-x { color: #14110d; }
+.sc-alert .sc-x::before { background: rgba(20,17,13,.14); box-shadow: none; }
+.sc-alert .sc-x:active::before { background: rgba(20,17,13,.24); }
 .sc-alert__b { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .sc-alert__yes, .sc-alert__no { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 10px; border-radius: var(--r-in); font-size: 14px; font-weight: 600; line-height: 1.15; text-align: center; }
 .sc-alert__yes { border: 0; background: #14110d; color: #fff; }
@@ -1899,8 +1909,6 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-tmn__name { font: 800 20px/1 var(--font-num); letter-spacing: .1em; text-transform: uppercase; }
 .sc-tmn__sub { display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; border-radius: var(--r-in); border: 0; background: var(--surface-2); color: var(--text); font: 700 15px/1 var(--font-num); letter-spacing: .04em; text-transform: uppercase; }
 .sc-tmn__sub:disabled { opacity: .4; }
-.sc-tmn__x { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); color: var(--muted); }
-.sc-tmn__x svg { width: 18px; height: 18px; }
 .sc-tmn__g { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .sc-tmn__l { font: 700 11px/1 var(--font-num); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .sc-tmn__tt { display: flex; flex-direction: column; gap: 4px; min-width: 0; text-align: left; }
@@ -1972,9 +1980,13 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 }
 
 /* Hold popovers: the score by quarter, a player's line */
-.sc-peek { position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-start; justify-content: center; padding: calc(var(--safe-t, 0px) + 110px) 12px 0; background: rgba(5,8,13,.55); }
-.sc-pop { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--cols), 40px) 48px; align-items: center; row-gap: 8px; width: 100%; max-width: 480px; padding: 12px 14px; border-radius: var(--r-card); background: var(--surface-2); border: 1px solid var(--hair); box-shadow: 0 14px 40px rgba(0,0,0,.5); font: 600 18px/1 var(--font-num); color: var(--muted); text-align: center; }
+.sc-peek { position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-start; justify-content: center; padding: calc(var(--safe-t, 0px) + 110px) 12px 0; background: var(--ov-scrim); }
+.sc-pop { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--cols), 40px) 48px; align-items: center; row-gap: 8px; width: 100%; max-width: 480px; padding: 12px 14px; border-radius: var(--r-card); background: var(--ov-fill); --surface-2: var(--ov-raised); border: 1px solid var(--ov-edge); box-shadow: var(--ov-pop-shadow); font: 600 18px/1 var(--font-num); color: var(--muted); text-align: center; }
 .sc-pop__h { font-size: 12px; letter-spacing: .08em; }
+/* The pop-up header: title on the left, the close × on the right, across every column */
+.sc-pop__bar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -8px -10px -2px 0; font: 600 15px/1 var(--font-ui); color: var(--text); text-align: left; }
+.sc-pop--p .sc-pop__bar { margin: -8px -8px -6px 0; }
+.sc-pop .sc-pop__bar b { font-size: 15px; font-weight: 600; }
 .sc-pop__t { display: flex; align-items: center; gap: 8px; font: 600 14px/1 var(--font-ui, inherit); color: var(--text); text-align: left; }
 .sc-pop b { color: var(--text); font-size: 22px; }
 .sc-pop .dim { opacity: .5; }
@@ -2013,8 +2025,9 @@ button.sc-clk__t { min-height: 44px; padding: 0 2px; background: none; border: 0
 .sc-pop__line span.zero b { color: var(--muted); }
 
 /* The Scoresheet: a sheet on a phone, docked on a tablet. */
-.sc-sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.55); }
-.sc-sheet__in { width: 100%; max-width: 640px; max-height: 85vh; max-height: 85dvh; overflow-y: auto; padding: 12px 12px calc(12px + var(--safe-b)); box-sizing: border-box; border-radius: var(--r-card) var(--r-card) 0 0; background: var(--bg); }
+.sc-sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: var(--ov-scrim); }
+.sc-sheet__in { width: 100%; max-width: 640px; max-height: 85vh; max-height: 85dvh; overflow-y: auto; padding: 12px 12px calc(12px + var(--safe-b)); box-sizing: border-box; border-radius: var(--r-card) var(--r-card) 0 0; background: var(--ov-fill); --surface-2: var(--ov-raised); border-top: 1px solid var(--ov-edge); box-shadow: var(--ov-shadow); }
+.sc-sheet .sc-bx th:first-child, .sc-sheet .sc-bx td:first-child { background: var(--ov-fill); }
 .sc-sheet__in--tall { height: 85vh; display: flex; flex-direction: column; overflow: hidden; padding-top: 6px; }
 /* Swipe down to close: the grab bar says so */
 .sc-sheet__grab { flex: none; width: 36px; height: 4px; margin: 0 auto 4px; border-radius: 2px; background: var(--hair); background: color-mix(in srgb, var(--text) 22%, transparent); }
@@ -3049,8 +3062,8 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .gr-tb tbody tr[data-pcard] { cursor: pointer; }
 
 /* Table display pairing (public/scorer.js tableOpen): scan the tablet's code, show this phone's. */
-.sc-tbl { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(5,7,11,.6); }
-.sc-tbl__in { width: 100%; max-width: 480px; max-height: 92dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 12px 16px calc(20px + var(--safe-b)); border-radius: 22px 22px 0 0; background: var(--surface); border-top: 1px solid var(--hair); }
+.sc-tbl { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: var(--ov-scrim); }
+.sc-tbl__in { width: 100%; max-width: 480px; max-height: 92dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 12px 16px calc(20px + var(--safe-b)); border-radius: 22px 22px 0 0; background: var(--ov-fill); --surface-2: var(--ov-raised); border-top: 1px solid var(--ov-edge); box-shadow: var(--ov-shadow); }
 .sc-tbl__h { display: flex; align-items: center; justify-content: space-between; font-size: 15px; }
 .sc-tbl__h b { font-weight: 600; }
 .sc-tbl__s { margin: 0; font-size: 14px; color: var(--muted); }
@@ -3058,7 +3071,7 @@ html:has(.bk.is-pinned), html:has(.bk.is-pinned) body { height: 100%; overflow: 
 .sc-tbl__v { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-in); background: #000; }
 .sc-tbl__qr { align-self: center; width: min(100%, 360px); padding: 12px; border-radius: 14px; background: #fff; }
 .sc-tbl__qr svg { display: block; width: 100%; height: auto; }
-@media (min-width: 700px) { .sc-tbl { align-items: center; } .sc-tbl__in { border-radius: 22px; } }
+@media (min-width: 700px) { .sc-tbl { align-items: center; } .sc-tbl__in { border-radius: 22px; border: 1px solid var(--ov-edge); box-shadow: var(--ov-pop-shadow); } }
 
 /* Papawis: a guest added at the court, and someone else holding the run (public/scorer.js). */
 .su-guest input { box-sizing: border-box; width: 100%; height: 44px; padding: 0 14px; border-radius: var(--r-in); border: 1px solid var(--field-border); background: var(--field); color: var(--text); font: inherit; font-size: 16px; }
