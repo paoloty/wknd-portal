@@ -85,6 +85,7 @@ function head(p, court, x, isAdmin) {
       <span class="crt-kicker">Basketball court${p.city ? ` · ${escHtml(p.city)}` : ''}${court.partner ? ' <span class="crt-pill crt-pill--amber">Partner court</span>' : ''}</span>
       <h1 class="crt-h1">${escHtml(p.name)}</h1>
       ${identity ? `<p class="crt-ident">${identity}</p>` : ''}
+      ${p.lede ? `<p class="crt-lede">${escHtml(p.lede)}</p>` : ''}
       ${x.flags.partner && !court.partner ? `<p class="crt-ident crt-claim">Is this your venue? <a href="/courts/${encodeURIComponent(court.slug)}/partner" data-cta="court-partner">Claim this page, free</a></p>` : ''}
       ${commute ? `<p class="crt-line">${ICON.pin}<span>${escHtml(commute)}</span></p>` : ''}
       ${r ? `<div class="crt-rateline">${stars(r.avg)}<b>${r.avg.toFixed(1)}</b><span>${plural(r.n, 'player rating')}</span><a href="#crt-say">What players say</a></div>` : ''}
@@ -325,7 +326,7 @@ function there(p, court, x) {
   const info = p.info || {};
   const tags = courtInfoTags(info);
   const hours = courtHoursLabel(info);
-  const notes = [['Opening hours', hours && `${hours}, every day (as the venue posts it)`], ['Court rental', info.rate], ['Phone', courtPhone(info)], ['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
+  const notes = [['Opening hours', hours && `${hours}, every day (as the venue posts it)`], ['Court rental', info.rate && `${info.rate}${p.checked ? ` (checked ${p.checked})` : ''}`], ['Phone', courtPhone(info)], ['How to get there', info.directions], ['Good to know', info.notes], info.contact_public ? ['Contact', info.contact] : null].filter(r => r && r[1]);
   const links = courtLinks(info);
   // Only an exact pin (set by an admin) gets drawn: the address lookup can land on the city
   // centre, so without one the card links out to Google Maps' own search for the address.
@@ -573,7 +574,18 @@ const SCRIPT = `<script>
 })();
 </script>`;
 
-export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLoggedIn = false, isAdmin = false }) {
+// "More courts nearby": compact tiles to other court pages (server.js nearbyCourts).
+function nearbySection(p, nearby) {
+  if (!nearby?.length) return '';
+  const sameCity = p.city && nearby.every(c => c.city === p.city);
+  return `<section class="crt-sec" id="crt-nearby" aria-labelledby="crt-nearby-h">${sh(sameCity ? `More basketball courts in ${p.city}` : 'More basketball courts nearby', { id: 'crt-nearby-h' })}
+    <div class="crt-index crt-index--compact">${nearby.map(c => `<a class="card crt-tile" href="/courts/${encodeURIComponent(c.slug)}" data-cta="court-nearby">
+      <span class="crt-tile__img">${c.photo ? `<img src="${escHtml(c.photo.src)}" alt="${escHtml(c.photo.alt)}" loading="lazy">` : ''}</span>
+      <span class="crt-tile__body"><span class="crt-kicker">${escHtml(c.city || 'Metro Manila')}</span><b>${escHtml(c.name)}</b>
+        <small>${[c.rateFrom ? `From ${c.rateFrom}` : '', c.runs ? plural(c.runs, 'run') : '', c.games ? plural(c.games, 'league game') : ''].filter(Boolean).join(' · ')}</small></span>
+    </a>`).join('')}</div></section>`;
+}
+export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLoggedIn = false, isAdmin = false, nearby = [] }) {
   const x = { flags: {}, ...extra };
   const sections = [
     p.players && ['crt-crowd', 'Who plays here'],
@@ -600,6 +612,7 @@ export function courtPage({ court, p, games = [], extras = {}, extra = {}, isLog
       ${league(games, extras)}
       ${rent(p, court, x)}
       ${faq(p, x)}
+      ${nearbySection(p, nearby)}
     ${isLoggedIn ? '' : `<section class="card crt-cta" aria-label="Play here"><div><span class="crt-kicker">Play here</span><b>Weekend basketball in Makati, Mandaluyong and Pasig</b><span class="crt-muted">League seasons with stats and recaps, plus Papawis pickup runs.</span></div><div class="crt-cta__side"><div class="crt-cta__btns"><a class="crt-btn crt-btn--amber" href="/register" data-cta="court-join">Join the community</a><a class="crt-btn crt-btn--ghost" href="${MESSENGER_URL}" target="_blank" rel="noopener" data-cta="court-messenger">Message us</a></div><a class="crt-cta__how" href="/join" data-cta="court-how">New here? See how it works</a></div></section>`}
     </div>
     <aside class="crt-side" data-crt-side aria-label="Next run and getting there">

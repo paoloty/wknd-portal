@@ -238,7 +238,7 @@ import { adminGameDetailBody, perOf } from './views/admin/game.js';
 import { adminRetrackCompareBody } from './views/admin/retrack-compare.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt, setGamesTipTime } from './lib/portal-db.js';
-import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin, COURT_IDENTITY_FIELDS, courtOpeningHoursSpec, courtPhone } from './lib/court-page.js';
+import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin, COURT_IDENTITY_FIELDS, courtOpeningHoursSpec, courtPhone, linkCourtMentions } from './lib/court-page.js';
 import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems, courtCityPage, venueUrl, CITY_PAGES, cityPageSlug } from './views/court.js';
 import { askToRateCourt, courtRatingsOn } from './lib/court-rate-ask.js';
 import { gameRatingsOn, resolveRateGame, askToRateGame, verifyRateToken, verifyRatingUnsubscribe, RATE_KINDS } from './lib/game-rate-ask.js';
@@ -2478,6 +2478,7 @@ const CTA_KEYS = {
   'court-claim':      'Court page · Message us to claim',
   'courts-tile':      'Courts list · Open a court',
   'home-court':       'Homepage · Open a court',
+  'court-nearby':     'Court page · Open a nearby court',
   'join-register':    'Join page · Claim your spot (top)',
   'join-register-sticky': 'Join page · Claim your spot (phone bar)',
   'join-register-end': 'Join page · Claim your spot (bottom)',
@@ -14372,7 +14373,7 @@ app.get('/sitemap.xml', (req, res) => {
     const here = courtsLive.filter(x => x.p.city === city);
     if (here.length) urls.push({ loc: `/courts/${slug}`, priority: '0.7', changefreq: 'weekly', lastmod: here.map(x => x.p.updatedYmd).filter(Boolean).sort().pop() });
   }
-  for (const { court, p } of courtsLive) urls.push({ loc: `/courts/${encodeURIComponent(court.slug)}`, priority: '0.6', changefreq: p.nextRun ? 'daily' : 'weekly', lastmod: p.updatedYmd || undefined });
+  for (const { court, p } of courtsLive.filter(x => !x.p.thin)) urls.push({ loc: `/courts/${encodeURIComponent(court.slug)}`, priority: '0.6', changefreq: p.nextRun ? 'daily' : 'weekly', lastmod: p.updatedYmd || undefined, images: p.photos.slice(0, 10).map(ph => ph.src) });
   if (flags.posts)   urls.push({ loc: '/posts',   priority: '0.6', changefreq: 'daily' });
   if (picksEnabled()) urls.push({ loc: '/picks',  priority: '0.5', changefreq: 'weekly' }, { loc: '/picks/rules', priority: '0.3', changefreq: 'monthly' });
 
@@ -14394,12 +14395,12 @@ app.get('/sitemap.xml', (req, res) => {
   }
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 ${urls.map(u => `  <url>
     <loc>${origin}${u.loc}</loc>
 ${u.lastmod ? `    <lastmod>${u.lastmod}</lastmod>\n` : ''}    <changefreq>${u.changefreq}</changefreq>
     <priority>${u.priority}</priority>
-  </url>`).join('\n')}
+${(u.images || []).map(src => `    <image:image><image:loc>${escAttr(`${origin}${src}`)}</image:loc></image:image>\n`).join('')}  </url>`).join('\n')}
 </urlset>
 `;
   res.type('application/xml').send(xml);
@@ -14749,7 +14750,8 @@ function papawisProfileFor(playerId) {
       ? `${scores[0][0] > scores[0][1] ? 'Won' : scores[0][0] < scores[0][1] ? 'Lost' : 'Tied'} ${scores[0][0]}–${scores[0][1]}`
       : `${w > lost ? 'Won' : w < lost ? 'Lost' : 'Split'} ${w}–${lost}`;
     runs.push({
-      id: run.id, date: String(run.date), court: pwCourtName(run.location), side: me.side === 'dark' ? 'dark' : 'light',
+      // courtSlug: the court's page, when it has a live one (links the name on the profile).
+      id: run.id, date: String(run.date), court: pwCourtName(run.location), courtSlug: liveCourtSlugByName().get(normCourtName(run.location)) || '', side: me.side === 'dark' ? 'dark' : 'light',
       games: scores.length, w, l: lost, result, won: w > lost, potd: res.potd?.key === me.key,
       pts: Number(l.pts) || 0, reb: Number(l.reb) || 0, ast: Number(l.ast) || 0, fg3m: Number(l.fg3m) || 0,
     });
@@ -14768,6 +14770,7 @@ function papawisProfileFor(playerId) {
     best: Object.fromEntries(['pts', 'reb', 'ast'].map(k => { const r = best(k); return [k, r ? { v: r[k], date: r.date } : null]; })),
     sides: { light: runs.filter(r => r.side === 'light').length, dark: runs.filter(r => r.side === 'dark').length },
     court: runs.length > 1 && courtRuns > 1 ? court : '',
+    courtSlug: runs.length > 1 && courtRuns > 1 ? (runs.find(r => r.court === court)?.courtSlug || '') : '',
   };
 }
 
@@ -15181,7 +15184,7 @@ app.get('/posts/:slug', (req, res) => {
     title: `${post.title} | WKND Basketball`,
     currentPath: req.path,
     metaTags: buildPostOgTags(req, post),
-    body: postDetailPage({ post })
+    body: postDetailPage({ post: { ...post, body_html: linkCourtMentions(post.body_html, courtMentionList()) } })
   }));
 });
 
@@ -26608,7 +26611,8 @@ function buildCourtOgTags(court, p) {
     '@type': 'SportsActivityLocation',
     name: p.name,
     url,
-    image: img,
+    // Up to 5 photos: Google picks from several for the result and image search.
+    image: p.photos.length > 1 ? p.photos.slice(0, 5).map(ph => `${SITE_ORIGIN}${ph.src}`) : img,
     description: p.description,
     address: { '@type': 'PostalAddress', ...(p.street ? { streetAddress: p.street } : {}), ...(p.city ? { addressLocality: p.city } : {}), addressRegion: 'Metro Manila', addressCountry: 'PH' },
     ...(geo?.lat ? { geo: { '@type': 'GeoCoordinates', latitude: geo.lat, longitude: geo.lng } } : {}),
@@ -26743,9 +26747,23 @@ function liveCourtSlugByName() {
     liveCourtsCache = { at: Date.now(), map: new Map(live.map(({ court }) => [normCourtName(court.name), court.slug])),
       byId: new Map(live.map(({ court, p }) => [court.id, { slug: court.slug, name: p.name }])),
       // The homepage "Where we play" row: busiest first (liveCourts' order).
-      list: live.map(({ court, p }) => ({ slug: court.slug, name: p.name, city: p.city, runs: p.playedRuns, games: p.finalsCount })) };
+      list: live.map(({ court, p }) => ({ slug: court.slug, name: p.name, city: p.city, runs: p.playedRuns, games: p.finalsCount,
+        photo: p.photos[0] ? { src: p.photos[0].src, alt: p.photos[0].alt } : null, rateFrom: p.rateFrom, thin: p.thin,
+        names: [...new Set([p.name, court.name, ...p.altNames])] })) };
   }
   return liveCourtsCache.map;
+}
+// "More courts nearby" on a court page: up to 4 other live courts, same city first, busiest
+// first (liveCourts' order). Internal links between court pages, like a directory's.
+function nearbyCourts(court, p) {
+  liveCourtSlugByName();
+  const others = liveCourtsCache.list.filter(c => c.slug !== court.slug);
+  return [...others.filter(c => p.city && c.city === p.city), ...others.filter(c => !p.city || c.city !== p.city)].slice(0, 4);
+}
+// Live courts and every name they go by, for linking court mentions in posts.
+function courtMentionList() {
+  liveCourtSlugByName();
+  return liveCourtsCache.list.map(c => ({ slug: c.slug, names: c.names }));
 }
 // Live courts for the homepage row, plus the city pages that have one.
 function homeWhereWePlay() {
@@ -26916,8 +26934,8 @@ app.get('/courts/:slug', (req, res, next) => {
   res.send(renderPage(req, {
     title: p.title,
     currentPath: '/papawis',
-    metaTags: buildCourtOgTags(court, p) + (p.live ? '' : '\n  <meta name="robots" content="noindex, follow">'),
-    body: courtPage({ court, p, games: listGames, extras, extra: courtViewerExtras(req, court, p, allPlayers), isLoggedIn: !!req.session?.playerRegId, isAdmin: !!req.session?.isAdmin }),
+    metaTags: buildCourtOgTags(court, p) + (p.live && !p.thin ? '' : '\n  <meta name="robots" content="noindex, follow">'),
+    body: courtPage({ court, p, games: listGames, extras, extra: courtViewerExtras(req, court, p, allPlayers), isLoggedIn: !!req.session?.playerRegId, isAdmin: !!req.session?.isAdmin, nearby: nearbyCourts(court, p) }),
   }));
 });
 
@@ -28533,6 +28551,14 @@ app.post('/admin/papawis/courts/:id/page', requireAuth, express.json(), (req, re
   if (!(info.hours_open && info.hours_close)) { delete info.hours_open; delete info.hours_close; }
   const phone = clean(b.info_phone, 40).trim(); if (phone) info.phone = phone;
   for (const f of COURT_IDENTITY_FIELDS) { const v = clean(b[`info_${f.key}`], 160).trim(); if (v) info[f.key] = v; }
+  // "Checked <Mon YYYY>" on the page and in the search snippet: today when the rate, hours or
+  // phone changed or the admin ticked "I checked … today", else the last date kept.
+  {
+    const old = parseCourtJson(court.info_json, {});
+    const changed = ['rate', 'hours_open', 'hours_close', 'phone'].some(k => (old[k] || '') !== (info[k] || ''));
+    if (b.info_checked_today === '1' || (changed && (info.rate || info.hours_open || info.phone))) info.checked = manilaTodayStr();
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(old.checked || '')) info.checked = old.checked;
+  }
   const { p } = courtPageData(court);
   const show = new Set([].concat(b['gallery_show[]'] || b.gallery_show || []).map(String));
   {

@@ -48,6 +48,19 @@ Reset 2026-11-11 from 90 days of Search Console data and a second Fable audit. F
 - Owners: "Is this your venue? Claim this page, free" under the court name (partner switch on, not claimed); Partner court pill once claimed; the claim opens Messenger with the court named; partner page clicks count per court; "Could be better" tags stay off the partner page below 5 ratings.
 - Monthly court report: from the 4th, 9 AM, to each partner court with an email (`court_reports_enabled`, default on). Players and games, page views (Google split), Google searches, taps for directions and venue links (only when above 0), ratings. Admin: preview, test to me, send now on the court's Partner panel.
 
+## Overtaking the directories (2026-11-13)
+
+Courtslots (courtslots.ph, a Shopify directory of Metro Manila courts since 2023) ranks #1 for "activate hoop arena" on age, site size and links, not content: its page is ~80 words with a stale rate. We sat at ~8.6. What changed:
+
+- Titles lead with the price from the rate text (`courtRateFrom`: lowest ₱ amount) and the year when it fits: "Activate Hoop Arena Mandaluyong: ₱2,800 Rates & Reviews". Courts with 5+ ratings and no rate get "Player Reviews & Photos". Candidates are tried longest first, first one ≤ 60 chars wins.
+- "Checked <Mon YYYY>" (`info.checked`): set when the rate, hours or phone change, or the admin ticks "I checked … today"; shown in the description, the opening line and next to Court rental.
+- Opening line under the name (`p.lede`): what and where the court is, "also spelled <alt name>", rate and hours, in plain sentences.
+- Internal links: Papawis run rows and "Most played at" on player profiles link the court; news posts link the first mention of each live court (`linkCourtMentions`, any of its names); every court page ends with "More basketball courts nearby" (4 tiles, same city first, CTA `court-nearby`).
+- Directory guard: a page published early (no runs or games) is `thin` until it has an address plus a ₱ rate or hours: live for visitors, noindexed, out of the sitemap; the admin status line says so.
+- Sitemap lists each court's photos (`image:image`); the court JSON-LD sends up to 5 images.
+
+Still human: links from Activate's site/Facebook and WKND's own posts to the court page are what beat a 3-year-old directory.
+
 ## Setup Paolo does once
 
 1. Done 2026-11-11: Search Console API access (`GSC_SERVICE_ACCOUNT_FILE`, `GSC_SITE_URL=sc-domain:wkndbasketball.com` in the production `.env`).

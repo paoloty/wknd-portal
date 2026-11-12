@@ -85,6 +85,7 @@
 .crt-ident { margin: -4px 0 0; font-size: 13px; color: var(--text-muted); line-height: 1.45; }
 .crt-ident a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
 .crt-ident a:hover { color: var(--text); }
+.crt-lede { margin: 2px 0 0; max-width: 68ch; font-size: 15px; color: var(--text); line-height: 1.55; }
 /* "Is this your venue?": the owner's way in, under the court name (partner switch on, not yet claimed). */
 .crt-kicker .crt-pill { margin-left: 6px; letter-spacing: 0; vertical-align: middle; }
 .crt-claim a { color: var(--amber); text-decoration: none; font-weight: 600; }
@@ -389,6 +390,7 @@ a.crt-rw:hover .crt-rw__link, a.crt-rw__link:hover { text-decoration: underline;
 /* /courts index */
 .crt-index__head { padding: 28px 0 8px; display: flex; flex-direction: column; gap: 10px; }
 .crt-index { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--c-gap); margin-top: 20px; }
+.crt-index--compact { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-top: 0; }
 .crt-tile { overflow: hidden; display: flex; flex-direction: column; color: var(--text); }
 .crt-tile:hover { border-color: rgba(255,255,255,.18); }
 .crt-tile__img { display: block; height: 160px; background: var(--surface-2); }

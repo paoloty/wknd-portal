@@ -1821,12 +1821,12 @@ function prfPapawis(o, own) {
     pw.potd ? `<span class="prf-chip prf-chip--amber">★ ${pw.potd}× Player of the Day</span>` : '',
     pw.threes ? `<span class="prf-chip prf-pw-fact"><b>${pw.threes}</b> three${pw.threes === 1 ? '' : 's'} made</span>` : '',
     `<span class="prf-chip prf-pw-fact">${[['light', 'Light'], ['dark', 'Dark']].filter(([k]) => pw.sides[k]).map(([k, l], i) => `<b>${pw.sides[k]}</b> ${i ? '' : `run${pw.sides[k] === 1 ? '' : 's'} `}on ${l}`).join(' · ')}</span>`,
-    pw.court ? `<span class="prf-chip prf-pw-fact">Most played at <b>${escHtml(pw.court)}</b></span>` : '',
+    pw.court ? `<span class="prf-chip prf-pw-fact">Most played at <b>${pw.courtSlug ? `<a href="/courts/${encodeURIComponent(pw.courtSlug)}">${escHtml(pw.court)}</a>` : escHtml(pw.court)}</b></span>` : '',
   ].filter(Boolean).join('');
   const rows = pw.runs.map((r, i) => {
     const href = `/papawis/${encodeURIComponent(r.id)}/results`;
     return `<tr${i >= PRF_PW_SHOWN ? ' class="prf-pw-more" hidden' : ''}>
-      <td><a href="${href}" class="prf-table__game">${escHtml(prfDay(r.date))}</a>${r.potd ? ' <span class="prf-tag" title="Player of the Day">POTD</span>' : ''}<span class="prf-pw-sub">${escHtml([r.court, `${r.games} game${r.games === 1 ? '' : 's'}`].filter(Boolean).join(' · '))}</span></td>
+      <td><a href="${href}" class="prf-table__game">${escHtml(prfDay(r.date))}</a>${r.potd ? ' <span class="prf-tag" title="Player of the Day">POTD</span>' : ''}<span class="prf-pw-sub">${[r.court && (r.courtSlug ? `<a href="/courts/${encodeURIComponent(r.courtSlug)}">${escHtml(r.court)}</a>` : escHtml(r.court)), `${r.games} game${r.games === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</span></td>
       <td class="prf-pw-side"><span class="pw-shirt pw-shirt--${r.side}" aria-hidden="true"></span>${r.side === 'dark' ? 'Dark' : 'Light'}</td>
       <td class="prf-table__res${r.won ? ' prf-pw-won' : ''}">${escHtml(r.result)}</td>
       <td class="font-condensed">${r.pts}</td><td class="font-condensed">${r.reb}</td><td class="font-condensed">${r.ast}</td><td class="font-condensed">${r.fg3m}</td>
