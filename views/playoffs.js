@@ -1,6 +1,11 @@
 import { escHtml } from './layout.js';
 import { teamColor, playerPhotoUrl, gameTipLabel } from './utils.js';
 import { sectionPanel, sectionRegenScript } from './home.js';
+import { getSeriesFormat } from '../lib/portal-db.js';
+import { roundLabel } from '../lib/series-format.js';
+
+// Most games a round can take: twice to beat 2, best of N n, one game 1.
+const maxGames = r => (r.kind === 'twice' ? 2 : r.kind === 'single' ? 1 : r.n);
 
 // ── /playoffs ─────────────────────────────────────────────────────────────────
 // Champion hero (once there is one) → bracket (semis → finals → champion, with win rings)
@@ -60,7 +65,8 @@ function rgba(hex, a) {
 function winnerId(g) { return Number(g.team_a_score) > Number(g.team_b_score) ? g.team_a_id : g.team_b_id; }
 
 // One series between `high` (top row) and `low`: wins, who (if anyone) has advanced.
-// need = wins required by each side: semis { high: 1, low: 2 }, finals { high: 2, low: 2 }.
+// need = wins required by each side, from the Season format (getSeriesFormat): twice to beat
+// { high: 1, low: 2 }, best of 3 { high: 2, low: 2 }.
 function seriesState(games, high, low, need) {
   const played = games.filter(isPlayed);
   let hw = 0, lw = 0;
@@ -100,15 +106,16 @@ function gameChips(games, state, max, decided) {
 }
 
 function semiCard(label, high, hs, low, ls, games, projected) {
-  const st = seriesState(games, high, low, { high: 1, low: 2 });
-  const note = projected ? 'Twice to beat'
-    : st.winner ? (st.played.length >= 2 ? 'Went the distance' : 'Done in one')
-    : st.played.length ? 'In progress' : 'Twice to beat';
+  const r = getSeriesFormat().semis;
+  const st = seriesState(games, high, low, r);
+  const note = projected ? roundLabel(r)
+    : st.winner ? (st.played.length >= maxGames(r) && maxGames(r) > 1 ? 'Went the distance' : st.played.length === 1 ? 'Done in one' : `Won ${Math.max(st.hw, st.lw)}-${Math.min(st.hw, st.lw)}`)
+    : st.played.length ? 'In progress' : roundLabel(r);
   return `<div class="po-series card">
     <div class="po-series__top"><span class="stp-th">${label}</span><span class="stp-th">${note}</span></div>
-    ${teamRow(high, hs, st.hw, 1, { out: st.winner && st.winner !== high, showRec: projected })}
-    ${teamRow(low, ls, st.lw, 2, { out: st.winner && st.winner !== low, showRec: projected })}
-    ${gameChips(games, st, 2, !!st.winner)}
+    ${teamRow(high, hs, st.hw, r.high, { out: st.winner && st.winner !== high, showRec: projected })}
+    ${teamRow(low, ls, st.lw, r.low, { out: st.winner && st.winner !== low, showRec: projected })}
+    ${gameChips(games, st, maxGames(r), !!st.winner)}
   </div>`;
 }
 
@@ -154,7 +161,7 @@ function gamesTable(rows, panel = '') {
 // The champion hero, or '' while the Finals are undecided. /playoffs leads with it, and the
 // homepage shows it during playoff mode's champion week. Same inputs as playoffsPage.
 export function championHero({ season, standings = [], games = [], h2h = {}, awards = {} }) {
-  const { seedOf, s1, s2, s3, s4, semi1, semi2, w1, fHigh, fLow, fin, champ } = playoffsModel({ standings, games, h2h });
+  const { seedOf, s1, s2, s3, s4, semi1, semi2, w1, fHigh, fLow, fin, champ, format } = playoffsModel({ standings, games, h2h });
   if (!champ) return '';
   // Hero line: final result, then how the champion's semi went.
   const opp = champ === fHigh ? fLow : fHigh;
@@ -162,7 +169,7 @@ export function championHero({ season, standings = [], games = [], h2h = {}, awa
   const champSemi = champ === w1 ? semi1 : semi2;
   const semiOpp = champ === w1 ? (champ === s1 ? s4 : s1) : (champ === s2 ? s3 : s2);
   const semiN = champSemi.filter(isPlayed).length;
-  const line = `Beat <b>${escHtml(opp?.name || '')} ${cw}–${ow}</b> in the best-of-3 final${semiOpp && semiN ? `, after getting past ${escHtml(semiOpp.name)} in the semis ${semiN === 1 ? 'in one game' : `in ${semiN} games`}` : ''}.`;
+  const line = `Beat <b>${escHtml(opp?.name || '')} ${cw}–${ow}</b> in the ${format.finals.kind === 'bestof' ? `best-of-${format.finals.n} ` : ''}final${semiOpp && semiN ? `, after getting past ${escHtml(semiOpp.name)} in the semis ${semiN === 1 ? 'in one game' : `in ${semiN} games`}` : ''}.`;
   const clincher = fin.played[fin.played.length - 1];
   return heroSection({ season, team: champ, seed: seedOf(champ), line, clincherId: clincher?.id, finalsMvp: awards.finalsMvp, mvp: awards.mvp });
 }
@@ -172,24 +179,26 @@ export function championHero({ season, standings = [], games = [], h2h = {}, awa
 // awards: { finalsMvp, mvp } as { id, name, number, initials } or null; regular: { played, expected }.
 // sections: the section writeups { bracket, games } (server.js playoffsSectionFacts).
 export function playoffsPage({ standings = [], games = [], season, seasons = [], isCurrent = true, h2h = {}, awards = {}, regular = { played: 0, expected: 0 }, sections = {}, isAdmin = false }) {
-  const { seeds, seedOf, finalsGames, projected, s1, s2, s3, s4, semi1, semi2, w1, w2, fHigh, fLow, fin, champ, tableRows } = playoffsModel({ standings, games, h2h });
+  const { seeds, seedOf, finalsGames, projected, s1, s2, s3, s4, semi1, semi2, w1, w2, fHigh, fLow, fin, champ, tableRows, format } = playoffsModel({ standings, games, h2h });
+  const fr = format.finals;
+  const rulesLine = `Semis: ${format.semis.kind === 'twice' ? 'the higher seed is twice to beat' : format.semis.label}. Finals: ${fr.label}.`;
   const panel = key => sectionPanel(sections[key] || null, `playoffs_${key}:${season}`, isAdmin);
   const hero = championHero({ season, standings, games, h2h, awards });
 
   // Before the playoffs: who would have twice to beat today.
   const pct = regular.expected ? Math.min(100, Math.round(regular.played / regular.expected * 100)) : 0;
   // Rule-based line, only while the AI bracket writeup (which says the same) isn't there.
-  const preSummary = projected && !sections.bracket ? `<div class="stp-summary">
+  const preSummary = projected && !sections.bracket && format.semis.kind === 'twice' ? `<div class="stp-summary">
     <span class="stp-kicker">The playoff race${isCurrent ? '' : ' · final seeding'}</span>
     <p class="stp-summary__headline">${isCurrent ? 'If the season ended today, ' : ''}<em>${escHtml(s1.name)}</em> and <em>${escHtml(s2.name)}</em> ${isCurrent ? 'would have' : 'have'} twice to beat.</p>
     <p class="stp-summary__body">${escHtml(s3.name)} and ${escHtml(s4.name)} would have to win twice to reach the final.</p>
   </div>` : '';
 
   const finalsCard = `<div class="po-series po-finals">
-    <div class="po-series__top"><span class="stp-kicker">Finals</span><span class="stp-th">Best of 3</span></div>
-    ${teamRow(fHigh, seedOf(fHigh), fin.hw, 2, { out: champ && champ !== fHigh, big: !!(fHigh && fLow) })}
-    ${teamRow(fLow, seedOf(fLow), fin.lw, 2, { out: champ && champ !== fLow, big: !!(fHigh && fLow) })}
-    ${fHigh && fLow ? gameChips(finalsGames, fin, 3, !!champ) : `<div class="po-chips"><span class="po-chip is-slot">${projected ? 'Semi winners' : 'Waiting on the semis'}</span></div>`}
+    <div class="po-series__top"><span class="stp-kicker">Finals</span><span class="stp-th">${roundLabel(fr)}</span></div>
+    ${teamRow(fHigh, seedOf(fHigh), fin.hw, fr.high, { out: champ && champ !== fHigh, big: !!(fHigh && fLow) })}
+    ${teamRow(fLow, seedOf(fLow), fin.lw, fr.low, { out: champ && champ !== fLow, big: !!(fHigh && fLow) })}
+    ${fHigh && fLow ? gameChips(finalsGames, fin, maxGames(fr), !!champ) : `<div class="po-chips"><span class="po-chip is-slot">${projected ? 'Semi winners' : 'Waiting on the semis'}</span></div>`}
   </div>`;
 
   const champCard = `<div class="po-champ${champ ? ' is-won' : ''}"${champ ? ` style="--glare:${rgba(teamColor(champ.name), 0.14)}"` : ''}>
@@ -201,7 +210,7 @@ export function playoffsPage({ standings = [], games = [], season, seasons = [],
   const bracket = seeds.length < 4 ? '<p class="stp-desc">Not enough teams for a bracket yet.</p>' : `<section class="po-bracket" aria-labelledby="po-br-h">
   <div class="section-header"><h2 id="po-br-h">${projected ? 'Projected bracket' : 'Bracket'}</h2><span class="po-legend"><span><span class="po-pip is-won"></span>win</span><span><span class="po-pip"></span>win needed</span></span></div>
   ${panel('bracket')}
-  <p class="stp-desc">${projected ? 'Seeds as they stand today. Semis: the higher seed is twice to beat. Finals: best of 3.' : 'Semis: the higher seed is twice to beat. Finals: best of 3.'}</p>
+  <p class="stp-desc">${projected ? 'Seeds as they stand today. ' : ''}${rulesLine}</p>
   <div class="po-bracket__grid${projected ? ' is-projected' : ''}">
     <div class="po-bracket__semis">
       ${semiCard('Semi 1', s1, 1, s4, 4, semi1, projected)}
@@ -252,8 +261,9 @@ export function playoffsModel({ standings = [], games = [], h2h = {} }) {
   const pairGames = (a, b) => a && b ? semiGames.filter(g => pairKey(g.team_a_id, g.team_b_id) === pairKey(a.id, b.id)) : [];
   const [s1, s2, s3, s4] = seeds;
   const semi1 = pairGames(s1, s4), semi2 = pairGames(s2, s3);
-  const st1 = seriesState(semi1, s1, s4, { high: 1, low: 2 });
-  const st2 = seriesState(semi2, s2, s3, { high: 1, low: 2 });
+  const format = getSeriesFormat();
+  const st1 = seriesState(semi1, s1, s4, format.semis);
+  const st2 = seriesState(semi2, s2, s3, format.semis);
   const w1 = st1.winner, w2 = st2.winner;
 
   // Finalists: the semi winners, else whoever is in the finals games.
@@ -265,7 +275,7 @@ export function playoffsModel({ standings = [], games = [], h2h = {} }) {
   }
   if (f[0] && f[1] && seedOf(f[1]) < seedOf(f[0])) f = [f[1], f[0]];
   const [fHigh, fLow] = f;
-  const fin = seriesState(finalsGames, fHigh, fLow, { high: 2, low: 2 });
+  const fin = seriesState(finalsGames, fHigh, fLow, format.finals);
   const champ = fin.winner;
 
   // Every playoff game, in order, with its round label.
@@ -285,5 +295,5 @@ export function playoffsModel({ standings = [], games = [], h2h = {} }) {
     };
   });
 
-  return { seeds, seedOf, finalsGames, projected, s1, s2, s3, s4, semi1, semi2, st1, st2, w1, w2, fHigh, fLow, fin, champ, tableRows };
+  return { seeds, seedOf, finalsGames, projected, s1, s2, s3, s4, semi1, semi2, st1, st2, w1, w2, fHigh, fLow, fin, champ, tableRows, format };
 }

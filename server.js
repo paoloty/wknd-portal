@@ -87,7 +87,7 @@ import {
   getTeamGamesCount,
   getPlayerStatsByType,
   upsertAward, deleteAward, clearAwardType, getActivePlayers, getSeasonPlayerStats,
-  getPlayerPhoto, getAllPlayerPhotoUrls, getPlayerPhotoWrites, getCurrentSeason, getSeasonLatestWeek, getTickerGames, getSeriesRecordForGame,
+  getPlayerPhoto, getAllPlayerPhotoUrls, getPlayerPhotoWrites, getCurrentSeason, getSeasonLatestWeek, getTickerGames, getSeriesRecordForGame, getSeriesFormat,
   getRecentPlayedGames, getScheduledGames, getGamesUnderReviewCount, getActivePlayerCount, getPlayedGamesCount,
   updateGameRecap, updateGameYoutube, updateGameCover, getGameCoverWrites, updateGamePotg, updateGameReview, updateGameAll, deleteGame,
   importGameResults, markGameFinal, setGameOvertime, createGame, setGameReviewLocked, setGameFinalScore,
@@ -191,6 +191,7 @@ import { leaderMinGames, awardMinGames, qualifiesPerGame, meetsLeaderRule, CAREE
 import { comparisonProblems, playerNumberProblems } from './lib/story-checks.js';
 import { numberAlts, nameAlts, mustMentions, highlightsBlock, missingHighlights } from './lib/highlights.js';
 import { keyPlayRows, keyPlayFacts, keyPlayProblems, keyPlayCopy, keyPlayCards, qName as keyPlayQ } from './lib/key-plays.js';
+import { roundRule, roundLabel, formatFactLine } from './lib/series-format.js';
 import { runWriter, numberProblems, claimProblems, finalScoreProblems, unpairRunningScores, bannedProblems, storyProblems, shorthandProblems, zeroStatProblems, BANNED_HINT, countSentences, keepSentences } from './lib/writer.js';
 import { PICKS_CLOSE_DEFAULT, toPickGame, computeOdds, manilaHmNow, picksClosedFor, settleGames, buildPickRecords, pickLeaderboard, pickmasterLeader, fmtPts, finalsGame1Id, marginGuessDiffs, MARGIN_MAX, callerRecords, calledItSummary, oddsPoints } from './lib/picks.js';
 import { computeTeamRankCards } from './lib/team-ranks.js';
@@ -10099,9 +10100,9 @@ function appSeasonData(me) {
     series.push({ title, sub, rows, games: gl, status, done: !!st.winner, live: !st.winner && !!hi && !!lo && (played.length > 0 || !!next) });
   };
   if (m.seeds.length === 4) {
-    seriesCard('Semifinal 1', '1 v 4', m.semi1, m.s1, m.s4, { high: 1, low: 2 }, m.st1, ['', '']);
-    seriesCard('Semifinal 2', '2 v 3', m.semi2, m.s2, m.s3, { high: 1, low: 2 }, m.st2, ['', '']);
-    seriesCard('Finals', 'Best of 3', m.finalsGames, m.fHigh, m.fLow, { high: 2, low: 2 }, m.fin, ['Winner of semifinal 1', 'Winner of semifinal 2']);
+    seriesCard('Semifinal 1', '1 v 4', m.semi1, m.s1, m.s4, m.format.semis, m.st1, ['', '']);
+    seriesCard('Semifinal 2', '2 v 3', m.semi2, m.s2, m.s3, m.format.semis, m.st2, ['', '']);
+    seriesCard('Finals', roundLabel(m.format.finals), m.finalsGames, m.fHigh, m.fLow, m.format.finals, m.fin, ['Winner of semifinal 1', 'Winner of semifinal 2']);
   }
   // Every game this season by game day: what's next on top (soonest first), then results newest first.
   const seasonGames = all.filter(g => String(g.season) === season && !g.under_review);
@@ -16224,7 +16225,7 @@ function standingsLockLine(game) {
     const seeds = computeSeeds(standings, buildSeasonH2HMap(standings, season));
     const T = titleCase;
     // Pairs named outright: left as "1 vs 4", the fact-checker paired them wrong.
-    const seedLine = seeds.length >= 4 ? ` Playoff seeding: ${seeds.slice(0, 4).map((s, i) => `${i + 1}. ${T(s.name)}`).join(', ')}. Semifinals: ${T(seeds[0].name)} vs ${T(seeds[3].name)} and ${T(seeds[1].name)} vs ${T(seeds[2].name)}, the higher seed twice to beat.` : '';
+    const seedLine = seeds.length >= 4 ? ` Playoff seeding: ${seeds.slice(0, 4).map((s, i) => `${i + 1}. ${T(s.name)}`).join(', ')}. Semifinals: ${T(seeds[0].name)} vs ${T(seeds[3].name)} and ${T(seeds[1].name)} vs ${T(seeds[2].name)} (${roundRule(getSeriesFormat().semis)}). Finals: ${roundRule(getSeriesFormat().finals, true)}.` : '';
     return `FINAL REGULAR-SEASON STANDINGS: every team has played all ${SEASON_GAMES_PER_TEAM} games, so the order above is final — nobody can still climb, catch up or drop.${before}${seedLine}`;
   }
   return `STANDINGS LOCKED: no remaining result can change the order above — nobody can still climb, catch up or drop.${before}`;
@@ -16277,27 +16278,36 @@ function gameSituation(game, { short = false } = {}) {
   if (!rec) return '';
   const wWins = wId === game.team_a_id ? rec.teamAWins : rec.teamBWins, lWins = wId === game.team_a_id ? rec.teamBWins : rec.teamAWins;
   const gameNo = rec.teamAWins + rec.teamBWins;
-  let stage, format, after;
-  if (game.game_type === 'finals') {
-    stage = `the Finals, Game ${gameNo}`;
-    format = 'best of 3';
-    after = rec.decided ? `${W} won the Finals ${wWins}-${lWins} and are the Season ${game.season} champions; ${L}'s season is over.`
-      : wWins === lWins ? `the Finals are tied ${wWins}-${lWins}; the next game decides the title.`
-      : `${W} lead the Finals ${wWins}-${lWins}; one more win takes the title.`;
-  } else {
+  // The round's format comes from the Season format text (lib/series-format.js), never typed
+  // in here: a semifinal spotlight once called a twice-to-beat series "best of three".
+  const finals = game.game_type === 'finals';
+  const r = finals ? getSeriesFormat().finals : getSeriesFormat().semis;
+  let stage;
+  if (finals) stage = `the Finals, Game ${gameNo}`;
+  else {
     const standings = getSeasonStandings(game.season);
     const seeds = computeSeeds(standings, buildSeasonH2HMap(standings, game.season));
     const rank = id => seeds.findIndex(s => s.id === id) + 1;
-    const ra = rank(game.team_a_id), rb = rank(game.team_b_id);
-    const semi = Math.min(ra, rb) === 1 ? 1 : Math.min(ra, rb) === 2 ? 2 : 0;
-    const H = high ? T(high === game.team_a_id ? game.team_a_name : game.team_b_name) : '';
-    stage = `${semi ? `Semifinal ${semi}` : 'the semifinals'}, Game ${gameNo}`;
-    format = H ? `twice to beat: ${H} (the higher seed) needs 1 win, the other team needs 2` : 'twice to beat';
+    const top = Math.min(rank(game.team_a_id), rank(game.team_b_id));
+    stage = `${top === 1 ? 'Semifinal 1' : top === 2 ? 'Semifinal 2' : 'the semifinals'}, Game ${gameNo}`;
+  }
+  const H = high ? T(high === game.team_a_id ? game.team_a_name : game.team_b_name) : '';
+  const format = r.kind === 'twice' && H ? `twice to beat: ${H} (the higher seed) needs 1 win, the other team needs 2` : roundRule(r, finals);
+  const series = finals ? 'the Finals' : 'the semifinal';
+  let after;
+  if (rec.decided) {
     // The higher seed losing Game 1 then winning Game 2 is 1-1 on paper: say it won the decider.
+    const how = gameNo > 1 && wWins === lWins ? `won the deciding Game ${gameNo}` : `won ${series}${gameNo > 1 ? ` ${wWins}-${lWins}` : ''}`;
+    after = finals ? `${W} ${how} and are the Season ${game.season} champions; ${L}'s season is over.`
+      : `${W} ${how} and reach the Finals; ${L} are eliminated and their season is over.`;
+  } else if (r.kind === 'twice') {
     // Seeds that can't be placed: say only what is certain (never "forced a decider").
-    if (!high) after = `${W} won Game ${gameNo} of the semifinal.`;
-    else after = rec.decided ? `${W} ${gameNo > 1 && wWins === lWins ? `won the deciding Game ${gameNo}` : `won the semifinal${gameNo > 1 ? ` ${wWins}-${lWins}` : ''}`} and reach the Finals; ${L} are eliminated and their season is over.`
-      : `${W} beat twice-to-beat ${L} to force a deciding Game ${gameNo + 1}.`;
+    after = H ? `${W} beat twice-to-beat ${L} to force a deciding Game ${gameNo + 1}.` : `${W} won Game ${gameNo} of the semifinal.`;
+  } else {
+    const prize = finals ? 'the title' : 'a place in the Finals';
+    after = wWins === lWins ? `${series.replace(/^t/, 'T')} ${finals ? 'are' : 'is'} tied ${wWins}-${lWins}${wWins + 1 === r.high ? `; the next game decides ${prize}` : ''}.`
+      : wWins > lWins ? `${W} lead ${series} ${wWins}-${lWins}${wWins + 1 === r.high ? `; one more win takes ${prize}` : ''}.`
+      : `${W} won Game ${gameNo}; ${L} still lead ${series} ${lWins}-${wWins}.`;
   }
   if (short) return `${stage.replace(/^the /, '').replace(/^./, c => c.toUpperCase())}: ${after}`;
   return `SITUATION: Season ${game.season} playoffs, ${stage} (${format}). After this game: ${after} This is a playoff game: regular-season standings, records and win/loss streaks do not apply here; write about the series.`;
@@ -16309,24 +16319,33 @@ function gameSituationBefore(game) {
   if (game.game_type !== 'playoff' && game.game_type !== 'finals') return '';
   const T = titleCase;
   const A = T(game.team_a_name), B = T(game.team_b_name);
-  const high = game.game_type === 'playoff' ? playoffHighSeed(game) : null;
+  const finals = game.game_type === 'finals';
+  const r = finals ? getSeriesFormat().finals : getSeriesFormat().semis;
+  const high = finals ? null : playoffHighSeed(game);
   // Counts only finished games up to this one, so an unplayed game sees the series before it.
   const rec = getSeriesRecordForGame(game, high) || { teamAWins: 0, teamBWins: 0 };
   const a = rec.teamAWins, b = rec.teamBWins, gameNo = a + b + 1;
-  if (game.game_type === 'finals') {
-    const state = !a && !b ? 'the series starts here' : a === b ? `the series is tied ${a}-${b}, so this game decides the title` : `${a > b ? A : B} lead the series ${Math.max(a, b)}-${Math.min(a, b)}${Math.max(a, b) === 1 ? ' and a win takes the title' : ''}`;
-    return `PLAYOFF SITUATION: the Finals, Game ${gameNo} (best of 3, first to 2 wins is champion): ${state}.`;
+  let semi = 'Semifinal';
+  if (!finals) {
+    const standings = getSeasonStandings(game.season);
+    const seeds = computeSeeds(standings, buildSeasonH2HMap(standings, game.season));
+    const top = Math.min(...[game.team_a_id, game.team_b_id].map(id => seeds.findIndex(s => s.id === id) + 1).filter(n => n > 0));
+    semi = top === 1 ? 'Semifinal 1' : top === 2 ? 'Semifinal 2' : 'Semifinal';
   }
-  const H = high ? T(high === game.team_a_id ? game.team_a_name : game.team_b_name) : '';
-  const L = high ? (H === A ? B : A) : '';
-  const standings = getSeasonStandings(game.season);
-  const seeds = computeSeeds(standings, buildSeasonH2HMap(standings, game.season));
-  const top = Math.min(...[game.team_a_id, game.team_b_id].map(id => seeds.findIndex(s => s.id === id) + 1).filter(n => n > 0));
-  const semi = top === 1 ? 'Semifinal 1' : top === 2 ? 'Semifinal 2' : 'Semifinal';
-  if (!H) return `PLAYOFF SITUATION: ${semi}, Game ${gameNo}.`;
-  return gameNo === 1
-    ? `PLAYOFF SITUATION: ${semi}, Game 1. ${H} are the higher seed and twice to beat: a ${H} win ends the series and sends them to the Finals; ${L} need to win twice.`
-    : `PLAYOFF SITUATION: ${semi}, Game ${gameNo}, winner take all: ${L} won Game 1 to force it, and the winner goes to the Finals while the loser's season ends.`;
+  if (r.kind === 'twice') {
+    const H = high ? T(high === game.team_a_id ? game.team_a_name : game.team_b_name) : '';
+    const L = high ? (H === A ? B : A) : '';
+    if (!H) return `PLAYOFF SITUATION: ${semi}, Game ${gameNo} (twice to beat).`;
+    return gameNo === 1
+      ? `PLAYOFF SITUATION: ${semi}, Game 1. ${H} are the higher seed and twice to beat: a ${H} win ends the series and sends them to the Finals; ${L} need to win twice.`
+      : `PLAYOFF SITUATION: ${semi}, Game ${gameNo}, winner take all: ${L} won Game 1 to force it, and the winner goes to the Finals while the loser's season ends.`;
+  }
+  const prize = finals ? 'takes the title' : 'goes to the Finals';
+  const top = Math.max(a, b);
+  const state = !a && !b ? (r.high === 1 ? `one game: the winner ${prize}` : 'the series starts here')
+    : a === b ? `the series is tied ${a}-${b}${a + 1 === r.high ? `, so the winner of this game ${prize}` : ''}`
+    : `${a > b ? A : B} lead the series ${top}-${Math.min(a, b)}${top + 1 === r.high ? ` and a win ${prize}` : ''}`;
+  return `PLAYOFF SITUATION: ${finals ? 'the Finals' : semi}, Game ${gameNo} (${roundRule(r, finals)}): ${state}.`;
 }
 
 // Highlights of a finished game. subject = player id for a player's, team name or a game key
@@ -16422,7 +16441,8 @@ function gameHighlights(game, stats) {
   } else {
     const high = playoffHighSeed(game);
     const rec = getSeriesRecordForGame(game, high);
-    if (rec && !rec.decided && game.game_type === 'playoff' && high && wId !== high) {
+    const fr = game.game_type === 'finals' ? getSeriesFormat().finals : getSeriesFormat().semis;
+    if (rec && !rec.decided && fr.kind === 'twice' && high && wId !== high) {
       // The lower seed beat the twice-to-beat team: the semifinal goes to a deciding game.
       // "Upset" only when the pre-game odds favoured the loser: by seed alone, "Black Upsets
       // Maroon" ran while the page said "Odds called it · Black 65%" (Fable audit, 2026-11-11).
@@ -16435,7 +16455,9 @@ function gameHighlights(game, stats) {
       if (game.game_type === 'finals') add('major', 99, `${W}:series`, `CHAMPIONS: ${T(W)} won the Finals series ${wWins}-${lWins} and are the Season ${game.season} champions.`, [teamAlts(W), [/champion|title|crown/i]]);
       else add('major', 88, `${W}:series`, `SERIES WON: ${T(W)} beat ${T(L)} to reach the Finals; ${T(L)} are eliminated.`, [teamAlts(W), [/finals/i]]);
     } else if (rec && !rec.decided && rec.teamAWins === rec.teamBWins && rec.teamAWins > 0) {
-      add('major', 70, `${W}:series`, `SERIES TIED: ${T(W)} won to even the series ${rec.teamAWins}-${rec.teamBWins} and force a deciding game.`, [teamAlts(W), [/decid|game 3|rubber|winner[-\s]take|do-or-die|tied|even/i]]);
+      // A deciding game only when the next win takes it (1-1 in a best of 3, not in a best of 5).
+      const decider = rec.teamAWins + 1 === fr.high;
+      add('major', 70, `${W}:series`, `SERIES TIED: ${T(W)} won to even the series ${rec.teamAWins}-${rec.teamBWins}${decider ? ' and force a deciding game' : ''}.`, [teamAlts(W), [/decid|game 3|rubber|winner[-\s]take|do-or-die|tied|even/i]]);
     }
   }
   return out;
@@ -16485,7 +16507,8 @@ function previewHighlights(m) {
     const rec = getSeriesRecordForGame(game, high);
     // Game 1 too: the twice-to-beat seed can close it out right away.
     if (rec) {
-      const need = id => (game.game_type === 'finals' ? 2 : id === high ? 1 : 2);
+      const fr = game.game_type === 'finals' ? getSeriesFormat().finals : getSeriesFormat().semis;
+      const need = id => (fr.kind === 'twice' ? (id === high ? fr.high : fr.low) : fr.high);
       const winsOf = id => (id === game.team_a_id ? rec.teamAWins : rec.teamBWins);
       // Either side (or both, at 1-1 in the Finals or a decider) can close it out tonight.
       const closers = sides.filter(([id]) => winsOf(id) + 1 >= need(id));
@@ -19205,10 +19228,10 @@ function buildPlayoffHero(season, phase) {
     ? { label, high, low, need, st, format, next: games.find(g => !played(g)) || null }
     : null);
   const semis = [
-    series('Semifinal 1', m.s1, m.s4, m.semi1, { high: 1, low: 2 }, m.st1, 'Twice to beat'),
-    series('Semifinal 2', m.s2, m.s3, m.semi2, { high: 1, low: 2 }, m.st2, 'Twice to beat'),
+    series('Semifinal 1', m.s1, m.s4, m.semi1, m.format.semis, m.st1, roundLabel(m.format.semis)),
+    series('Semifinal 2', m.s2, m.s3, m.semi2, m.format.semis, m.st2, roundLabel(m.format.semis)),
   ].filter(Boolean);
-  const finals = series('Finals', m.fHigh, m.fLow, m.finalsGames, { high: 2, low: 2 }, m.fin, 'Best of 3');
+  const finals = series('Finals', m.fHigh, m.fLow, m.finalsGames, m.format.finals, m.fin, roundLabel(m.format.finals));
   const live = (phase === 'finals' || !semis.length ? [finals] : semis).filter(Boolean)
     .sort((a, b) => (ymd(a.next?.date) || '9999').localeCompare(ymd(b.next?.date) || '9999'));
   if (!live.length) return null;
@@ -19967,7 +19990,8 @@ function seasonPhaseFacts(season) {
   const series = (label, hi, lo, st) => {
     if (!hi || !lo) return `${label}: not set yet.`;
     const ps = (st.played || []).filter(played);
-    const head = `${label}, ${T(hi.name)} (the higher seed${label === 'Finals' ? '' : ', twice to beat'}) vs ${T(lo.name)}`;
+    const r = label === 'Finals' ? m.format.finals : m.format.semis;
+    const head = `${label} (${roundRule(r, label === 'Finals')}), ${T(hi.name)} (the higher seed${r.kind === 'twice' ? ', twice to beat' : ''}) vs ${T(lo.name)}`;
     if (!ps.length) return `${head}: not played yet.`;
     const res = ps.map((g, i) => `Game ${i + 1}: ${beat(g)}`).join('; ');
     if (st.winner) {
@@ -19975,7 +19999,7 @@ function seasonPhaseFacts(season) {
       const w = st.winner.id === hi.id ? st.hw : st.lw, l = st.winner.id === hi.id ? st.lw : st.hw;
       return `${head}: ${res}. ${T(st.winner.name)} won the series ${w}-${l}${label === 'Finals' ? ` and are the Season ${season} champions` : ' and reach the Finals'}; ${T(loser.name)} ${label === 'Finals' ? 'lost the Finals' : 'are eliminated'}.`;
     }
-    return `${head}: ${res}. Series still going: ${T(hi.name)} ${st.hw}, ${T(lo.name)} ${st.lw}${label === 'Finals' ? ' (first to 2 wins)' : ` (${T(hi.name)}, the higher seed, needs 1 win; ${T(lo.name)} need 2)`}.`;
+    return `${head}: ${res}. Series still going: ${T(hi.name)} ${st.hw}, ${T(lo.name)} ${st.lw}${r.kind === 'twice' ? ` (${T(hi.name)}, the higher seed, needs 1 win; ${T(lo.name)} need 2)` : ` (first to ${r.high} wins)`}.`;
   };
   const phase = m.champ ? 'done' : m.finalsGames.length ? 'finals' : 'semis';
   const nextFinal = m.finalsGames.find(g => !played(g));
@@ -19984,7 +20008,7 @@ function seasonPhaseFacts(season) {
     series('Semifinal 1', m.s1, m.s4, m.st1),
     series('Semifinal 2', m.s2, m.s3, m.st2),
     m.fHigh && m.fLow ? series('Finals', m.fHigh, m.fLow, m.fin) : 'Finals: waiting on the semifinals.',
-    nextFinal && !m.champ ? `Next Finals game: ${summaryDay(nextFinal.date)} (best of 3).` : '',
+    nextFinal && !m.champ ? `Next Finals game: ${summaryDay(nextFinal.date)} (${m.format.finals.label}).` : '',
     m.champ ? `${T(m.champ.name)} are the Season ${season} champions.` : '',
   ].filter(Boolean);
   const key = `${phase}|${games.filter(played).map(g => `${g.id}:${g.team_a_score}-${g.team_b_score}`).join(',')}`;
@@ -20421,7 +20445,7 @@ function homeSummaryFacts(block, ctx) {
     const ph = seasonPhaseFacts(ctx.season);
     if (ph.phase !== 'regular') return {
       key: `v${HOME_SUMMARY_VERSION}|s|${ctx.season}|${ph.key}`,
-      kicker: ph.phase === 'done' ? `Season ${ctx.season} · Champions` : ph.phase === 'finals' ? 'The Finals · Best of 3' : 'The playoffs · Semifinals',
+      kicker: ph.phase === 'done' ? `Season ${ctx.season} · Champions` : ph.phase === 'finals' ? `The Finals · ${roundLabel(getSeriesFormat().finals)}` : 'The playoffs · Semifinals',
       section: 'Season (where it stands)',
       facts: `${ph.line}\nFinal regular-season standings (history now):\n${lines.join('\n').replace(/, last results [A-Z]+/g, '')}`,
       focus: ph.phase === 'done'
@@ -23371,13 +23395,16 @@ function standingsSectionFacts(sd) {
     // Settled (every game played, or no result left can change the order): said as final.
     const lock = sd.isCurrent ? seasonLockLine(sd.season) : '';
     const live = sd.isCurrent && !lock;
+    const twice = getSeriesFormat().semis.kind === 'twice';
+    const topTwo = twice ? 'who earned twice to beat' : 'who earned the top two seeds';
     const lines = [
-      'Format: the top 4 teams make the semifinals, 1st vs 4th and 2nd vs 3rd. The higher seed in each semifinal is "twice to beat": it advances with 1 win, while the lower seed has to win 2 games. The Finals are best of 3.',
+      formatFactLine(getSeriesFormat()),
       live ? `Seeding if the regular season ended today (after week ${m.week}):` : `${lock ? 'Settled' : 'Final'} regular-season seeding, Season ${sd.season}:`,
       `- Semifinal A: 1st ${T(s1.name)} (${rec(s1)}) vs 4th ${T(s4.name)} (${rec(s4)})`,
       `- Semifinal B: 2nd ${T(s2.name)} (${rec(s2)}) vs 3rd ${T(s3.name)} (${rec(s3)})`,
       ...m.table.slice(4).map((t, i) => `- ${i + 5}th ${T(t.name)} (${rec(t)}) is outside the top 4`),
-      gap > 0 ? `${T(s2.name)} (2nd) is ${gap} game${gap === 1 ? '' : 's'} ahead of ${T(s3.name)} (3rd) for the last twice-to-beat spot.` : `${T(s2.name)} and ${T(s3.name)} have the same record; the tiebreak gives ${T(s2.name)} the last twice-to-beat spot.`,
+      // "Twice to beat" only exists when the semis are played that way (the Season format).
+      `${gap > 0 ? `${T(s2.name)} (2nd) is ${gap} game${gap === 1 ? '' : 's'} ahead of ${T(s3.name)} (3rd)` : `${T(s2.name)} and ${T(s3.name)} have the same record; the tiebreak puts ${T(s2.name)} 2nd`}${twice ? ', the last twice-to-beat spot' : ''}.`,
       ...m.notes.map(n => `Tiebreak: ${teamsTc(n)}.`),
       sd.isCurrent ? (m.sched.length ? `${plural(m.sched.length, 'regular-season game')} left on the schedule.` : 'No regular-season games left on the schedule.') : '',
       lock,
@@ -23387,10 +23414,10 @@ function standingsSectionFacts(sd) {
       kicker: `Playoff picture · ${asOf}`, section: live ? 'Playoff picture (the semifinal matchups if the season ended now)' : 'Playoff picture (the settled semifinal matchups)', where,
       facts: lines.join('\n'),
       focus: post
-        ? 'The regular season set up the playoffs, and the playoffs are now under way: say who earned twice to beat, then where each semifinal (and the Finals) stands from the SEASON PHASE lines. Never present a semifinal that has been played as still to come.'
+        ? `The regular season set up the playoffs, and the playoffs are now under way: say ${topTwo}, then where each semifinal (and the Finals) stands from the SEASON PHASE lines. Never present a semifinal that has been played as still to come.`
         : live
-        ? 'Describe the playoff picture: who holds the twice-to-beat spots, how tight the race for them is, and the semifinal matchups as they stand. Don\'t recap the whole table.'
-        : 'Describe how the regular season set up the playoffs: who earned twice to beat and the semifinal matchups it produced.',
+        ? `Describe the playoff picture: ${twice ? 'who holds the twice-to-beat spots' : 'who holds the top two seeds'}, how tight the race for them is, and the semifinal matchups as they stand. Don't recap the whole table.`
+        : `Describe how the regular season set up the playoffs: ${topTwo} and the semifinal matchups it produced.`,
     };
   }
 
@@ -23453,7 +23480,8 @@ function playoffsSectionFacts(pd) {
   const rec = t => `${t.wins}-${t.losses}`;
   const where = 'Playoffs page';
   const out = {};
-  const format = 'Format: semifinals 1st vs 4th and 2nd vs 3rd; the higher seed is "twice to beat" (advances with 1 win, the lower seed needs 2). The Finals are best of 3.';
+  const format = formatFactLine(m.format);
+  const semiNeed = seed => (m.format.semis.kind === 'twice' ? `the ${seed} seed needs 2 wins` : `first to ${m.format.semis.high} wins`);
   const beat = g => {
     const aw = Number(g.team_a_score) > Number(g.team_b_score);
     const hi = Math.max(g.team_a_score, g.team_b_score), lo = Math.min(g.team_a_score, g.team_b_score);
@@ -23469,8 +23497,8 @@ function playoffsSectionFacts(pd) {
   if (m.projected) {
     facts = `${format}\n${pd.isCurrent ? `Projected bracket if the regular season ended today (${pd.regular.played} of ${pd.regular.expected} regular-season games played)` : `Season ${pd.season} final seeding`}:\n- Semifinal 1: 1st ${T(m.s1.name)} (${rec(m.s1)}) vs 4th ${T(m.s4.name)} (${rec(m.s4)})\n- Semifinal 2: 2nd ${T(m.s2.name)} (${rec(m.s2)}) vs 3rd ${T(m.s3.name)} (${rec(m.s3)})`;
   } else {
-    const fin = m.fHigh && m.fLow ? series('Finals', m.fHigh, m.seedOf(m.fHigh), m.fLow, m.seedOf(m.fLow), m.fin, 'first to 2 wins') : '- Finals: waiting on the semifinals.';
-    facts = `${format}\nSeason ${pd.season} playoffs:\n${series('Semifinal 1', m.s1, 1, m.s4, 4, m.st1, 'the 4th seed needs 2 wins')}\n${series('Semifinal 2', m.s2, 2, m.s3, 3, m.st2, 'the 3rd seed needs 2 wins')}\n${fin}${m.champ ? `\n${T(m.champ.name)} are the Season ${pd.season} champions.` : ''}${pd.awards.finalsMvp ? `\nFinals MVP: ${pd.awards.finalsMvp.name}.` : ''}${pd.awards.mvp ? `\nSeason MVP: ${pd.awards.mvp.name}.` : ''}`;
+    const fin = m.fHigh && m.fLow ? series('Finals', m.fHigh, m.seedOf(m.fHigh), m.fLow, m.seedOf(m.fLow), m.fin, `first to ${m.format.finals.high} wins`) : '- Finals: waiting on the semifinals.';
+    facts = `${format}\nSeason ${pd.season} playoffs:\n${series('Semifinal 1', m.s1, 1, m.s4, 4, m.st1, semiNeed('4th'))}\n${series('Semifinal 2', m.s2, 2, m.s3, 3, m.st2, semiNeed('3rd'))}\n${fin}${m.champ ? `\n${T(m.champ.name)} are the Season ${pd.season} champions.` : ''}${pd.awards.finalsMvp ? `\nFinals MVP: ${pd.awards.finalsMvp.name}.` : ''}${pd.awards.mvp ? `\nSeason MVP: ${pd.awards.mvp.name}.` : ''}`;
   }
   // The playoff games' highlights (lib/highlights.js, cached per game): series results for the
   // bracket (clinch, title, upset, forced decider), records and big nights for the games list.
@@ -23486,7 +23514,7 @@ function playoffsSectionFacts(pd) {
     musts: seriesMusts,
     kicker: `${m.projected ? 'Projected bracket' : 'The bracket'} · Season ${pd.season}`, section: m.projected ? 'Projected bracket' : 'Bracket', where, facts,
     focus: m.projected
-      ? 'Preview the bracket as it stands: who has twice to beat and the matchups it sets up. Don\'t predict winners.'
+      ? `Preview the bracket as it stands: ${m.format.semis.kind === 'twice' ? 'who has twice to beat' : 'the top seeds'} and the matchups it sets up. Don't predict winners.`
       : m.champ
         ? 'Tell how the bracket played out: the path each finalist took and how the Finals were decided.'
         : 'Say where the bracket stands: who has advanced, what is still to be decided, and what each side needs.',

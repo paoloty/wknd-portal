@@ -34,7 +34,7 @@ export function adminSeasonBody({
 
   const details = `<form class="aui-panel aset-form" id="season-details-form" data-json-action="/admin/season/settings" data-done="Season details saved.">
     ${fieldGrid(`
-      ${field({ label: 'Season format', name: 'season_format', type: 'textarea', rows: 2, value: seasonFormat, wide: true, placeholder: 'Double Round Robin · Top 4 Twice-to-Beat · Finals Best of 3', help: 'Shown to members when they sign up. Separate points with · for a list.' })}
+      ${field({ label: 'Season format', name: 'season_format', type: 'textarea', rows: 2, value: seasonFormat, wide: true, placeholder: 'Regular Season: Double Round Robin · Semis: Top 2 Twice to Beat · Finals: Best of 3', help: 'Shown to members when they sign up. Separate points with · for a list. The bracket, series counts and AI writers read the playoff format from here (twice to beat, best of 3 or 5, one game); left blank, semis are twice to beat and the Finals best of 3.' })}
       ${field({ label: 'Season fee', name: 'season_quota_amount', type: 'money', value: quotaAmount })}
       ${field({ label: 'Number of teams', name: 'season_team_count', type: 'number', value: teamCount || 4, attrs: 'min="2" max="8"' })}
       ${field({ label: 'Roster size', name: 'season_roster_capacity', type: 'number', value: seasonRosterCapacity, help: 'Optional.', attrs: 'min="0"' })}
