@@ -22,6 +22,15 @@ test('the decider is fine when the facts say so; Finals and champion claims need
   assert.match(claimProblems('Black punch their ticket to the Finals.', 'Season 4 regular-season game.').join(' '), /Finals/);
 });
 
+test('the series format matches the round: semis are twice to beat, the Finals best of 3', () => {
+  assert.match(claimProblems('Black eliminated Maroon in this best-of-three series.', OVER).join(' '), /best of 3/);
+  assert.match(claimProblems('A best-of-3 semifinal.', OVER).join(' '), /best of 3/);
+  assert.deepEqual(claimProblems('Black beat twice-to-beat Maroon again.', OVER), []);
+  const FINALS = 'SITUATION: Season 4 playoffs, the Finals, Game 1 (best of 3). After this game: White lead the Finals 1-0; one more win takes the title.';
+  assert.deepEqual(claimProblems('White take Game 1 of the best-of-three Finals.', FINALS), []);
+  assert.match(claimProblems('White, twice to beat, take Game 1.', FINALS).join(' '), /twice to beat/);
+});
+
 test('a result given as a score must be the final score', () => {
   assert.match(finalScoreProblems('White Breaks Losing Streak with 83-78 Victory Over Blue', 84, 78).join(' '), /final score is 84-78/);
   assert.deepEqual(finalScoreProblems('White edge Blue 84-78 after trailing 39-23 in the second.', 84, 78), []);
