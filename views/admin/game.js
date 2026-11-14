@@ -472,7 +472,8 @@ function retrackSection({ game, sc, base }) {
   const post = (label, url, body, { kind = 'secondary', confirm = null, then = `${base}?tab=scoring` } = {}) => button(label, { kind, size: 'sm', attrs: `data-post-json="${url}"${body ? ` data-body="${attr(JSON.stringify(body))}"` : ''} data-then="${then}"${confirm ? ` data-confirm data-confirm-title="${attr(confirm.title)}" data-confirm-body="${attr(confirm.body)}" data-confirm-send="${attr(confirm.send)}"` : ''}` });
   const videoHref = `${base}/score?pass=video`;
   const undo = rt.replaced && rt.replaced.undo && !rt.started && sc.stats === 'official' ? post('Undo the replace', `${base}/scoring/undo-replace`, null, { confirm: { title: 'Undo the replace?', body: 'The old box score comes back exactly as it was. The re-track is kept, to fix and replace again.', send: 'Undo it' } }) : '';
-  const done = rt.replaced ? `<p>Box score replaced from the video re-track by <b>${escHtml(rt.replaced.name)}</b>. The old one is kept on record.</p>${undo ? `<div>${undo}</div>` : ''}` : '';
+  const seeChanges = rt.changes ? button('See what changed', { kind: 'secondary', size: 'sm', href: rt.changes }) : '';
+  const done = rt.replaced || seeChanges ? `${rt.replaced ? `<p>Box score replaced from the video re-track by <b>${escHtml(rt.replaced.name)}</b>. The old one is kept on record.</p>` : ''}${seeChanges ? '<p class="aui-muted">The first box score saved against the one on the site now, play by play.</p>' : ''}${undo || seeChanges ? `<div>${seeChanges} ${undo}</div>` : ''}` : '';
   const c = rt.cmp;
   if (!c) {
     // Official stats: nothing to re-track until an approver reopens them (the banner above).

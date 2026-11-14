@@ -16,23 +16,27 @@ const sc = s => `${s.a}–${s.b}`;
 const ICON = { missing: '−', extra: '+', player: '≠', result: '≠', many: '≠' };
 
 // d: server.js GET /admin/games/:id/compare. c: retrackCompare(game, { full: true }).
+// c.first (Paolo, 2026-11-14): once the stats are final and the box score was replaced, the same
+// page read-only: the very first box score saved (left) against the one on the site now (right).
 export function adminRetrackCompareBody({ game, c, d }) {
+  const F = !!c.first;
+  const L = F ? { s: 'First saved', r: 'Now' } : { s: 'Saved', r: 'Re-track' };
   const base = `/admin/games/${encodeURIComponent(game.id)}`;
   const post = (label, url, body, { kind = 'secondary', confirm, then = `${base}?tab=scoring`, withNote = false } = {}) => button(label, { kind, size: 'sm', attrs: `data-post-json="${url}" data-body="${attr(JSON.stringify(body || {}))}" data-then="${then}"${withNote ? ' data-with="#arc-note"' : ''}${confirm ? ` data-confirm data-confirm-title="${attr(confirm[0])}" data-confirm-body="${attr(confirm[1])}" data-confirm-send="${attr(confirm[2])}"` : ''}` });
   const back = button('Back to the Scoring tab', { kind: 'ghost', size: 'sm', href: `${base}?tab=scoring` });
-  const head = pageHeader({ eyebrow: `${game.team_a_name} vs ${game.team_b_name}`, title: 'Saved vs re-track', sub: c.over ? `Re-track at Game over · ${c.count} plays` : `Re-track so far · ${c.at} · ${c.pct}%`, actionsHtml: back });
+  const head = pageHeader({ eyebrow: `${game.team_a_name} vs ${game.team_b_name}`, title: F ? 'First saved vs now' : 'Saved vs re-track', sub: F ? `Read-only · box score replaced${c.first.by ? ` by ${c.first.by}` : ''} · ${new Date(c.first.at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}` : c.over ? `Re-track at Game over · ${c.count} plays` : `Re-track so far · ${c.at} · ${c.pct}%`, actionsHtml: back });
   if (!c.count) return `${head}${banner('info', 'No re-track yet. Start one from the Scoring tab.')}`;
 
   const scores = `<div class="arc-scores">
-      <div class="arc-sc"><span class="arc-k">Saved · ${escHtml(c.source)} · on the site</span><b>${escHtml(game.team_a_name)} ${sc(c.saved)} ${escHtml(game.team_b_name)}</b></div>
-      <div class="arc-sc arc-sc--re"><span class="arc-k">Re-track${c.over ? ' · Game over' : ' so far'}</span><b>${escHtml(game.team_a_name)} ${sc(c.re)} ${escHtml(game.team_b_name)}</b></div>
+      <div class="arc-sc"><span class="arc-k">${F ? `First saved · ${escHtml(c.source)}` : `Saved · ${escHtml(c.source)} · on the site`}</span><b>${escHtml(game.team_a_name)} ${sc(c.saved)} ${escHtml(game.team_b_name)}</b></div>
+      <div class="arc-sc arc-sc--re"><span class="arc-k">${F ? 'Now · on the site' : `Re-track${c.over ? ' · Game over' : ' so far'}`}</span><b>${escHtml(game.team_a_name)} ${sc(c.re)} ${escHtml(game.team_b_name)}</b></div>
     </div>`;
   const p = c.pbp;
   const segs = p ? p.segs : [];
 
   // The rows, side by side.
   let table = '';
-  if (!p) table = '<div class="aui-panel"><p class="aui-muted">The saved box score came from a wknd-stats file: it has no plays to line up. The box score changes on the right compare the two.</p></div>';
+  if (!p) table = `<div class="aui-panel"><p class="aui-muted">The ${F ? 'first' : 'saved'} box score came from a wknd-stats file: it has no plays to line up. The box score changes on the right compare the two.</p></div>`;
   else {
     const rows = p.rows;
     const keepIdx = new Set();
@@ -41,7 +45,7 @@ export function adminRetrackCompareBody({ game, c, d }) {
     const side = (x, sideKey, t) => {
       const mine = sideKey === 's' ? (t === 'missing' || t === 'player' || t === 'result') : (t === 'extra' || t === 'player' || t === 'result');
       if (!x) return `<span class="arc-c arc-c--none"></span><span class="arc-c arc-c--none"></span><span class="arc-c arc-c--none"></span>`;
-      const play = `<span class="arc-c arc-play">${mine ? `<span class="arc-tag">${sideKey === 's' ? 'Saved' : 'Re-track'}</span>` : ''}<span${mine && (t === 'player') ? ' class="arc-hl"' : ''}>${escHtml(x.name)}</span><span>${escHtml(x.rest)}</span></span>`;
+      const play = `<span class="arc-c arc-play">${mine ? `<span class="arc-tag">${sideKey === 's' ? L.s : L.r}</span>` : ''}<span${mine && (t === 'player') ? ' class="arc-hl"' : ''}>${escHtml(x.name)}</span><span>${escHtml(x.rest)}</span></span>`;
       const clock = `<span class="arc-c arc-clock">${escHtml(String(x.when).split(' ').slice(1).join(' ') || x.when)}</span>`;
       const score = `<span class="arc-c arc-score">${escHtml(x.score)}</span>`;
       return sideKey === 's' ? `${play}${clock}${score}` : `${score}${clock}${play}`;
@@ -64,12 +68,13 @@ export function adminRetrackCompareBody({ game, c, d }) {
     const ticks = segs.map(h => `<a class="arc-tick arc-tick--${h.type}" href="#h-${h.n}" style="top:${(h.pos * 100).toFixed(1)}%" title="${attr(`${h.n}. ${h.title} · ${h.when}`)}" aria-label="${attr(`${h.n}: ${h.title}, ${h.when}`)}"></a>`).join('');
     const strip = `<div class="arc-strip" aria-label="The whole game: a tick per difference">${p.divergeAt !== null && p.divergeAt !== undefined ? `<div class="arc-strip__off" style="top:${(p.divergeAt * 100).toFixed(1)}%" title="The two scores stop matching from here"></div>` : ''}${ticks}</div>`;
     table = `<div class="arc-diff"><div class="arc-scroll"><div class="arc-grid">
-        <div class="arc-row arc-row--head"><span></span><span class="arc-c arc-play">Saved · on the site</span><span class="arc-c arc-clock">Clock</span><span class="arc-c arc-score">Score</span><span class="arc-mid"></span><span class="arc-c arc-score">Score</span><span class="arc-c arc-clock">Clock</span><span class="arc-c arc-play">Re-track · from the video</span><span></span></div>
+        <div class="arc-row arc-row--head"><span></span><span class="arc-c arc-play">${F ? 'First saved' : 'Saved · on the site'}</span><span class="arc-c arc-clock">Clock</span><span class="arc-c arc-score">Score</span><span class="arc-mid"></span><span class="arc-c arc-score">Score</span><span class="arc-c arc-clock">Clock</span><span class="arc-c arc-play">${F ? 'Now · on the site' : 'Re-track · from the video'}</span><span></span></div>
         ${html}</div></div>${strip}</div>
-      <p class="aui-muted arc-note">Lined up play by play, never by the clock: a court game and a re-track from the video never keep the same time, so each side keeps its own clock and score. Scores in amber: the two stop matching there.${p.orderCount ? ` ${p.orderCount} play${p.orderCount === 1 ? ' is' : 's are'} in another order but the same in both: not counted.` : ''}${p.truncated ? ' A very long game: the first 2,500 plays were compared.' : ''}${c.over ? '' : ` Saved plays the re-track hasn’t reached yet: ${p.pending}.`}</p>`;
+      <p class="aui-muted arc-note">Lined up play by play, never by the clock: ${F ? 'the two scorings' : 'a court game and a re-track from the video'} never keep the same time, so each side keeps its own clock and score. Scores in amber: the two stop matching there.${p.orderCount ? ` ${p.orderCount} play${p.orderCount === 1 ? ' is' : 's are'} in another order but the same in both: not counted.` : ''}${p.truncated ? ' A very long game: the first 2,500 plays were compared.' : ''}${c.over ? '' : ` Saved plays the re-track hasn’t reached yet: ${p.pending}.`}</p>`;
   }
   const filter = p ? `<div class="arc-filter">${button('Differences', { kind: d.all ? 'ghost' : 'secondary', size: 'sm', href: `${base}/compare` })} ${button('Every play', { kind: d.all ? 'secondary' : 'ghost', size: 'sm', href: `${base}/compare?all=1` })}</div>` : '';
-  const legend = `<div class="arc-legend"><span><i class="arc-key arc-key--s">−</i>Missing in re-track</span><span><i class="arc-key arc-key--r">+</i>Extra in re-track</span><span><i class="arc-key arc-key--b">≠</i>Wrong player / made vs missed</span></div>`;
+  const legend = F ? `<div class="arc-legend"><span><i class="arc-key arc-key--s">−</i>Taken out</span><span><i class="arc-key arc-key--r">+</i>Added</span><span><i class="arc-key arc-key--b">≠</i>Player changed / made vs missed</span></div>`
+    : `<div class="arc-legend"><span><i class="arc-key arc-key--s">−</i>Missing in re-track</span><span><i class="arc-key arc-key--r">+</i>Extra in re-track</span><span><i class="arc-key arc-key--b">≠</i>Wrong player / made vs missed</span></div>`;
   const left = section({ title: 'Play by play', note: `· ${segs.length ? `${segs.length} difference${segs.length === 1 ? '' : 's'}` : 'every play matches'}`, asideHtml: filter, bodyHtml: `${p ? legend : ''}${table}` });
 
   // The panel: each spot, the box score changes, the decision.
@@ -101,5 +106,5 @@ export function adminRetrackCompareBody({ game, c, d }) {
   const bar = `<div class="arc-bar" role="region" aria-label="Finalize the stats"><div class="arc-bar__say">${say}</div>${note}<div class="arc-bar__acts">${backRt}${keep}${replace}</div></div>`;
   const right = `${section({ title: 'The differences', bodyHtml: spots })}${section({ title: 'Box score changes', bodyHtml: changes })}`;
 
-  return `${head}${scores}<div class="arc-layout"><div class="arc-main">${left}</div><aside class="arc-side">${right}</aside></div>${bar}`;
+  return `${head}${scores}<div class="arc-layout"><div class="arc-main">${left}</div><aside class="arc-side">${right}</aside></div>${F ? '' : bar}`;
 }

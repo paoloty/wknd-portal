@@ -281,7 +281,7 @@ function reviewCard(r) {
     const reopen = ap && r.stats === 'official' ? ask(r.reopen, 'Reopen for review?', 'Reopen', 'Players see Stats under review and keep this box score until it’s replaced. The other admins get a bell', 'Reopened for review', 'Reopen for review', false) : '';
     const undo = r.stats === 'official' && r.replaced && r.replaced.undo ? ask(r.replaced.undo, 'Undo the replace?', 'Undo it', 'The old box score comes back exactly as it was. The re-track is kept, to fix and replace again', 'Old box score back', 'Undo the replace', false) : '';
     return `<section class="fc rv-card"><div class="kick">${kick}</div><p>${lead}${nextLine}</p>
-      <div class="rv-card__b">${finishBtn}${makeOfficial}${retrack}${keep}${fix}${reopen}${undo}</div>
+      <div class="rv-card__b">${finishBtn}${makeOfficial}${retrack}${keep}${fix}${reopen}${undo}${r.changes ? `<a class="btn btn--ghost" href="${esc(r.changes)}">See what changed</a>` : ''}</div>
       ${r.canRetrack ? `<p class="foot-note">The box score players see stays up while you re-track. Nothing changes until ${ap ? 'you replace it' : 'a stats approver replaces it'}.</p>` : ''}</section>`;
   }
   // Re-tracking a saved box score: how far, the two scores, Continue / Compare / Start over.

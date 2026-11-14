@@ -236,6 +236,7 @@ export const SCORER_GUIDE = [
         '<b>Check as you go:</b> ••• → <i>Compare</i> lines your re-track up with the saved game play by play (the clocks never match). Each difference gets a card: <i>Missing in re-track</i>, <i>Extra in re-track</i>, <i>Wrong player</i> or <i>Made vs missed</i>, with the plays around it and what it changes in the box score. Saved lines are grey (−), yours amber (+). Plays you tapped in another order don’t count.',
         '<b>At Game over,</b> tap <i>Compare and finalize stats</i>: the differences, then the box score changes. Replacing the box score or keeping the saved one finalizes the stats (Official). On the site, the game’s Scoring tab → <i>Compare and finalize stats</i> shows both side by side, with an optional note (what you fixed and why) saved with the stats; only admins see it, on the Scoring tab.',
         '<b>A stats approver</b> taps <i>Replace the box score</i>: one step, the stats become official, the old box score is kept on record and <i>Undo the replace</i> puts it back. Or <i>Keep the saved one</i>: the re-track goes and the saved box score becomes official.',
+        '<b>After a replace,</b> <i>See what changed</i> (the Review card, or the Scoring tab on the site) shows the first box score ever saved against the one on the site now, play by play, read-only.',
       ]],
       ['tip', 'Good to know', '<i>Start over</i> throws away the re-track only; the saved box score isn’t touched. Stats approvers are picked by the super admin (player page → Settings).'],
     ],

@@ -18,12 +18,14 @@ export function appRetrackComparePage({ back, missing = '', d = {} }) {
   const side = t => (t === 'a' ? d.a : d.b);
   const dot = t => `<i class="dot" style="--c:${esc(side(t).color)}"></i>`;
   const score = s => `${s.a}–${s.b}`;
-  const status = d.over
+  const F = !!d.first, L = F ? { s: 'First saved', r: 'Now' } : { s: 'Saved', r: 'Re-track' };
+  const status = F ? `<p class="msg rt-status rt-status--plain">Read-only · the first box score saved against the one on the site now${d.first.by ? `. Replaced by ${esc(d.first.by)}` : ''}</p>`
+    : d.over
     ? `<p class="msg msg--ok rt-status">${icons.check}Re-track at Game over · ${d.count} plays</p>`
     : `<p class="msg rt-status rt-status--plain">Re-track so far · ${esc(d.at)} · ${d.pct}%</p>`;
   const scores = `<div class="rt-scores">
-      <div class="fc rt-sc"><span class="kick rt-kick--mut">Saved</span><b class="num">${score(d.saved)}</b><small>${esc(d.source)} · on the site</small></div>
-      <div class="fc rt-sc rt-sc--re"><span class="kick">Re-track</span><b class="num">${score(d.re)}</b><small>${d.over ? 'From the video' : 'So far · admins only'}</small></div>
+      <div class="fc rt-sc"><span class="kick rt-kick--mut">${L.s}</span><b class="num">${score(d.saved)}</b><small>${esc(d.source)}${F ? '' : ' · on the site'}</small></div>
+      <div class="fc rt-sc rt-sc--re"><span class="kick">${L.r}</span><b class="num">${score(d.re)}</b><small>${F ? 'On the site' : d.over ? 'From the video' : 'So far · admins only'}</small></div>
     </div>`;
 
   // The spots, play by play.
@@ -48,7 +50,7 @@ export function appRetrackComparePage({ back, missing = '', d = {} }) {
       const cut = text.indexOf(' · '), name = cut > 0 ? text.slice(0, cut) : text, rest = cut > 0 ? text.slice(cut) : '';
       const hl = item.type === 'player';
       return `<div class="rd-l rd-l--${sideKey}"><span class="rd-l__s" aria-hidden="true">${sideKey === 's' ? '−' : '+'}</span>
-        <span class="rd-l__t"><span class="rd-l__tag">${sideKey === 's' ? 'Saved' : 'Re-track'}</span> <span${hl ? ' class="rd-l__hl"' : ''}>${esc(name)}</span>${esc(rest)}</span>
+        <span class="rd-l__t"><span class="rd-l__tag">${sideKey === 's' ? L.s : L.r}</span> <span${hl ? ' class="rd-l__hl"' : ''}>${esc(name)}</span>${esc(rest)}</span>
         <span class="rd-l__sc">${esc(sideKey === 's' ? item.sScore : item.rScore)}</span></div>`;
     };
     const ctx = t => (t ? `<div class="rd-l rd-l--ctx"><span class="rd-l__s" aria-hidden="true"></span><span class="rd-l__t">${esc(t)}</span><span></span></div>` : '');
@@ -60,7 +62,7 @@ export function appRetrackComparePage({ back, missing = '', d = {} }) {
       </section>`;
     pbp = `${strip}${segs.slice(0, MAX).map(card).join('')}${segs.length > MAX ? `<p class="rt-at">And ${segs.length - MAX} more: the site’s compare page shows every one.</p>` : ''}
       <p class="rt-at">Lined up play by play, not by the clock (the two never keep the same time). Grey lines: the plays around it, the same in both.</p>`;
-  } else pbp = '<p class="rt-at">The saved box score came from a wknd-stats file: it has no plays to line up, so only the totals are compared.</p>';
+  } else pbp = `<p class="rt-at">The ${F ? 'first' : 'saved'} box score came from a wknd-stats file: it has no plays to line up, so only the totals are compared.</p>`;
 
   // Totals: only what changes, as old → new.
   const teamChanges = d.over ? d.teams.flatMap(t => t.cells.filter(c => c.saved !== c.re).map(c => `<span class="rt-chip num">${dot(t.side)}<span class="rt-was">${esc(c.label)} ${c.saved}→</span>${c.re}</span>`)) : [];
@@ -81,6 +83,13 @@ export function appRetrackComparePage({ back, missing = '', d = {} }) {
   const keep = d.held ? '' : d.approver
     ? `<button type="button" class="btn btn--ghost" data-adm-post="${esc(d.discard)}" data-adm-body="${esc(JSON.stringify({ action: 'discard', keep: true }))}" data-adm-ask-title="Keep the saved one?" data-adm-ask-yes="Keep it" data-adm-ask-icon="flag" data-adm-ask="The re-track is thrown away (kept on record, never counted) and the saved box score becomes official" data-adm-done="Saved box score is official" data-adm-then="${esc(d.gameHref)}">Keep saved (official)</button>`
     : `<button type="button" class="btn btn--ghost" data-adm-post="${esc(d.discard)}" data-adm-body="${esc(JSON.stringify({ action: 'discard' }))}" data-adm-ask-title="Throw away the re-track?" data-adm-ask-yes="Throw it away" data-adm-ask-icon="flag" data-adm-ask="The re-track is thrown away (kept on record, never counted). The saved box score stays as it is" data-adm-done="Re-track thrown away" data-adm-then="${esc(d.gameHref)}">Throw it away</button>`;
+  if (F) return `${nav}
+  <div class="rt">
+    ${status}
+    ${scores}
+    ${pbp}
+    ${totals}
+  </div>`;
   return `${nav}
   <div class="rt">
     ${status}

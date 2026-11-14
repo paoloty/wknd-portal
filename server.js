@@ -6265,7 +6265,7 @@ import { adminScorersBody } from './views/admin/scorers.js';
 import { appBarkadahanPage, appBarkadahanOnlinePage, bkCardHtml, bkShareHtml } from './views/app/barkadahan.js';
 import { adminBarkadahanBody } from './views/admin/barkadahan.js';
 import { addBarkadahanMessage, getBarkadahanByClientId, getBarkadahanMessage, getBarkadahanMessages, getBarkadahanArchive, countBarkadahanArchive, deleteBarkadahanMessage, getBarkadahanReactions, toggleBarkadahanReaction, markBarkadahanRead, countBarkadahanUnread, reportBarkadahanMessage, getBarkadahanReports, resolveBarkadahanReports, setPlayerOnlineHidden, setPlayerLastSeen, setBarkadahanMute, getPlayersSeenSince, getPlayerCover, getPlayerCoverAt, setPlayerCover, deletePlayerCover, barkadahanCardShown, getBarkadahanReactionRows, getBarkadahanSeenSince, addBarkadahanGreeting, getBarkadahanGreeting, getBarkadahanGreetedIds, getBarkadahanGreets, toggleBarkadahanGreet, addBarkadahanGreets, setBarkadahanWish, hasOpenedBarkadahan } from './lib/portal-db.js';
-import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerStatsApprover, getStatsApproverIds, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, getScorerSpot, setScorerSpot, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, publishSnapshotAt, deletePublishSnapshot, renameScorePass, claimScoreReplace, dailyBackup } from './lib/portal-db.js';
+import { getScoreGame, saveScoreGame, getScorers, setScorers, getScorerGameIds, addScoreEvents, getScoreEvents, setGameOrebs, moveScoreEvents, discardReview, setPlayerScorer, setPlayerStatsApprover, getStatsApproverIds, setPlayerPwScorer, getPwScorerPlayerIds,setPlayerPremiumCardsPass, setPlayerAnalyticsOff, getScorerSpot, setScorerSpot, savePractice, getPracticeLog, getScorerPlayerIds, snapshotGameBeforePublish, latestPublishSnapshot, restoreGameFromSnapshot, claimScorePublish, releaseScorePublish, publishSnapshotAt, publishSnapshotFrom, archivedScorePasses, deletePublishSnapshot, renameScorePass, claimScoreReplace, dailyBackup } from './lib/portal-db.js';
 import { buildPublishPayload } from './lib/scorer-publish.js';
 import { alignTracks, sideBySide } from './lib/retrack-diff.js';
 import { liveScoreData, liveWhen } from './lib/live-score.js';
@@ -7258,7 +7258,8 @@ function appReviewCard(req, g, hasBox = false) {
       by: stats === 'unofficial' ? sg.settings.statsPending.by : stats === 'review' ? sg.settings.underReview.name : '',
       retrack: open && retrackEvents(g, sg).length > 0, canRetrack: open,
       approve: `/admin/games/${id}/scoring/approve`, reopen: `/admin/games/${id}/scoring/reopen`, fix: approver && stats === 'unofficial' ? `/admin/games/${id}/scoring/fix` : '',
-      next, replaced: rp && approver ? { name: rp.name, undo: `/admin/games/${id}/scoring/undo-replace` } : rp ? { name: rp.name, undo: '' } : null };
+      next, replaced: rp && approver ? { name: rp.name, undo: `/admin/games/${id}/scoring/undo-replace` } : rp ? { name: rp.name, undo: '' } : null,
+      changes: !retrackEvents(g, sg).length && firstSavedBox(g, sg) ? `/app/games/${id}/compare` : '' };
   }
   if (sg && sg.status === 'published' && !r) return null;
   // Yours and its track has reached Game over: Publish, with the site's publish route. The track
@@ -7296,8 +7297,10 @@ app.get('/app/games/:id/compare', requireApp, (req, res) => {
   if (!g || (!gameAdminPlayers().some(a => a.playerId === pid) && !isAdminWithSection(req, 'games-stats'))) return res.redirect(back.href);
   const sg = getScoreGame(g.id);
   res.set('Cache-Control', 'private, no-store');
-  if (!sg || !retrackEvents(g, sg).length) return sendTab(res, me, { title: 'Compare · WKND', tab: 'home', body: appRetrackComparePage({ back, missing: 'No re-track yet. Start one from the game’s Review card.' }) });
-  const c = retrackCompare(g);
+  // No re-track waiting: the very first box score against the one on the site now, read-only.
+  const first = sg && !retrackEvents(g, sg).length ? firstSavedBox(g, sg) : null;
+  if (!sg || (!first && !retrackEvents(g, sg).length)) return sendTab(res, me, { title: 'Compare · WKND', tab: 'home', body: appRetrackComparePage({ back, missing: 'No re-track yet. Start one from the game’s Review card.' }) });
+  const c = retrackCompare(g, { first });
   const teams = getAllTeams();
   const r = sg.settings.review, rv = reviewer(req), sup = isSuperAdminReq(req);
   const held = r && r.by !== rv.by && !sup ? r.name : '';
@@ -9332,30 +9335,51 @@ function trackFrac(rows, rules) {
 }
 const RT_KEYS = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK'], ['turnover', 'TO'], ['pf', 'PF'], ['fg3m', '3PM'], ['ftm', 'FTM']];
 const RT_TEAM_KEYS = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['turnover', 'TO'], ['fg3m', '3PM']];
+// The very first box score of a game whose box score was replaced (Paolo, 2026-11-14: "very first
+// stat vs current"): the oldest put-away plays ('prev_<time>') and the copy of the box score that
+// replace took. A wknd-stats box score the scorer's first save replaced has the copy, no plays.
+// Null when the box score is still the first one saved (never replaced, or the replace undone).
+function firstSavedBox(game, sg = getScoreGame(game.id)) {
+  if (!bgRetrack(sg)) return null;
+  const arch = archivedScorePasses(game.id).map(p => [p, Number(p.slice(5))]).filter(x => x[1]).sort((x, y) => x[1] - y[1])[0];
+  if (arch) {
+    const snap = publishSnapshotFrom(game.id, arch[1]);
+    if (snap) return { events: getScoreEvents(game.id, arch[0]), snap, at: arch[1] };
+  }
+  const rp = sg.settings.replaced;
+  if (rp && rp.mode === 'first' && rp.snapAt) {
+    const snap = publishSnapshotAt(game.id, rp.snapAt);
+    if (snap) return { events: [], snap, at: rp.at || rp.snapAt };
+  }
+  return null;
+}
+const FIRST_WORDS = { titles: { player: 'Player changed', missing: 'Taken out', extra: 'Added' }, right: 'now' };
 // The saved box score against the re-track: play by play lined up by the score (when the saved
 // game has its plays), then player by player (only what differs) once the re-track is at Game over.
-function retrackCompare(game, { full = false, plays = true } = {}) {
+// first (firstSavedBox): read-only, the very first box score against the one on the site now.
+function retrackCompare(game, { full = false, plays = true, first = null } = {}) {
   const sg = getScoreGame(game.id);
   if (!sg) return null;
   const rules = scoreRulesFor(game, sg);
-  const ev = retrackEvents(game, sg);
+  const ev = first ? getScoreEvents(game.id, 'live') : retrackEvents(game, sg);
   const players = getAllPlayers();
   const byId = Object.fromEntries(players.map(p => [p.id, p]));
   const { payload, state } = buildPublishPayload(game, ev, Object.fromEntries(players.map(p => [p.id, { name: p.name }])), sg.settings);
-  const re = Object.fromEntries(Object.entries(payload.playerStats).map(([pid, s]) => [pid, { ...s, turnover: s.to }]));
-  const savedRows = getGameDetailStats(game.id);
+  const re = first ? Object.fromEntries(getGameDetailStats(game.id).map(s => [s.player_id, s]))
+    : Object.fromEntries(Object.entries(payload.playerStats).map(([pid, s]) => [pid, { ...s, turnover: s.to }]));
+  const savedRows = first ? first.snap.stats : getGameDetailStats(game.id);
   const saved = Object.fromEntries(savedRows.map(s => [s.player_id, s]));
   const sideOf = pid => { const tid = saved[pid]?.team_id || byId[pid]?.team_id; return tid === game.team_a_id ? 'a' : tid === game.team_b_id ? 'b' : ''; };
-  const over = !!state.final;
+  const over = first ? true : !!state.final;
   const last = state.rows.filter(x => x.clock).slice(-1)[0];
   // The saved game's own plays, when it was scored with the scorer (a wknd-stats import has none).
-  const sev = bgRetrack(sg) ? getScoreEvents(game.id, 'live') : [];
+  const sev = first ? first.events : bgRetrack(sg) ? getScoreEvents(game.id, 'live') : [];
   const nm = id => displayPlayerName(byId[id]?.name || '') || 'Player';
   const tname = t => titleCase(t === 'a' ? game.team_a_name : game.team_b_name);
   const describe = e => describeScorePlay(e, nm, tname);
   const nameOf = e => (e.player ? nm(e.player) : tname(e.team));
   const savedFold = plays && sev.length && ev.length ? foldScoredGame(sev, rules) : null;
-  const al = savedFold ? alignTracks(savedFold.rows, state.rows, over, { describe, nameOf }) : null;
+  const al = savedFold ? alignTracks(savedFold.rows, state.rows, over, { describe, nameOf, words: first ? FIRST_WORDS : {} }) : null;
   // segs: the spots that differ (the app and the Scoring tab). rows: every play side by side, for
   // the site's full compare page only. explain: when the plays' final score differs from the
   // saved one, whether the spots account for it exactly ("the missing 3PT at Q2 3:00").
@@ -9375,6 +9399,7 @@ function retrackCompare(game, { full = false, plays = true } = {}) {
   const pbp = al ? { segs: al.hunks, through: scoreTxt(state.score), pending: al.pending, orderCount: al.orderCount, truncated: al.truncated, divergeAt: al.divergeAt,
     rows: full ? sideBySide(al, describe) : null } : null;
   const n = v => Number(v) || 0;
+  if (first) explain = '';
   const teams = ['a', 'b'].map(t => {
     const sum = (lines, k) => Object.entries(lines).filter(([pid]) => sideOf(pid) === t).reduce((x, [, L]) => x + n(L[k]), 0);
     return { side: t, cells: RT_TEAM_KEYS.map(([k, label]) => ({ label, saved: sum(saved, k), re: sum(re, k) })) };
@@ -9385,8 +9410,10 @@ function retrackCompare(game, { full = false, plays = true } = {}) {
   const differ = rows.filter(x => x.diffs.length).sort((x, y) => x.team.localeCompare(y.team) || x.name.localeCompare(y.name));
   return {
     over, count: ev.length, pct: Math.round((over ? 1 : trackFrac(state.rows, rules)) * 100), at: over ? 'Game over' : last ? `${last.period} ${last.clock}` : 'Not started',
-    saved: { a: n(game.team_a_score), b: n(game.team_b_score) }, pbp, explain, re: { a: state.score.a, b: state.score.b },
-    source: bgRetrack(sg) ? 'From the scorer' : 'wknd-stats import',
+    saved: first ? { a: n(first.snap.game.team_a_score), b: n(first.snap.game.team_b_score) } : { a: n(game.team_a_score), b: n(game.team_b_score) }, pbp, explain,
+    re: first ? { a: n(game.team_a_score), b: n(game.team_b_score) } : { a: state.score.a, b: state.score.b },
+    source: first ? (first.events.length ? 'From the scorer' : 'wknd-stats import') : bgRetrack(sg) ? 'From the scorer' : 'wknd-stats import',
+    first: first ? { at: first.at, by: sg.settings.replaced?.name || '' } : null,
     teams, players: over ? differ : [], match: over ? rows.length - differ.length : 0,
   };
 }
@@ -9445,7 +9472,9 @@ app.get('/admin/games/:id/compare', requireAuth, (req, res) => {
   const game = getGameById(req.params.id);
   const sg = game && getScoreGame(game.id);
   if (!sg) return res.redirect(game ? `/admin/games/${encodeURIComponent(game.id)}?tab=scoring` : '/admin/games');
-  const c = retrackCompare(game, { full: true });
+  // No re-track waiting: the very first box score against the one on the site now, read-only.
+  const first = retrackEvents(game, sg).length ? null : firstSavedBox(game, sg);
+  const c = retrackCompare(game, { full: true, first });
   const r = sg.settings.review, me = reviewer(req), sup = isSuperAdminReq(req), approver = canApproveStats(req);
   const held = r && r.by !== me.by && !sup ? r.name : '';
   const open = !bgRetrack(sg) || retrackOpen(sg);
@@ -9689,6 +9718,7 @@ function retrackPanel(game, sg, req) {
   const cmp = has && !(rp && rp.mode === 'first' && !r) ? retrackCompare(game) : null;
   const open = !bg || retrackOpen(sg), approver = canApproveStats(req);
   return { bg, cmp, mine: !!r && r.by === me.by, holder: r && r.by !== me.by ? r.name : '', started: !!r, open, approver,
+    changes: !has && firstSavedBox(game, sg) ? `/admin/games/${encodeURIComponent(game.id)}/compare` : '',
     canReplace: open && approver && !(r && r.by !== me.by && !sup),
     mismatch: cmp && cmp.over && gameFinalSet(game) && (cmp.saved.a !== cmp.re.a || cmp.saved.b !== cmp.re.b) ? { typed: cmp.saved, plays: cmp.re } : null,
     replaced: rp ? { name: rp.name, at: rp.at, undo: approver } : null };
