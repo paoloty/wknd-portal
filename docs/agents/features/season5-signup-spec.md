@@ -114,7 +114,7 @@ Dropped from the current form: q1 why playing, q2 losing badly, q3 ref call, q4 
 ### Step 4 · You and the league
 - **Help run WKND** (optional, multi; Paolo 2026-11-08: admins are short-staffed and nobody earns from the league). Intro line: "WKND runs on volunteers. Nobody here gets paid. Can you help?" Chips: Keep stats (scorer app, we'll teach you) · Take videos · Take photos · Edit videos · Help on game day · Anything you need. Free-text box "Something else you can do?" (Paolo: any help is open). Stored in `season_volunteers` (reg_id, season, roles JSON, note). Admins get a Volunteers list (by role) on the Season page. Saying yes is not a plus by itself: the existing **Contributed** plus (`season_contributions`, ticked by admins) is earned by actually helping, so it can't be gamed at sign-up. Public text: "Helping run the league counts once you've actually helped."
 - **Team** (returning players only): Stay with [team] / Shuffle me.
-- **Rather not play with again** (up to 3, mirroring click-with; Paolo 2026-11-09). Asked first on step 4 as a required No / Yes for anyone with shared games; Yes opens the list and needs a name.
+- **Rather not play with again** (up to 5, admins no limit; Paolo 2026-11-14, was 3). Asked first on step 4 as a required No / Yes for anyone with shared games; Yes opens the list and needs a name.
   - The list is only players they shared a court with:
     - **Season 4 league games:** teammate or opponent, from box scores not under review.
     - **Papawis:** both confirmed in the same completed run.

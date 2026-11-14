@@ -237,7 +237,7 @@ function peoplePicker({ people, selected, field, max, filters = true, label, ope
       <div class="sgn-pickbox__in">
         <label class="sgn-search">${ic.search}<input type="search" placeholder="Search names" data-sgn-search autocomplete="off" enterkeyhint="search" aria-label="Search names"></label>
         ${filters ? `<div class="sgn-seg sgn-seg--sm" role="radiogroup" aria-label="Show">${[['', 'All'], ['team', 'Teammates'], ['opp', 'Opponents'], ['papawis', 'Papawis']].map(([v, l], i) => `<label><input type="radio" name="_rel_${field}" value="${v}" data-sgn-rel${i ? '' : ' checked'}><span>${l}</span></label>`).join('')}</div>` : ''}
-        <p class="sgn-fine" data-sgn-max-note>Up to ${max}. Tap again to remove.</p>
+        <p class="sgn-fine" data-sgn-max-note>${max ? `Up to ${max}. ` : ''}Tap again to remove.</p>
         <div class="sgn-plist">${people.map(p => personRow(p, { name: field, on: sel.has(p.id), meta: p.meta })).join('') || '<p class="sgn-empty">No one yet.</p>'}</div>
         <p class="sgn-empty" data-sgn-none hidden>No one matches.</p>
       </div>
@@ -248,6 +248,7 @@ function peoplePicker({ people, selected, field, max, filters = true, label, ope
 function leagueStep(x) {
   const d = x.d;
   const vol = new Set(d.vol || []);
+  const avoidMax = x.ratherNotMax ?? MAX_RATHER_NOT;   // 0: no limit (admins)
   // Rather not: a yes/no everyone with shared games answers (first, so it isn't skipped); Yes
   // opens the list (public/signup.js avoidAsk).
   const avoid = x.shared.length ? `<section class="sgn-q" data-sgn-avoid${invalid(x.errors, 'avoid')}>
@@ -255,9 +256,9 @@ function leagueStep(x) {
     <p class="sgn-hint">From your Season ${esc(String(x.leagueSeason))} games and Papawis runs. Be honest: admins read every answer when picking the 48.</p>
     <div class="sgn-card sgn-opts sgn-opts--card">
       <label class="sgn-opt"><input type="radio" name="avoid_any" value="no"${checked(d.avoid_any === 'no')}><span class="sgn-rad"></span><span>No, I’m good with everyone</span></label>
-      <label class="sgn-opt"><input type="radio" name="avoid_any" value="yes"${checked(d.avoid_any === 'yes')}><span class="sgn-rad"></span><span>Yes<small>Pick up to ${MAX_RATHER_NOT}</small></span></label>
+      <label class="sgn-opt"><input type="radio" name="avoid_any" value="yes"${checked(d.avoid_any === 'yes')}><span class="sgn-rad"></span><span>Yes<small>${avoidMax ? `Pick up to ${avoidMax}` : 'Pick as many as you need'}</small></span></label>
     </div>
-    <div data-sgn-avoid-pick${d.avoid_any === 'yes' ? '' : ' hidden'}>${peoplePicker({ people: x.shared, selected: d.avoid || [], field: 'avoid', max: MAX_RATHER_NOT, open: true })}</div>
+    <div data-sgn-avoid-pick${d.avoid_any === 'yes' ? '' : ' hidden'}>${peoplePicker({ people: x.shared, selected: d.avoid || [], field: 'avoid', max: avoidMax, open: true })}</div>
     ${errMsg(x.errors, 'avoid')}
     <div class="sgn-lock">${ic.lock}<span>Only admins see this, including who named whom. The player is never told. Something serious? Use Report on their profile instead.</span></div>
   </section>` : '';

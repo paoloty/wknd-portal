@@ -80,7 +80,8 @@
   // Rather not / click with: search, filter by how they know them, at most data-max ticked.
   function pickers(root) {
     $$('[data-sgn-picker]', root).forEach(function (p) {
-      var max = Number(p.getAttribute('data-max')) || 2;
+      // data-max="0": no limit (an admin's "rather not").
+      var max = p.getAttribute('data-max') === '0' ? Infinity : Number(p.getAttribute('data-max')) || 2;
       var rows = $$('[data-sgn-person]', p), search = $('[data-sgn-search]', p), none = $('[data-sgn-none]', p), chosen = $('[data-sgn-chosen]', p);
       function filter() {
         var q = (search && search.value || '').trim().toLowerCase();

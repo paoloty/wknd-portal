@@ -1,7 +1,7 @@
 // node --test test/season-signup.test.js — the Season 5 sign-up rules (lib/season-signup.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { paydaysFrom, firstPayday, planSchedule, playingTimeRisk, checkStep, checkAll, readStep, resumeStep, pickPose, reviewLines, CONTEST_POSES, contestPhase, contestWinners } from '../lib/season-signup.js';
+import { paydaysFrom, firstPayday, planSchedule, playingTimeRisk, checkStep, checkAll, readStep, ratherNotMax, resumeStep, pickPose, reviewLines, CONTEST_POSES, contestPhase, contestWinners } from '../lib/season-signup.js';
 
 test('paydays are the 15th and the 30th, or the last day of a shorter month', () => {
   assert.deepEqual(paydaysFrom('2027-01-20', 4), ['2027-01-30', '2027-02-15', '2027-02-28', '2027-03-15']);
@@ -69,7 +69,9 @@ test('reading a step keeps only known choices', () => {
   const s2 = readStep(2, { games_miss: '2', away: ['abroad', 'moon'], away_when_abroad: ['2027-02', '2031-01'], payment_plan: 'full' }, { now: new Date('2026-11-09') });
   assert.deepEqual(s2.away, ['abroad']);
   assert.deepEqual(s2.away_when, { abroad: ['2027-02'] });
-  assert.deepEqual(readStep(4, { avoid: ['a', 'a', 'b', 'c', 'd', 'e', 'f', 'g'], vol: ['stats', 'x'] }).avoid, ['a', 'b', 'c']);
+  assert.deepEqual(readStep(4, { avoid: ['a', 'a', 'b', 'c', 'd', 'e', 'f', 'g'], vol: ['stats', 'x'] }).avoid, ['a', 'b', 'c', 'd', 'e']);
+  // Admins: no limit.
+  assert.deepEqual(readStep(4, { avoid: ['a', 'a', 'b', 'c', 'd', 'e', 'f', 'g'] }, { ratherNotMax: ratherNotMax(true) }).avoid, ['a', 'b', 'c', 'd', 'e', 'f', 'g']);
   assert.deepEqual(readStep(4, { vol: ['stats', 'x'] }).vol, ['stats']);
   assert.deepEqual(readStep(4, { avoid_any: 'no', avoid: ['a'] }).avoid, []);
   assert.equal(readStep(4, { avoid_any: 'maybe' }).avoid_any, '');

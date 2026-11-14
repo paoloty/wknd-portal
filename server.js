@@ -24207,7 +24207,7 @@ app.post('/register', (req, res) => {
 import { signupStartScreen, signupStepScreen, signupSentScreen, signupClickScreen, signupNoticeScreen, signupHowScreen, paymentsCard, signupAppOnlyScreen, signupPhotoScreen } from './views/season-signup-flow.js';
 import { appSignupPopup, appSignupCard, siteSignupPopup } from './views/signup-promo.js';
 import { SIZES as JERSEY_SIZES, SIZE_CHART, sizeSurcharge, computeJerseyTotal, computeJerseyBreakdown } from './lib/season-pricing.js';
-import { STEPS as SIGNUP_STEPS, LAST_STEP as SIGNUP_LAST, EXPECTATIONS_VERSION, PLAN_KEYS, MAX_CLICK_WITH, readStep, checkStep, checkAll, resumeStep, reviewLines, pickPose, poseByKey } from './lib/season-signup.js';
+import { STEPS as SIGNUP_STEPS, LAST_STEP as SIGNUP_LAST, EXPECTATIONS_VERSION, PLAN_KEYS, MAX_CLICK_WITH, ratherNotMax, readStep, checkStep, checkAll, resumeStep, reviewLines, pickPose, poseByKey } from './lib/season-signup.js';
 import { playerRecord } from './lib/season-candidates.js';
 import { getSignupDraft, saveSignupDraft, saveSeasonSignupFromDraft, draftFromSignup, getClickWith, saveClickWith, sharedCourtPlayers, contestPoseCounts, getLivenessCapture, lastSignupKit, checkActivePlayer, getPlayerPapawisSummary, getLastNotificationAt, countAppEvents, deleteAppEventsOfType, getAppEventRegs } from './lib/portal-db.js';
 
@@ -24412,7 +24412,7 @@ function signupCtx(st) {
   return {
     record, owing, payFirst, plansOffered, plans: plansOffered, shared, leagueSeason,
     returning: getReturningTeamInfo(st.reg, st.season),
-    avoidIds: new Set(shared.map(p => p.id)), selfId: st.playerId,
+    avoidIds: new Set(shared.map(p => p.id)), selfId: st.playerId, ratherNotMax: ratherNotMax(!!st.reg.is_admin),
     sizes: JERSEY_SIZES, hasWaiver: !!st.reg.waiver_agreed_at, ownPhone: st.reg.phone || '', now: new Date(),
   };
 }
@@ -24503,7 +24503,7 @@ function signupStepData(st, kind, n, d, ctx, errors = []) {
   const names = Object.fromEntries(ctx.shared.map(p => [p.id, p.display]));
   return {
     n, base: SIGNUP_BASE[kind], d, errors, season: st.season, deadline: st.deadline, prices, now: ctx.now,
-    returning: ctx.returning, payFirst: ctx.payFirst, plansOffered: ctx.plansOffered, shared: ctx.shared, leagueSeason: ctx.leagueSeason,
+    returning: ctx.returning, payFirst: ctx.payFirst, plansOffered: ctx.plansOffered, shared: ctx.shared, leagueSeason: ctx.leagueSeason, ratherNotMax: ctx.ratherNotMax,
     sizes: JERSEY_SIZES, sizeChart: SIZE_CHART, jersey, hasWaiver: ctx.hasWaiver,
     onFile: { emergency_name: st.reg.emergency_name || '', emergency_phone: st.reg.emergency_phone || '', birthday: st.reg.birthday || '' },
     // Step 5's folded "Your details" rows open by themselves when what they'd send won't pass
