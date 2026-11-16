@@ -128,6 +128,17 @@ export function papawisTeamsToNotify(game, confirmed) {
   return confirmed.filter(s => (onSide(s) ? !s.guest_name && !s.team_notified_at : !game.signups_locked_at)).length;
 }
 
+// Short runs (Paolo, 2026-11-16): a run needs this many confirmed to go ahead (per run:
+// papawis_games.min_players). Inside the cut-off a run under it is "short": the automatic
+// player sends (reminders, teams, last call) and the lock wait until it fills or an admin
+// says go ahead (run_on_at, which then stays). Short runs usually end up cancelled.
+export const PAPAWIS_MIN_PLAYERS_DEFAULT = 10;
+// Never more than the run's slots: an 8-slot run is on at 8.
+export const papawisMinPlayers = game => Math.min(Number(game?.min_players) || PAPAWIS_MIN_PLAYERS_DEFAULT, Number(game?.max_slots) || Infinity);
+export function papawisRunOn(game, confirmedCount) {
+  return !!game?.run_on_at || (Number(confirmedCount) || 0) >= papawisMinPlayers(game);
+}
+
 export function isPapawisSignupOpenNow(game) {
   const opensAt = papawisSignupOpensAtMs(game);
   return opensAt === null || Date.now() >= opensAt;

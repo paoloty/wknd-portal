@@ -292,8 +292,11 @@ export function appAdminPapawisPage({ missing = false, run = null, tab = 'roster
     ['activity', 'Activity'],
   ].filter(Boolean);
   const current = tabs.some(t => t[0] === tab) ? tab : 'roster';
-  const status = run.cancelled ? 'Cancelled' : run.completed ? 'Played' : run.scheduled ? 'Scheduled' : run.locked ? 'Locked' : d.confirmedCount >= run.max ? 'Full' : 'Open';
+  const status = run.cancelled ? 'Cancelled' : run.completed ? 'Played' : run.scheduled ? 'Scheduled' : run.short ? 'Short' : run.locked ? 'Locked' : d.confirmedCount >= run.max ? 'Full' : 'Open';
   const notices = [
+    // Short run (server.js runPapawisShortCheck): cancel is the likely call, so it leads.
+    run.short ? `<p class="msg msg--warn">Short: ${run.short.n} of ${run.short.min}. Players haven't been reminded or told teams, and cancelling stays free.</p>
+      <div class="adm-actions">${postBtn('Cancel run', `/admin/papawis/${run.id}/cancel`, { cls: 'btn', done: 'Run cancelled', ask: 'Cancel this run? Nobody is charged. Everyone listed is told if reminder emails are on.' })}${postBtn(`Go ahead with ${run.short.n}`, `/admin/papawis/${run.id}/go-ahead`, { cls: 'btn btn--outline', done: 'The run is on', ask: 'Go ahead anyway? Players get their reminders and teams, and free cancelling closes, as if the run had filled.' })}</div>` : '',
     run.open && run.locked ? '<p class="msg msg--warn">The roster is locked: sign-ups and team changes are frozen.</p>' : '',
     run.open && run.scheduled ? `<p class="msg adm-msg">Sign-ups open ${esc(run.opensLabel)}. Until then players see the run as Scheduled.</p>` : '',
     d.canAnnounce && !run.scheduled && current !== 'messages' ? `<p class="msg msg--warn adm-msg-act"><span>Not announced yet. Regulars haven't heard about this run.</span><a class="adm-pill" href="/app/admin/papawis/${esc(run.id)}?tab=messages">Announce</a></p>` : '',

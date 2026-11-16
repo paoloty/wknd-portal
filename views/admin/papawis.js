@@ -20,6 +20,8 @@ export const ACTIVITY_LABELS = {
   team_notified: { label: 'told their team', color: 'text-sky-400' },
   teams_final: { label: 'teams final', color: 'text-sky-400' },
   teams_reopened: { label: 'teams reopened', color: 'text-sky-400' },
+  run_on:        { label: 'run is on', color: 'text-emerald-400' },
+  run_short:     { label: 'admins told the run is short', color: 'text-amber-400' },
   updated_notified: { label: 'told about a time or court change', color: 'text-sky-400' },
 };
 

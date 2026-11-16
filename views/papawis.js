@@ -1,5 +1,5 @@
 import { escHtml } from './layout.js';
-import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, papawisTeamsSent, initials, shareIcon, COMMUNITY_GC_URL } from './utils.js';
+import { playerLink, playerAvatar, avatarStack, teamColor, formatTimeRange, manilaTodayStr, papawisSignupOpensAtMs, isPapawisSignupOpenNow, papawisTeamsSent, papawisRunOn, papawisMinPlayers, initials, shareIcon, COMMUNITY_GC_URL } from './utils.js';
 
 // /papawis — rebuilt 2026-10-11 from the "WKND Marketplace + Papawis Redesign" canvas (variant J).
 // Every UPCOMING run gets the full block (countdown bar, photo banner, who's in, details +
@@ -216,11 +216,14 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
   const filled = confirmed.length, max = g.max_slots || 0, open = Math.max(0, max - filled);
   const isToday = dLeft === 0;
   const full = !scheduled && filled >= max;
-  const cancellable = dLeft >= CUTOFF_DAYS;
+  // Short run (views/utils.js papawisRunOn): inside the cut-off but under the minimum, it isn't
+  // locked yet, so cancelling stays free until it fills or an admin says go ahead.
+  const short = !scheduled && dLeft < CUTOFF_DAYS && !papawisRunOn(g, signups.filter(s => s.status === 'confirmed').length);
+  const cancellable = dLeft >= CUTOFF_DAYS || short;
   const cutoffDate = addDays(g.date, -CUTOFF_DAYS);
   // Free cancelling runs through the whole cutoff day (server.js late drops).
-  const freeUntil = `${fmtDay(cutoffDate)}, 11:59 PM`;
-  const lockAt = new Date(`${addDays(g.date, -(CUTOFF_DAYS - 1))}T00:00:00+08:00`).getTime();
+  const freeUntil = short ? `the run reaches ${papawisMinPlayers(g)} players` : `${fmtDay(cutoffDate)}, 11:59 PM`;
+  const lockAt = short ? 0 : new Date(`${addDays(g.date, -(CUTOFF_DAYS - 1))}T00:00:00+08:00`).getTime();
   const started = Date.now() >= tipoffMs(g);
   const mySignup = scheduled ? null : pub.find(s => !s.guest_name && s.player_id === viewerPlayerId);
   const mySlot = mySignup ? confirmed.indexOf(mySignup) + 1 : 0;
@@ -312,7 +315,7 @@ function runBlock(g, signups, ctx, { first, summary, isAdmin }) {
   const cancelRow = mineIn && !cancellable && !started
     ? `<div class="pwx-row pwx-row--locked"><span class="pwx-k">Your slot · ${mySlot} of ${max}</span><span class="pwx-v">Locked in</span><span class="pwx-note">Free cancelling closed ${escHtml(freeUntil)}. ${escHtml(owe)} is yours to pay unless someone from the list takes your slot.</span></div>`
     : mineIn && cancellable
-      ? `<div class="pwx-row"><span class="pwx-k">Your slot · ${mySlot} of ${max}</span><span class="pwx-v pwx-v--ok" data-lock-cd="${lockAt}">Free to cancel</span><span class="pwx-note">Until ${escHtml(freeUntil)}. After that ${escHtml(owe.charAt(0).toLowerCase() + owe.slice(1))} is yours to pay unless someone takes your slot.</span></div>`
+      ? `<div class="pwx-row"><span class="pwx-k">Your slot · ${mySlot} of ${max}</span><span class="pwx-v pwx-v--ok"${lockAt ? ` data-lock-cd="${lockAt}"` : ''}>Free to cancel</span><span class="pwx-note">Until ${escHtml(freeUntil)}. After that ${escHtml(owe.charAt(0).toLowerCase() + owe.slice(1))} is yours to pay unless someone takes your slot.</span></div>`
       : cancellable
         ? `<div class="pwx-row"><span class="pwx-k">Free cancel until</span><span class="pwx-v">${escHtml(freeUntil)}</span><span class="pwx-note">Cancel yourself, free, until then. After that a slot is yours to pay for unless someone takes it.</span></div>`
         : `<div class="pwx-row"><span class="pwx-k">Cancellations</span><span class="pwx-v">Closed</span><span class="pwx-note">Inside ${CUTOFF_DAYS} days, a player who can’t make it gives their slot back, and pays unless someone takes it.</span></div>`;

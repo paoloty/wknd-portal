@@ -232,6 +232,8 @@ import { buildSeoReport, checkPageHtml, SEO_PAGES, SEO_TARGETS } from './lib/seo
 import { saveSeoDaily, getSeoLatestDate, getSeoTotals, addSeoCheck, getLatestSeoChecks, addSeoChange, getSeoChanges, addSeoRun, getSeoRuns } from './lib/portal-db.js';
 import { adminSeoReportBody } from './views/admin/seo-report.js';
 import { getBroadcastByDedupe, setLeagueEmailOptout } from './lib/portal-db.js';
+import { setPapawisGameMinPlayers, markPapawisRunOn, markPapawisShortNotice } from './lib/portal-db.js';
+import { papawisRunOn, papawisMinPlayers } from './views/utils.js';
 import { getLatestSeasonSignupForReg } from './lib/portal-db.js';
 import { snoozeAdminItem, unsnoozeAdminItem, getActiveAdminSnoozes, countActiveMembersSince, countApprovedMembers, countRegistrationsBetween, getViewerDaysSince, getPlayerActivityFeed, getQuietRegulars } from './lib/portal-db.js';
 import { adminGamesListBody } from './views/admin/games.js';
@@ -10475,7 +10477,8 @@ function appPapawisRuns(me) {
     const waitlist = signups.filter(s => s.status === 'waitlist' || s.status === 'pending');
     const max = g.max_slots || 0, filled = confirmed.length, open = Math.max(0, max - filled);
     const full = !scheduled && filled >= max;
-    const cancellable = dLeft >= PAPAWIS_CUTOFF_DAYS;
+    const short = !scheduled && pwShort(g);
+    const cancellable = dLeft >= PAPAWIS_CUTOFF_DAYS || short;
     const mine = scheduled ? null : signups.find(s => !s.guest_name && s.player_id === me.playerId) || null;
     const courtRate = g.court_rate_per_hour ? null : (court?.price_per_hour || null);
     const price = estimatedPapawisPrice(g, Math.max(filled, max), courtRate);
@@ -10506,9 +10509,9 @@ function appPapawisRuns(me) {
       filled, max, open, full, waiting: waitlist.length, faces: confirmed.map(face), waitFaces: waitlist.map(face),
       teamsOut, myTeam: teamsOut && mine?.status === 'confirmed' ? (mine.team === 'light' || mine.team === 'dark' ? mine.team : '') : '',
       price: price ? pwPeso(price) : '', priceNote: `Estimate with ${Math.max(filled, max)} players · split after the game`,
-      cancelBy: cancellable ? pwDay(addDaysYmd(g.date, -PAPAWIS_CUTOFF_DAYS)) : '', startClock, state,
+      cancelBy: short ? `${papawisMinPlayers(g)} players in` : cancellable ? pwDay(addDaysYmd(g.date, -PAPAWIS_CUTOFF_DAYS)) : '', startClock, state,
       // Late drops: when free cancelling ends, what a locked-in slot costs, who gave theirs back.
-      lockAt: pwLockAtMs(g), freeUntil: pwFreeUntil(g), held,
+      lockAt: short ? 0 : pwLockAtMs(g), freeUntil: short ? `the run reaches ${papawisMinPlayers(g)} players` : pwFreeUntil(g), held, short,
       priceData: price ? pwPeso(price) : '', owe: price ? `Your ${pwPeso(price)} share` : 'Your share',
       late: scheduled ? [] : getPapawisLateDrops(g.id).filter(d => d.late_outcome && d.late_outcome !== 'excused')
         .map(d => ({ name: d.guest_name || displayPlayerName(d.player_name || '').split(' ')[0] || 'A player', label: { open: 'slot open', charged: 'not taken' }[d.late_outcome] || 'slot taken' })),
@@ -10746,13 +10749,16 @@ function papawisAdminTodo(g, signups = getPapawisSignups(g.id)) {
   const catchUp = open ? papawisTeamsToNotify(g, confirmed) : 0;
   const unpaid = g.status === 'completed' ? confirmed.filter(s => !s.paid_at).length : 0;
   const closeOut = open && pwDaysUntil(g.date) < 0;
-  return { pending, canAnnounce, catchUp, unpaid, closeOut };
+  // Short (papawisRunOn): under the minimum inside the cut-off, waiting on Cancel or Go ahead.
+  const short = isPapawisSignupOpenNow(g) && pwShort(g) ? { n: confirmed.length, min: papawisMinPlayers(g) } : null;
+  return { pending, canAnnounce, catchUp, unpaid, closeOut, short };
 }
 // The same list for the site's Runs page, one row per thing to do, soonest to act on first.
 function papawisRunTodos(games) {
   const out = [];
   for (const g of games.filter(x => x.status === 'open').sort((a, b) => (a.date < b.date ? -1 : 1))) {
     const t = papawisAdminTodo(g), name = g.title || 'Papawis', href = tab => `/admin/papawis/${g.id}${tab ? `?tab=${tab}` : ''}`;
+    if (t.short) out.push({ title: `${name}: short, ${t.short.n} of ${t.short.min}`, sub: 'Players haven’t been reminded or told teams. Cancel it, or go ahead anyway.', href: href(''), label: 'Decide', hot: true });
     if (t.closeOut) out.push({ title: `${name}: set the final price`, sub: 'It’s been played. Players are charged when you close it out.', href: href('money'), label: 'Close out', hot: true });
     if (t.pending) out.push({ title: `${name}: ${t.pending} deposit${t.pending === 1 ? '' : 's'} to confirm`, sub: 'Their slots are held until you do.', href: href(''), label: 'Review' });
     if (t.catchUp) out.push({ title: `${name}: ${t.catchUp} team email${t.catchUp === 1 ? '' : 's'} to send`, sub: 'New since the teams went final. This also happens on its own within the hour.', href: href('teams'), label: 'Open teams' });
@@ -10765,13 +10771,14 @@ function appPapawisAdminHint(g) {
   const t = papawisAdminTodo(g);
   const notAnnounced = t.canAnnounce && isPapawisSignupOpenNow(g);
   const note = [
+    t.short ? `Short: ${t.short.n} of ${t.short.min}` : '',
     t.closeOut ? 'Set the price and close out' : '',
     t.pending ? `${t.pending} deposit${t.pending === 1 ? '' : 's'} to confirm` : '',
     notAnnounced ? 'Not announced yet' : '',
     t.catchUp ? `${t.catchUp} team email${t.catchUp === 1 ? '' : 's'} to send` : '',
     t.unpaid ? `${t.unpaid} still owe` : '',
   ].filter(Boolean).join(' · ');
-  return { id: g.id, note: note || 'Roster, teams, money and messages', count: t.pending + t.catchUp + (notAnnounced ? 1 : 0) + (t.closeOut ? 1 : 0) };
+  return { id: g.id, note: note || 'Roster, teams, money and messages', count: t.pending + t.catchUp + (notAnnounced ? 1 : 0) + (t.closeOut ? 1 : 0) + (t.short ? 1 : 0) };
 }
 
 // New run in the app (Paolo, 2026-10-31): the site's New run fields on a screen; Create opens
@@ -10830,7 +10837,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
     count: confirmed.length + waitlist.length + pending.length,
     canAnnounce: todo.canAnnounce, catchUp: todo.catchUp, teamsSent: papawisTeamsSent(signups.filter(s => s.status === 'confirmed')), fmt,
     teamsFinal: !!g.teams_final_at, superAdmin: isSuperAdminReq(req),
-    teamsAuto: pwDaysUntil(g.date) <= PAPAWIS_TEAMS_FINAL_DAYS ? 'within a few hours' : `on ${pwDay(addDaysYmd(g.date, -PAPAWIS_TEAMS_FINAL_DAYS))}, 9 AM`,
+    teamsAuto: pwShort(g) ? `once the run is on (${papawisMinPlayers(g)} players, or you go ahead)` : pwDaysUntil(g.date) <= PAPAWIS_TEAMS_FINAL_DAYS ? 'within a few hours' : `on ${pwDay(addDaysYmd(g.date, -PAPAWIS_TEAMS_FINAL_DAYS))}, 9 AM`,
     lateDrops: getPapawisLateDrops(g.id).map(d => ({ name: pwSignupName(d), outcome: d.late_outcome, at: d.late_drop_at })),
     players: [], teams: { built: false, all: [] }, activity: [], broadcast: null, messenger: '', calc: null,
   };
@@ -10894,6 +10901,7 @@ app.get('/app/admin/papawis/:id', requireApp, (req, res) => {
     opensLabel: `${pwDay(new Date(opensAt + 8 * 3600e3).toISOString().slice(0, 10))}, 8:00 AM`,
     max: g.max_slots || 0, price: Number(g.price_per_player) || 0, daysLeft: pwDaysUntil(g.date),
     announcedAt: g.announced_at || null, announcedCount: g.announced_count || 0, announceAt: g.announce_send_at || null, openDelay: !!g.open_days_before,
+    short: open && isPapawisSignupOpenNow(g) && pwShort(g) ? { n: confirmed.length, min: papawisMinPlayers(g) } : null,
   };
   sendTab(res, me, { title: `Manage ${run.title} · WKND`, tab: 'papawis', body: appAdminPapawisPage({ run, tab, d, back }) });
 });
@@ -27553,7 +27561,22 @@ app.get('/papawis', (req, res) => {
 // go on the waitlist for an admin to move in. The red "You're locked in" bar (site and app)
 // shows from the lock until tip-off.
 const PW_STRIKE_LIMIT = 3, PW_STRIKE_DAYS = 60;
-const pwLocked = g => pwDaysUntil(g.date) < PAPAWIS_CUTOFF_DAYS;
+// Short runs (views/utils.js papawisRunOn): inside the cut-off a run under its minimum isn't
+// locked, so cancelling stays free and there are no late drops, until it fills (stamped here,
+// so it stays on after one drop) or an admin says go ahead.
+function pwRunOn(g) {
+  if (!g) return false;
+  if (g.run_on_at) return true;
+  if (!papawisRunOn(g, getPapawisConfirmedCount(g.id))) return false;
+  if (pwDaysUntil(g.date) < PAPAWIS_CUTOFF_DAYS && markPapawisRunOn(g.id)) {
+    g.run_on_at = Date.now();
+    logPapawisActivity({ gameId: g.id, eventType: 'run_on', notes: `Reached ${papawisMinPlayers(g)} players` });
+  }
+  return true;
+}
+const pwLocked = g => pwDaysUntil(g.date) < PAPAWIS_CUTOFF_DAYS && pwRunOn(g);
+// Inside the cut-off and still under the minimum.
+const pwShort = g => !!g && g.status === 'open' && pwDaysUntil(g.date) >= 0 && pwDaysUntil(g.date) < PAPAWIS_CUTOFF_DAYS && !pwRunOn(g);
 const pwTipAtMs = g => Date.parse(`${g.date}T${g.start_time || '00:00'}:00+08:00`);
 // Free cancelling runs through the whole day PAPAWIS_CUTOFF_DAYS before the run.
 const pwLockAtMs = g => Date.parse(`${addDaysYmd(g.date, -(PAPAWIS_CUTOFF_DAYS - 1))}T00:00:00+08:00`);
@@ -27597,7 +27620,7 @@ app.use(['/admin/papawis/:id', '/papawis/:id/join'], (req, res, next) => {
 function pwLockedSlotFor(playerId) {
   if (!playerId || getSetting('papawis_enabled', '0') !== '1') return null;
   const today = manilaTodayStr();
-  const g = getPapawisLockedSlots(playerId, today, addDaysYmd(today, PAPAWIS_CUTOFF_DAYS - 1)).find(r => Date.now() < pwTipAtMs(r));
+  const g = getPapawisLockedSlots(playerId, today, addDaysYmd(today, PAPAWIS_CUTOFF_DAYS - 1)).find(r => Date.now() < pwTipAtMs(r) && pwRunOn(r));
   if (!g) return null;
   const waiting = getPapawisSignups(g.id).filter(x => x.status === 'waitlist').length;
   const court = getPapawisCourtByName(g.location);
@@ -27768,10 +27791,7 @@ app.post('/papawis/:id/cancel', (req, res) => {
   const signup = getPapawisActiveSignupForPlayer(req.params.id, playerId);
   if (!signup) return res.status(404).json({ error: 'You are not listed for this game.' });
   if (signup.status === 'confirmed') {
-    const today = new Date(manilaTodayStr() + 'T00:00:00');
-    const gameDate = new Date(game.date + 'T00:00:00');
-    const daysLeft = Math.round((gameDate - today) / 86400000);
-    if (daysLeft < PAPAWIS_CUTOFF_DAYS) {
+    if (pwLocked(game)) {
       return res.status(403).json({ error: `Free cancelling closed ${PAPAWIS_CUTOFF_DAYS} days before the run. Tap “I can’t make it” to give your slot back.` });
     }
   }
@@ -29111,6 +29131,16 @@ app.post('/admin/papawis/:id/teams/finalize', requireAuth, async (req, res) => {
   }
 });
 
+// Short run, "Go ahead anyway" (site and app): the run is on as it is. The held reminders,
+// teams and the lock follow, as they would have at the minimum.
+app.post('/admin/papawis/:id/go-ahead', requireAuth, (req, res) => {
+  const game = getPapawisGame(req.params.id);
+  if (!game || game.status !== 'open') return res.status(400).json({ error: 'This run is over.' });
+  if (markPapawisRunOn(game.id)) logPapawisActivity({ gameId: game.id, eventType: 'run_on', notes: `Go ahead by ${currentAdminActor(req).name} at ${getPapawisConfirmedCount(game.id)} players` });
+  runPapawisReminders();
+  res.json({ ok: true, message: 'The run is on. Reminders and teams go out as usual.' });
+});
+
 // Only a super admin can undo it. Teams stay visible; anyone then moved is told again when
 // they go final, and nobody else is.
 app.post('/admin/papawis/:id/teams/reopen', requireAuth, (req, res) => {
@@ -29331,6 +29361,7 @@ app.post('/admin/papawis/:id/location', requireAuth, express.json(), (req, res) 
   if (req.body?.max_slots !== undefined) {
     setPapawisGameMaxSlots(req.params.id, req.body.max_slots);
   }
+  if (req.body?.min_players !== undefined) setPapawisGameMinPlayers(req.params.id, req.body.min_players);
   res.json({ ok: true });
 
   // Only worth telling players about a correction on a game they can still act on — not a
@@ -30788,6 +30819,7 @@ async function finalizeDuePapawisTeams() {
     const days = pwDaysUntil(g.date);
     if (g.status !== 'open' || days < 0 || days > PAPAWIS_TEAMS_FINAL_DAYS) continue;
     if (g.teams_reopened_at && Date.now() - g.teams_reopened_at < PAPAWIS_REOPEN_HOLD_MS) continue;
+    if (!pwRunOn(g)) continue; // short: no teams until it fills or an admin says go ahead
     try {
       const r = await finalizePapawisTeams(g.id);
       if (r.sent || r.errors?.length) console.log(`[papawis] teams: ${r.sent} told, ${r.errors.length} failed`);
@@ -30808,6 +30840,8 @@ function runPapawisLastCall() {
     try { pwReconcile(g.id); } catch (e) { console.error('[papawis late drops]', e.message); }
     const lockAt = pwLockAtMs(g), key = `papawis_last_call_${g.id}`;
     if (now < lockAt - PW_LAST_CALL_MS || now >= lockAt || getSetting(key, '') || !isPapawisSignupOpenNow(g)) continue;
+    // Short: free cancelling won't close yet, so there's no last call (it still goes if the run fills in time).
+    if (!papawisRunOn(g, getPapawisConfirmedCount(g.id))) continue;
     setSetting(key, String(now));
     const people = getPapawisSignups(g.id).filter(x => x.status === 'confirmed' && !x.guest_name && x.player_id);
     for (const x of people) {
@@ -30820,6 +30854,31 @@ function runPapawisLastCall() {
 }
 runPapawisLastCall();
 setInterval(runPapawisLastCall, 10 * 60 * 1000);
+
+// Short runs (Paolo, 2026-11-16): inside the cut-off and under the minimum, players hear
+// nothing automatic (reminders, teams, last call, lock all wait). Papawis admins get one bell
+// when it goes short, and one more the day before if nobody has acted: cancel, or go ahead.
+// Nothing happens on its own; a run that fills before then just goes on.
+function runPapawisShortCheck() {
+  if (getSetting('papawis_enabled', '0') !== '1' || !isPapawisSendWindowOpen()) return;
+  for (const g of getPapawisGames()) {
+    if (!isPapawisSignupOpenNow(g) || !pwShort(g)) continue;
+    const days = pwDaysUntil(g.date);
+    const which = !g.short_alert_at ? 'alert' : days <= 1 && !g.short_nudge_at ? 'nudge' : '';
+    if (!which || !markPapawisShortNotice(g.id, which)) continue;
+    const n = getPapawisConfirmedCount(g.id), min = papawisMinPlayers(g);
+    const when = days === 0 ? 'today' : days === 1 ? 'tomorrow' : pwDay(g.date);
+    for (const pid of papawisAdminPlayerIds()) {
+      createNotification({ playerId: pid, type: 'papawis_short',
+        title: `${which === 'nudge' ? 'Still short' : 'Run is short'}: ${n} of ${min} for ${when}`,
+        body: `${g.title || 'Papawis'}: players haven't been reminded or told teams, and cancelling stays free. Cancel the run, or go ahead anyway.`,
+        link: `/admin/papawis/${encodeURIComponent(g.id)}` });
+    }
+    logPapawisActivity({ gameId: g.id, eventType: 'run_short', notes: `${n} of ${min}${which === 'nudge' ? ', day before' : ''}` });
+  }
+}
+setTimeout(runPapawisShortCheck, 60 * 1000);
+setInterval(runPapawisShortCheck, 10 * 60 * 1000);
 
 // Birthday emails: hourly, write drafts for the coming week and send today's (see
 // runBirthdayAutomation in lib/birthday.js). Sending only happens on production, from 8 AM

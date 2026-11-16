@@ -63,7 +63,7 @@ export function papawisAction(r) {
     // drops), in a sheet that says what it costs (public/app.js initPapawis).
     case 'in': return `${s.cancellable
         ? status(icons.check, r.myTeam ? `You're on ${r.myTeam === 'light' ? 'Light' : 'Dark'} · slot ${s.slot}` : `You're in · slot ${s.slot}`,
-          `<span data-countdown-to="${r.lockAt}" data-countdown-label="Free to cancel for"></span>`)
+          r.lockAt ? `<span data-countdown-to="${r.lockAt}" data-countdown-label="Free to cancel for"></span>` : 'Free to cancel')
         : `<div class="pw-status pw-status--locked" role="status"><i>${icons.lock}</i><span><b>${r.myTeam ? `On ${r.myTeam === 'light' ? 'Light' : 'Dark'} · ` : ''}Locked in · slot ${s.slot} of ${r.max}</b><small>${s.started ? 'The run has started' : `${esc(r.owe)} is yours to pay unless someone takes your slot`}</small></span></div>`}
       ${s.cancellable ? btn('Cancel my spot', 'cancel') : s.started ? '' : `<button type="button" class="btn btn--danger" data-pw-act="give-back" data-pw-run="${id}" data-pw-waiting="${r.waiting}" data-pw-price="${esc(r.priceData)}">I can’t make it</button>`}
       ${s.cancellable ? `<p class="pwr__note">Free until ${esc(r.freeUntil)}. After that ${esc(r.owe.charAt(0).toLowerCase() + r.owe.slice(1))} is yours to pay unless someone takes your slot.</p>` : ''}

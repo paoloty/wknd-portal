@@ -4,7 +4,7 @@
 // Settings. Browser behaviour (drag to reorder, the price calculator, copy for Messenger,
 // cover upload): public/admin-papawis.js. Every POST goes to the same routes as before.
 import { escHtml } from '../layout.js';
-import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow, depositPresets, manilaTodayStr, papawisTeamsToNotify, PAPAWIS_TEAMS_FINAL_DAYS } from '../utils.js';
+import { displayPlayerName, formatTimeRange, isPapawisSignupOpenNow, depositPresets, manilaTodayStr, papawisTeamsToNotify, PAPAWIS_TEAMS_FINAL_DAYS, papawisRunOn, papawisMinPlayers } from '../utils.js';
 import { CUTOFF_DAYS as PAPAWIS_CUTOFF_DAYS } from '../papawis.js';
 import { parseHeightCm } from '../../lib/papawis-teams.js';
 import {
@@ -74,7 +74,8 @@ export function paidCell(game, s, candidates = [], reusable = [], { unpaidBadge 
 // player counts as a late drop (they pay if no one takes the slot) unless it's excused.
 const inLateWindow = (game, s) => game.status === 'open' && s.status === 'confirmed'
   && Math.round((Date.parse(`${game.date}T00:00:00Z`) - Date.parse(`${manilaTodayStr()}T00:00:00Z`)) / 86400000) < PAPAWIS_CUTOFF_DAYS
-  && Date.now() < Date.parse(`${game.date}T${game.start_time || '00:00'}:00+08:00`);
+  && Date.now() < Date.parse(`${game.date}T${game.start_time || '00:00'}:00+08:00`)
+  && papawisRunOn(game, game.confirmedNow); // a short run isn't locked: leaving is free
 const LATE_LABEL = { open: ['Slot open', 'amber'], replaced: ['Slot taken', 'green'], charged: ['Charged', 'red'], excused: ['Excused', 'gray'] };
 
 function rosterRow(game, s, { canManage, isConfirmedFull, n, colorByTeam, showPaid, unlinkedByPlayer, reusableByPlayer }) {
@@ -185,13 +186,13 @@ function addPlayerPanel(game, players, colorById) {
   });
 }
 
-function teamsTab(game, roster, { isOpen, isLocked, daysLeft, superAdmin }) {
+function teamsTab(game, roster, { isOpen, isLocked, daysLeft, superAdmin, short }) {
   if (!isOpen) return emptyState({ title: 'Teams are only for upcoming runs', sub: 'This run is over.' });
   if (isLocked) return emptyState({ title: 'The roster is locked', sub: 'Unlock it from the top of the page to change teams.' });
   if (!roster.length) return emptyState({ title: 'No confirmed players yet', sub: 'Teams are built from the confirmed list.' });
   const hasTeams = roster.some(r => r.team);
   const final = !!game.teams_final_at;
-  const auto = daysLeft <= PAPAWIS_TEAMS_FINAL_DAYS ? 'within a few hours' : `on ${fmtDate(new Date(Date.parse(`${game.date}T00:00:00Z`) - PAPAWIS_TEAMS_FINAL_DAYS * 86400000).toISOString().slice(0, 10))}, 9 AM`;
+  const auto = short ? `once the run is on (${short.min} players, or you go ahead)` : daysLeft <= PAPAWIS_TEAMS_FINAL_DAYS ? 'within a few hours' : `on ${fmtDate(new Date(Date.parse(`${game.date}T00:00:00Z`) - PAPAWIS_TEAMS_FINAL_DAYS * 86400000).toISOString().slice(0, 10))}, 9 AM`;
   const visibility = final ? banner('ok', 'Teams are final. Players can see them.')
     : banner('info', `Players can’t see the teams until they’re final. That happens by itself ${auto}, or when you finalize.`);
   if (!hasTeams) {
@@ -334,7 +335,8 @@ function settingsTab(game, courts, { isOpen }) {
       ${field({ label: 'Other location', name: 'location_other', value: known ? '' : (game.location || ''), attrs: `data-other-field${known || !game.location ? ' hidden' : ''}` })}
       ${field({ label: 'Start', name: 'start_time', type: 'time', value: game.start_time || '' })}
       ${field({ label: 'End', name: 'end_time', type: 'time', value: game.end_time || '' })}
-      ${field({ label: 'Max players', name: 'max_slots', type: 'number', value: game.max_slots || 10, attrs: 'min="1" step="1"' })}`)}
+      ${field({ label: 'Max players', name: 'max_slots', type: 'number', value: game.max_slots || 10, attrs: 'min="1" step="1"' })}
+      ${field({ label: 'Minimum to run', name: 'min_players', type: 'number', value: papawisMinPlayers(game), attrs: 'min="1" step="1"', help: `Under this ${PAPAWIS_CUTOFF_DAYS} days out, players aren’t reminded or told teams and cancelling stays free until you decide.` })}`)}
       <div class="aui-row" style="margin-top:14px">${button('Save details', { kind: 'primary', size: 'sm', type: 'submit' })}
       ${game.location && !court?.image_url ? postBtn('Refresh map', `/admin/papawis/${game.id}/refresh-map`, { kind: 'ghost', done: 'Map ready. Refresh the public page to see it.' }) : ''}</div>
     </form>`;
@@ -376,6 +378,10 @@ export function adminPapawisRunBody({
   const canManage = isOpen && !isLocked;
   const isConfirmedFull = confirmed.length >= game.max_slots;
   const scheduled = isOpen && !isPapawisSignupOpenNow(game);
+  game = { ...game, confirmedNow: confirmed.length };
+  // Short run (views/utils.js papawisRunOn): inside the cut-off and under the minimum.
+  const short = isOpen && !scheduled && daysLeft >= 0 && daysLeft < PAPAWIS_CUTOFF_DAYS && !papawisRunOn(game, confirmed.length)
+    ? { n: confirmed.length, min: papawisMinPlayers(game) } : null;
   const [statusLabel, statusTone] = runStatus(game, confirmed.length);
   const time = formatTimeRange(game.start_time, game.end_time) || game.time_label || '';
   const sub = [fmtDate(game.date), time, game.location || 'No court set', isCompleted ? `${peso(game.price_per_player)} per player` : ''].filter(Boolean).join(' · ');
@@ -391,6 +397,9 @@ export function adminPapawisRunBody({
   ].join('');
 
   const banners = [
+    short ? banner('warn', `Short: ${short.n} of ${short.min}. Players haven’t been reminded or told teams, and cancelling stays free. Cancel the run, or go ahead anyway.`,
+      `${postBtn('Cancel run…', `/admin/papawis/${game.id}/cancel`, { kind: 'danger', done: 'Run cancelled.', confirm: { title: 'Cancel this run?', body: 'Nobody is charged. Everyone listed is told if reminder emails are on.', send: 'Cancel run' } })}
+      ${postBtn('Go ahead anyway', `/admin/papawis/${game.id}/go-ahead`, { kind: 'secondary', done: 'The run is on.', confirm: { title: `Go ahead with ${short.n}?`, body: 'Players get their reminders and teams, and free cancelling closes, as if the run had filled.', send: 'Go ahead' } })}`) : '',
     isOpen && isLocked ? banner('warn', 'The roster is locked: sign-ups and team changes are frozen.') : '',
     scheduled ? banner('info', `Sign-ups open ${fmtDay(addDays(game.date, -game.open_days_before))}, 8:00 AM. Until then the run shows as Scheduled.`) : '',
     canAnnounce && !scheduled && tab !== 'messages' ? banner('warn', 'Not announced yet: regulars haven’t heard about this run.', `<a class="aui-link" href="/admin/papawis/${attr(game.id)}?tab=messages">Open messages</a>`) : '',
@@ -431,7 +440,7 @@ export function adminPapawisRunBody({
       lateList(lateDrops),
       canManage ? addPlayerPanel(game, players, colorById) : '',
     ].join(''),
-    teams: () => teamsTab(game, teamRoster, { isOpen, isLocked, daysLeft, superAdmin }),
+    teams: () => teamsTab(game, teamRoster, { isOpen, isLocked, daysLeft, superAdmin, short }),
     // Late drops no one took were charged at close-out: on the bill with everyone who played.
     money: () => moneyTab(game, { confirmed: isCompleted ? [...confirmed, ...lateDrops.filter(d => d.late_outcome === 'charged')] : confirmed, isOpen, isCompleted, courtRate, unlinkedByPlayer, reusableByPlayer, colorByTeam }),
     messages: () => messagesTab(game, broadcast, { isOpen, isLocked, isCompleted }),
