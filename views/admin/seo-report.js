@@ -8,26 +8,49 @@ const attr = s => escHtml(String(s ?? ''));
 const fmtDay = ymd => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '—');
 const TONE = { reached: 'green', ontrack: 'green', behind: 'amber', waiting: 'gray' };
 
-export function adminSeoReportBody({ report, settings, gscReady, cities, runs, changes, trendByQuery = {} }) {
+export function adminSeoReportBody({ report, settings, gscReady, cities, runs, changes, trendByQuery = {}, running = false }) {
   const r = report;
   const head = pageHeader({
     eyebrow: 'Search results',
     title: 'SEO report',
     sub: 'Court SEO project: Activate Hoop Arena first, then the Mandaluyong and Pasig city pages. Runs by itself every day; the email is the summary.',
-    actionsHtml: `${button('Send today’s email now', { kind: 'secondary', size: 'sm', attrs: 'data-post-json="/admin/seo/report/send" data-done="Sent."' })}
-      ${button('Run all jobs now', { kind: 'secondary', size: 'sm', attrs: 'data-post-json="/admin/seo/report/run" data-done="Done. Reload to see the results." data-confirm data-confirm-title="Run the SEO jobs now?" data-confirm-body="Pulls Search Console, checks the pages, asks Google about each page and rewrites the weekly court notes from the last 7 days. Sends the email. Takes up to two minutes." data-confirm-send="Run"' })}`,
+    actionsHtml: running ? `<span class="aseo-running" data-seo-running>Running the SEO jobs… this page updates when they finish.</span>`
+      : `${button('Send today’s email now', { kind: 'secondary', size: 'sm', attrs: 'data-post-json="/admin/seo/report/send" data-done="Sent."' })}
+      ${button('Run all jobs now', { kind: 'secondary', size: 'sm', attrs: 'data-post-json="/admin/seo/report/run" data-done="Started." data-confirm data-confirm-title="Run the SEO jobs now?" data-confirm-body="Pulls Search Console, checks every court and city page, checks the court rates and Claude, asks Google about each page and rewrites the weekly court notes from the last 7 days. Sends the email. Runs in the background; this page updates when it’s done." data-confirm-send="Run"' })}
+      ${button('Run with monthly steps', { kind: 'secondary', size: 'sm', attrs: 'data-post-json="/admin/seo/report/run" data-body=\'{"monthly":true}\' data-done="Started." data-confirm data-confirm-title="Run everything, monthly steps too?" data-confirm-body="Everything “Run all jobs now” does, plus the venue link check, which venue sites link to us, and AI title suggestions for up to 3 pages. Sends the email." data-confirm-send="Run"' })}`,
   });
 
   const setup = gscReady ? '' : banner('warn', 'Search Console isn’t connected yet, so there are no rankings. The page checks and weekly notes still run. Setup: a Google service account with read access to the wkndbasketball.com property, then GSC_SERVICE_ACCOUNT_FILE and GSC_SITE_URL in .env (steps at the top of lib/seo-gsc.js).');
 
+  const alertLine = a => (typeof a === 'string' ? { text: a } : a);
   const alerts = r.alerts.length
-    ? `<div class="aui-panel">${r.alerts.map(a => `<p class="aseo-alert">${escHtml(a)}</p>`).join('')}</div>`
+    ? `<div class="aui-panel">${r.alerts.map(alertLine).map(a => `<p class="aseo-alert">${a.href ? `<a href="${attr(a.href)}" target="_blank" rel="noopener">${escHtml(a.text)}</a>` : escHtml(a.text)}</p>`).join('')}</div>`
     : `<div class="aui-panel"><p class="aui-muted aseo-ok">All tracked pages up, nothing broken.</p></div>`;
+
+  const list = (items, fn) => `<div class="aui-panel"><ul class="aseo-list">${items.map(x => `<li>${fn(x)}</li>`).join('')}</ul></div>`;
+  const nearWins = r.nearWins.length
+    ? list(r.nearWins, q => `<b>${escHtml(q.query)}</b> <span class="aui-muted">#${q.position} · ${q.impressions}× · ${escHtml(q.page)}</span>${q.missing.length ? `<br><span class="aseo-miss">Title and description don’t say: ${escHtml(q.missing.join(', '))}</span>` : ''}`)
+    : emptyState({ title: 'No searches at positions 8–20 yet', sub: 'Needs 10+ times shown in 28 days.' });
+  const competing = r.competing.length
+    ? list(r.competing, c => `<b>${escHtml(c.query)}</b> ${c.isNew ? badge('New', 'amber') : ''}<br><span class="aui-muted">${escHtml(c.note)}</span>`)
+    : emptyState({ title: 'No two pages competing', sub: 'Brand searches are left out.', done: true });
+  const watch = r.watch.length
+    ? `<div class="aui-panel aseo-scroll"><table class="aseo-table"><thead><tr><th>Page</th><th>Searches</th><th>Seen</th><th>Clicks</th><th>Best kind</th><th>Top search</th></tr></thead><tbody>${r.watch.map(w => `<tr><td><a href="${attr(w.path)}" target="_blank" rel="noopener">${escHtml(w.label)}</a></td><td>${w.searches}</td><td>${w.impressions}</td><td>${w.clicks}</td><td>${w.best ? `${escHtml(w.best.bucket)} <span class="aseo-num">#${w.best.position}</span>` : '—'}</td><td>${w.top ? `${escHtml(w.top.query)} <span class="aui-muted">#${w.top.position}</span>` : '—'}</td></tr>`).join('')}</tbody></table>
+      <p class="aui-muted aseo-foot">Last 28 days. “Best kind” is the kind of search (rates, parking, reviews, hours, location, name) where the court page ranks highest, with 3+ times shown.</p></div>`
+    : emptyState({ title: 'No watched pages yet' });
+  const suggestions = r.suggestions.length
+    ? list(r.suggestions, s => `<b>${escHtml(s.page)}</b>${s.options.map(o => `<br>· ${escHtml(o.title)}<br><span class="aui-muted">${escHtml(o.description)}</span>`).join('')}`)
+      + `<p class="aui-muted aseo-foot">From ${r.suggestionsAt ? fmtDay(new Date(r.suggestionsAt + 8 * 3600e3).toISOString().slice(0, 10)) : 'the last monthly run'}. Nothing changes until you apply one (court admin → Search results).</p>`
+    : emptyState({ title: 'No suggestions yet', sub: 'Written on the 1st of the month, or with “Run with monthly steps”.' });
+  const extras = [
+    r.outreach ? `<p class="aseo-alert"><b>Venue sites:</b> ${escHtml(r.outreach)}</p>` : '',
+    r.caption ? `<p class="aseo-alert"><b>This week’s Facebook caption:</b><br>${escHtml(r.caption)}</p>` : '',
+  ].filter(Boolean).join('');
 
   const targets = r.targets.length
     ? `<div class="aui-panel aseo-scroll"><table class="aseo-table"><thead><tr><th>Search</th><th>Position</th><th>Change</th><th>Seen</th><th>Clicks</th><th>Goal</th><th>Status</th><th>12 weeks</th></tr></thead><tbody>${r.targets.map(t => {
       const tr = trendByQuery[t.query] || [];
-      return `<tr><td>${escHtml(t.query)}</td><td class="aseo-num">${t.position ?? '—'}</td><td>${t.change ? `<span class="aseo-${t.change > 0 ? 'up' : 'down'}">${t.change > 0 ? '▲' : '▼'}${Math.abs(t.change)}</span>` : ''}</td><td>${t.impressions}</td><td>${t.clicks}</td><td>Top ${t.goal} by ${fmtDay(t.by)}</td><td>${badge(t.status.label, TONE[t.status.key])}</td><td>${tr.length > 1 ? sparkline(tr.map(x => -x)) : ''}</td></tr>`;
+      return `<tr><td>${escHtml(t.query)}${t.shownPage ? `<br><span class="aui-muted aseo-sub">Google shows ${escHtml(t.shownPage)}</span>` : t.other ? `<br><span class="aui-muted aseo-sub">also ${escHtml(t.other.path)} #${t.other.position}</span>` : ''}</td><td class="aseo-num">${t.position ?? '—'}</td><td>${t.change ? `<span class="aseo-${t.change > 0 ? 'up' : 'down'}">${t.change > 0 ? '▲' : '▼'}${Math.abs(t.change)}</span>` : ''}</td><td>${t.impressions}</td><td>${t.clicks}</td><td>Top ${t.goal} by ${fmtDay(t.by)}</td><td>${badge(t.status.label, TONE[t.status.key])}</td><td>${tr.length > 1 ? sparkline(tr.map(x => -x)) : ''}</td></tr>`;
     }).join('')}</tbody></table>
       <p class="aui-muted aseo-foot">Last 7 days of Google data, through ${fmtDay(r.through)}. Position is Google’s average (1 is the top). Change compares with the 7 days before. The trend line goes up when we climb.</p></div>`
     : emptyState({ title: 'No ranking data yet', sub: 'Shows up the day after Search Console is connected (Google’s numbers run 2–3 days behind).' });
@@ -59,6 +82,11 @@ export function adminSeoReportBody({ report, settings, gscReady, cities, runs, c
     ${section({ title: 'Needs a look', bodyHtml: alerts })}
     ${section({ title: 'Target searches', note: 'The goals and dates from the plan. “Seen” is how often Google showed us for that search.', bodyHtml: targets })}
     ${section({ title: 'Tracked pages', bodyHtml: pages })}
+    ${section({ title: 'Close to page 1', note: 'Positions 8–20 over 28 days, with the page that ranks and the search words its title and description lack.', bodyHtml: nearWins })}
+    ${section({ title: 'Our pages competing', note: 'Two of our pages showing for the same search. “New” = not in last Monday’s email. Fix: the right page’s title says it, the other page links to it.', bodyHtml: competing })}
+    ${section({ title: 'Every court and city page', bodyHtml: watch })}
+    ${section({ title: 'Title suggestions', bodyHtml: suggestions })}
+    ${extras ? section({ title: 'Outreach', bodyHtml: `<div class="aui-panel">${extras}</div>` }) : ''}
     ${section({ title: 'Change log', note: 'So a ranking move can be matched to what changed. Google takes 1–3 weeks to react.', bodyHtml: changeList })}
     ${section({ title: 'Job runs', bodyHtml: runList })}
     ${section({ title: 'Settings', bodyHtml: settingsForm })}
@@ -76,5 +104,31 @@ export function adminSeoReportBody({ report, settings, gscReady, cities, runs, c
       .aseo-before, .aseo-after { margin: 6px 0 0; font-size: 12px; max-width: 520px; white-space: pre-wrap; }
       .aseo-before { color: var(--text-muted); text-decoration: line-through; }
       .aseo-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
-    </style>`;
+      .aseo-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+      .aseo-list li + li { margin-top: 8px; }
+      .aseo-miss { font-size: 12px; color: #f59332; }
+      .aseo-sub { font-size: 11px; }
+      .aseo-running { font-size: 13px; color: var(--text-muted); }
+    </style>
+    <script>
+    // A background run: ask every 5 seconds and update the page in place when it's done. Inline
+    // scripts don't re-run on an in-place update, so this listens for one (admin:updated).
+    (function () {
+      if (window.__seoPollInit) return;
+      window.__seoPollInit = true;
+      var timer = null;
+      function stop() { clearInterval(timer); timer = null; }
+      function tick() {
+        if (!document.querySelector('[data-seo-running]')) return stop();
+        fetch('/admin/seo/report/status', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
+          if (d.running) return;
+          stop();
+          if (window.adminUi && window.adminUi.refresh) window.adminUi.refresh('SEO jobs done.'); else location.reload();
+        }).catch(function () {});
+      }
+      function start() { if (!timer && document.querySelector('[data-seo-running]')) timer = setInterval(tick, 5000); }
+      start();
+      document.addEventListener('admin:updated', start);
+    })();
+    </script>`;
 }

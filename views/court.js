@@ -382,7 +382,7 @@ export function courtFaqItems(p, flags = {}) {
     flags.requests && ['Can I book the court for my own group?', 'Yes. Send a request under Rent the court. The court confirms with you directly and you pay the court.'],
     // Court-specific answers, only from what an admin filled in or what was played here.
     p.finalsCount && [`Is there a basketball league at ${p.name}?`, `Yes. WKND Basketball plays league games here: ${plural(p.finalsCount, 'game')}${p.numbers.league.since ? ` since ${p.numbers.league.since}` : ''}, with box scores and recaps on the site. Sign-ups open before every season.`],
-    !flags.requests && (courtLinks(p.info).some(l => l.key === 'booking') || p.info.rate) && [`Can I rent ${p.name} for my own group?`, [`Yes, book it directly with ${p.info.operator || 'the venue'}${courtLinks(p.info).some(l => l.key === 'booking') ? ' through their booking page (under Official links)' : ''}.`, p.info.rate ? `Posted rate: ${p.info.rate}.` : ''].filter(Boolean).join(' ')],
+    !flags.requests && (courtLinks(p.info).some(l => l.key === 'booking') || p.info.rate) && [`Can I rent ${p.name} for my own group?`, [`Yes, book it directly with ${p.info.operator || 'the venue'}${courtLinks(p.info).some(l => l.key === 'booking') ? ' through their booking page (under Official links)' : ''}.`, p.info.rate ? `Posted rate: ${p.info.rate}${p.checked ? `, as checked ${p.checked}` : ''}.` : ''].filter(Boolean).join(' ')],
     p.altNames.length && [`Is this the same as ${p.altNames[0]}?`, `Yes. ${p.name} is also listed as ${p.altNames.join(' and ')}${p.info.operator ? `, run by ${p.info.operator}` : ''}.`],
   ].filter(Boolean);
 }
@@ -657,10 +657,31 @@ export function courtsIndexPage({ courts, cities = [] }) {
 </div>`;
 }
 
+// The city rate table shows once a city has this many courts with a rate that isn't past its
+// re-check (fewer rows would be a thin list next to the directories; Fable audit 2026-11-16).
+export const CITY_RATE_TABLE_MIN = 3;
+// rates: [{ slug, name, rateFrom, hours, type, checked }]; weekRuns: [{ id, slug, court, ymd,
+// time, price }] the runs at this city's courts in the next 7 days.
+function cityRuns(city, weekRuns) {
+  if (!weekRuns.length) return '';
+  return `<section class="crt-sec" aria-labelledby="crt-city-week" data-seo="runs-week">${sh(`Runs this week in ${city}`, { id: 'crt-city-week' })}
+    <div class="card crt-city__list">${weekRuns.map(r => `<a class="crt-city__row" href="/papawis#pw-game-${escHtml(r.id)}" data-cta="city-run">
+      <span><b>${escHtml(ymdLabel(r.ymd, { weekday: 'short', month: 'short', day: 'numeric' }))}${r.time ? ` · ${escHtml(r.time)}` : ''}</b><small>Papawis pickup run at ${escHtml(r.court)}</small></span>
+      <span>${r.price ? `₱${Number(r.price).toLocaleString('en-US')} per player` : 'Sign up'}</span></a>`).join('')}</div></section>`;
+}
+function cityRates(city, rates) {
+  if (rates.length < CITY_RATE_TABLE_MIN) return '';
+  return `<section class="crt-sec" aria-labelledby="crt-city-rates" data-seo="rate-table">${sh(`Basketball court rates in ${city}`, { id: 'crt-city-rates' })}
+    <div class="card crt-rates"><table class="crt-rates__t"><thead><tr><th>Court</th><th>Rental from</th><th>Open</th><th>Type</th><th>Checked</th></tr></thead><tbody>
+      ${rates.map(r => `<tr><td><a href="/courts/${encodeURIComponent(r.slug)}" data-cta="city-rate">${escHtml(r.name)}</a></td><td class="crt-rates__price">${escHtml(r.rateFrom)}</td><td>${escHtml(r.hours || '—')}</td><td>${escHtml(r.type || '—')}</td><td>${escHtml(r.checked || '—')}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="crt-muted crt-rates__note">The lowest court rental each venue posts, checked with the venue in the month shown. Prices change, so confirm when you book.</p></section>`;
+}
+
 // /courts/mandaluyong …: one city's courts. live: courts with a page (tiles, busiest first);
 // others: courts on file in that city without a page yet (name and address only). intro: the
 // admin's text (Admin → SEO), else nothing; summary: a line built from the numbers.
-export function courtCityPage({ city, slug, live, others = [], cities = [], intro = '', summary = '' }) {
+export function courtCityPage({ city, slug, live, others = [], cities = [], intro = '', summary = '', rates = [], weekRuns = [] }) {
   const paras = String(intro || '').split(/\n{2,}/).map(t => t.trim()).filter(Boolean);
   return `<div class="page-content crt">
   <header class="crt-index__head">
@@ -672,6 +693,8 @@ export function courtCityPage({ city, slug, live, others = [], cities = [], intr
   </header>
   ${live.length ? `<section class="crt-sec" aria-labelledby="crt-city-live">${sh(`Where WKND plays in ${city}`, { id: 'crt-city-live' })}
     <div class="crt-index">${live.map(courtTile).join('')}</div></section>` : ''}
+  ${cityRuns(city, weekRuns)}
+  ${cityRates(city, rates)}
   ${others.length ? `<section class="crt-sec" aria-labelledby="crt-city-more">${sh(`More courts in ${city}`, { id: 'crt-city-more' })}
     <div class="card crt-city__list">${others.map(o => `<div class="crt-city__row"><span><b>${escHtml(o.name)}</b>${o.address ? `<small>${escHtml(o.address)}</small>` : ''}</span><span>${escHtml(o.type || '')}</span></div>`).join('')}</div></section>` : ''}
   <section class="crt-sec" aria-labelledby="crt-city-play">${sh('Play with WKND', { id: 'crt-city-play' })}

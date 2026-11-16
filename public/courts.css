@@ -119,6 +119,17 @@
 .crt-city__row b { display: block; font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.3; }
 .crt-city__row small { display: block; margin-top: 4px; font-size: 13px; color: var(--text-muted); line-height: 1.4; }
 .crt-city__row > span:last-child { flex: none; font-size: 13px; color: var(--text-muted); white-space: nowrap; }
+a.crt-city__row:hover b { color: var(--amber); }
+/* City rate table (2026-11-16): swipes on phones, first column pinned (public/table-scroll.js) */
+.crt-rates { overflow-x: auto; padding: 0; }
+.crt-rates__t { width: 100%; border-collapse: collapse; font-size: 14px; }
+.crt-rates__t th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); padding: 12px 18px; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.crt-rates__t td { padding: 13px 18px; border-top: 1px solid var(--border); color: var(--c-soft); white-space: nowrap; vertical-align: middle; }
+.crt-rates__t tbody tr:first-child td { border-top: 0; }
+.crt-rates__t td:first-child a { color: var(--text); font-weight: 600; }
+.crt-rates__t td:first-child a:hover { color: var(--amber); }
+.crt-rates__t .crt-rates__price { color: var(--text); font-weight: 600; }
+.crt-rates__note { margin: 10px 0 0; font-size: 13px; line-height: 1.5; }
 .crt-city__links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .crt-city__links a { color: var(--amber); font-weight: 600; }
 

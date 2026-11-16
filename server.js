@@ -183,7 +183,8 @@ import {
 } from './lib/portal-db.js';
 import { RATING_CATEGORY_KEYS, RATING_COOLDOWN_MS, ALIAS_FALLBACK_POOL, summarizePeerRatings } from './lib/peer-ratings.js';
 import { playerSlug, teamSlug, gameSlug, slugify } from './lib/slugs.js';
-import { generateText, generateJson, filterPbpForRecap, aiAvailable } from './lib/ai.js';
+import { generateText, generateJson, filterPbpForRecap, aiAvailable, setAiCallRecorder, pingAiProvider, aiProviderInfo } from './lib/ai.js';
+import { recordAiCall, aiCallStats, aiLastAnswered } from './lib/ai-health.js';
 import { pickVoice, aiTemperature, getVoiceConfig, saveVoiceConfig, resetVoiceConfig, AI_WRITING_FEATURES, CREATIVITY_LEVELS, VOICE_LIMITS, voiceFlavor, voiceProblems, voiceTraits, DEFAULT_VOICES } from './lib/ai-voices.js';
 import { classifyPositionGroup, aggregatePeerAverages, statSnapshotFromTotals, generateCoachAnalysis, FOCUS_LABELS, FOCUS_VIDEOS } from './lib/player-analysis.js';
 import { computeSeasonBadges, statCatCount, qualifyingCats, BADGE_ICONS } from './lib/badges.js';
@@ -229,6 +230,7 @@ import { leagueNudgeEmail, raffleWinnerEmail } from './lib/mailer.js';
 import { seoReportEmail, courtReportEmail } from './lib/mailer.js';
 import { gscConfigured, gscSearchAnalytics, gscInspectUrl } from './lib/seo-gsc.js';
 import { buildSeoReport, checkPageHtml, SEO_PAGES, SEO_TARGETS } from './lib/seo-report.js';
+import { seoNearWins, seoLatestRun, outreachCaption } from './lib/seo-insights.js';
 import { saveSeoDaily, getSeoLatestDate, getSeoTotals, addSeoCheck, getLatestSeoChecks, addSeoChange, getSeoChanges, addSeoRun, getSeoRuns } from './lib/portal-db.js';
 import { adminSeoReportBody } from './views/admin/seo-report.js';
 import { getBroadcastByDedupe, setLeagueEmailOptout } from './lib/portal-db.js';
@@ -241,8 +243,8 @@ import { adminGameDetailBody, perOf } from './views/admin/game.js';
 import { adminRetrackCompareBody } from './views/admin/retrack-compare.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt, setGamesTipTime } from './lib/portal-db.js';
-import { buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin, COURT_IDENTITY_FIELDS, courtOpeningHoursSpec, courtPhone, linkCourtMentions } from './lib/court-page.js';
-import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems, courtCityPage, venueUrl, CITY_PAGES, cityPageSlug } from './views/court.js';
+import { PRICE_ALERT_DAYS, PRICE_DROP_DAYS, courtHoursLabel, buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin, COURT_IDENTITY_FIELDS, courtOpeningHoursSpec, courtPhone, linkCourtMentions } from './lib/court-page.js';
+import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems, courtCityPage, venueUrl, CITY_PAGES, cityPageSlug, CITY_RATE_TABLE_MIN } from './views/court.js';
 import { askToRateCourt, courtRatingsOn } from './lib/court-rate-ask.js';
 import { gameRatingsOn, resolveRateGame, askToRateGame, verifyRateToken, verifyRatingUnsubscribe, RATE_KINDS } from './lib/game-rate-ask.js';
 import { RATE_ANSWER_KEYS, cleanRating, summarizeConduct, raterFlags, RATE_WINDOW_DAYS } from './lib/game-ratings.js';
@@ -2480,6 +2482,11 @@ const CTA_KEYS = {
   'court-partner':    'Court page · Become a partner',
   'court-claim':      'Court page · Message us to claim',
   'courts-tile':      'Courts list · Open a court',
+  'courts-city':      'Courts list · Open a city page',
+  'city-run':         'City page · Open a run this week',
+  'city-rate':        'City page · Open a court from the rate table',
+  'city-join':        'City page · See how it works',
+  'city-papawis':     'City page · Next Papawis run',
   'home-court':       'Homepage · Open a court',
   'court-nearby':     'Court page · Open a nearby court',
   'join-register':    'Join page · Claim your spot (top)',
@@ -13508,7 +13515,7 @@ app.get('/admin/ai-writing', requireAuth, (req, res) => {
     currentPath: '/admin/ai-writing',
     body: adminAiWritingBody({
       config: getVoiceConfig(), features: AI_WRITING_FEATURES, creativityLevels: CREATIVITY_LEVELS,
-      currentVoices, limits: VOICE_LIMITS,
+      currentVoices, limits: VOICE_LIMITS, aiHealth: { ...aiProviderInfo(), stats: aiCallStats() },
     }),
   }));
 });
@@ -13517,6 +13524,17 @@ app.post('/admin/ai-writing', requireAuth, express.json({ limit: '100kb' }), (re
   const error = saveVoiceConfig(req.body);
   if (error) return res.status(400).json({ error });
   res.json({ ok: true });
+});
+
+// Every AI provider attempt (answered or failed) lands in ai_calls for the card below.
+setAiCallRecorder(recordAiCall);
+// AI providers (2026-11-16): one tiny request to each provider that has a key. The page
+// re-renders in place with the results (stored as 'ping' rows, lib/ai-health.js).
+app.post('/admin/ai/check', requireAuth, express.json(), async (req, res) => {
+  const { providers } = aiProviderInfo();
+  const results = await Promise.all(providers.filter(p => p.hasKey).map(p => pingAiProvider(p.id).catch(e => ({ provider: p.id, ok: false, error: e.message }))));
+  const bad = results.filter(r => !r.ok);
+  res.json({ message: !results.length ? 'No AI keys are set.' : bad.length ? `${bad.length} of ${results.length} not answering.` : `All ${results.length} answering.` });
 });
 
 app.post('/admin/ai-writing/reset', requireAuth, (req, res) => {
@@ -26685,7 +26703,8 @@ function buildCourtOgTags(court, p) {
     ...(court.address ? { hasMap: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.address)}` } : {}),
     // The venue's own site and socials: tells search engines this page is about that place.
     ...(() => { const same = courtLinks(p.info).filter(l => l.key !== 'booking').map(l => l.url); return same.length ? { sameAs: same } : {}; })(),
-    ...(p.info?.rate ? { priceRange: p.info.rate } : {}),
+    // Not once the rate is past its re-check (180 days): no price to Google we can't stand behind.
+    ...(p.info?.rate && !p.priceStale ? { priceRange: p.info.rate } : {}),
     // Hours and phone as the venue posts them (admin-filled).
     ...(courtOpeningHoursSpec(p.info) ? { openingHoursSpecification: [courtOpeningHoursSpec(p.info)] } : {}),
     ...(courtPhone(p.info) ? { telephone: courtPhone(p.info) } : {}),
@@ -26814,7 +26833,7 @@ function liveCourtSlugByName() {
       byId: new Map(live.map(({ court, p }) => [court.id, { slug: court.slug, name: p.name }])),
       // The homepage "Where we play" row: busiest first (liveCourts' order).
       list: live.map(({ court, p }) => ({ slug: court.slug, name: p.name, city: p.city, runs: p.playedRuns, games: p.finalsCount,
-        photo: p.photos[0] ? { src: p.photos[0].src, alt: p.photos[0].alt } : null, rateFrom: p.rateFrom, thin: p.thin,
+        photo: p.photos[0] ? { src: p.photos[0].src, alt: p.photos[0].alt } : null, rateFrom: p.priceStale ? '' : p.rateFrom, thin: p.thin,
         names: [...new Set([p.name, court.name, ...p.altNames])] })) };
   }
   return liveCourtsCache.map;
@@ -26928,7 +26947,16 @@ function courtCityPageData(slug) {
   const parts = [league && plural(league, 'league game'), runs && plural(runs, 'Papawis pickup run')].filter(Boolean);
   const summary = `WKND Basketball has played ${parts.join(' and ') || 'games'} at ${live.length === 1 ? live[0].p.name : `${live.length} courts`} in ${city}.`
     + (leagueHome?.p.finalsCount && live.length > 1 ? ` Most league games are at ${leagueHome.p.name}.` : '');
-  return { city, slug, live, others, cities: courtCities(all), summary, intro: getSetting(`seo_city_intro_${slug}`, '') };
+  // The rate table: live courts with a rate that isn't past its re-check, cheapest first (shown
+  // from CITY_RATE_TABLE_MIN rows). Runs this week: the next 7 days at this city's courts.
+  const rates = live.filter(x => x.p.rateFrom && !x.p.priceStale)
+    .map(({ court, p }) => ({ slug: court.slug, name: p.name, rateFrom: p.rateFrom, hours: courtHoursLabel(p.info), type: (COURT_TYPES.find(([k]) => k === p.info.setting) || [])[1] || '', checked: p.checked }))
+    .sort((a, b) => Number(a.rateFrom.replace(/\D/g, '')) - Number(b.rateFrom.replace(/\D/g, '')));
+  const today = manilaTodayStr(), until = addDaysYmd(today, 7);
+  const weekRuns = live.flatMap(({ court, p }) => p.upcoming.map(r => ({ id: r.id, slug: court.slug, court: p.name, ymd: String(r.date).slice(0, 10), start: r.start_time || '',
+    time: formatTimeRange(r.start_time, r.end_time) || r.time_label || '', price: Number(r.price_per_player) || Number(r.min_per_player) || 0 })))
+    .filter(r => r.ymd >= today && r.ymd <= until).sort((a, b) => `${a.ymd}${a.start}`.localeCompare(`${b.ymd}${b.start}`));
+  return { city, slug, live, others, cities: courtCities(all), summary, intro: getSetting(`seo_city_intro_${slug}`, ''), rates, weekRuns };
 }
 
 // One-time (Fable SEO audit, 2026-11-11): Hoop Arena's seeded search title/description gave
@@ -31080,30 +31108,130 @@ async function seoPullGsc(today) {
   }
 }
 
+// The watched pages (2026-11-16, two tiers): every live court page that isn't thin (thin ones
+// are noindexed on purpose), the city pages, /courts, /join and /papawis. Checked daily and
+// rolled up on Mondays; only SEO_PAGES/SEO_TARGETS (the main tier) get goals, AI notes and
+// suggestions. → [{ path, label, court }]
+function seoWatchPages() {
+  const live = liveCourts();
+  return [
+    ...live.filter(x => !x.p.thin).map(({ court, p }) => ({ path: `/courts/${court.slug}`, label: p.name, court: true })),
+    ...courtCities(live).map(c => ({ path: `/courts/${c.slug}`, label: `${c.city} city page` })),
+    { path: '/courts', label: 'Courts hub' }, { path: '/join', label: 'Join page' }, { path: '/papawis', label: 'Papawis' },
+  ];
+}
+// Main pages first, then the watched ones not already on it.
+const seoAllPages = () => [...new Set([...SEO_PAGES, ...seoWatchPages().map(w => w.path)])];
+// What a page must show when its data says so (a missing one means the page broke): the city
+// rate table (3+ courts with fresh rates) and "Runs this week".
+function seoPageExpect(path) {
+  const slug = path.startsWith('/courts/') ? path.split('/')[2] : '';
+  if (!slug || !CITY_PAGES[slug]) return [];
+  const d = courtCityPageData(slug);
+  if (!d) return [];
+  return [d.rates.length >= CITY_RATE_TABLE_MIN && { marker: 'data-seo="rate-table"', label: 'rate table missing' },
+    d.weekRuns.length && { marker: 'data-seo="runs-week"', label: '“Runs this week” missing' }].filter(Boolean);
+}
+
 // Fetch each tracked page from the live site like a crawler would and check what it serves.
+// A served title or description that changed since the last check goes in the change log
+// (automatic titles move with the rate check and the ratings), unless an admin edit already did.
 async function seoCheckPages() {
   let bad = 0;
-  for (const p of SEO_PAGES) {
+  const pages = seoAllPages();
+  const prev = Object.fromEntries(getLatestSeoChecks('page').map(c => { let d = {}; try { d = JSON.parse(c.data_json || '{}'); } catch {} return [c.url, d]; }));
+  const recentEdits = getSeoChanges({ since: Date.now() - 2 * 864e5 });
+  for (const p of pages) {
     const url = seoPageUrl(p);
     try {
       const res = await fetch(url, { headers: { 'User-Agent': 'WKND-SEO-check/1.0 (bot)' }, redirect: 'manual', signal: AbortSignal.timeout(20000) });
       const html = res.status === 200 ? await res.text() : '';
-      const c = checkPageHtml({ url, status: res.status, html, expectCanonical: url });
+      const c = checkPageHtml({ url, status: res.status, html, expectCanonical: url, expect: seoPageExpect(p) });
       if (!c.ok) bad++;
       addSeoCheck({ kind: 'page', ...c });
+      for (const [field, key] of [['title', 'title'], ['description', 'description']]) {
+        const before = prev[url]?.[key], after = c.data?.[key];
+        if (before && after && before !== after && !recentEdits.some(x => x.page === p && x.field === field)) addSeoChange({ page: p, field: `${field} (as served)`, before, after, by: 'Page check' });
+      }
     } catch (e) {
       bad++;
       addSeoCheck({ kind: 'page', url, ok: false, detail: `could not load (${e.message})` });
     }
   }
-  addSeoRun({ kind: 'checks', ok: !bad, summary: bad ? `${bad} of ${SEO_PAGES.length} pages have a problem.` : `All ${SEO_PAGES.length} pages OK.` });
+  addSeoRun({ kind: 'checks', ok: !bad, summary: bad ? `${bad} of ${pages.length} pages have a problem.` : `All ${pages.length} pages OK.` });
+}
+
+// Court rates (Paolo, 2026-11-16): a line in the email for each live court whose rate was never
+// checked or is 75+ days old (at 180 the price leaves the title by itself, lib/court-page.js),
+// and for a search title typed in admin with a price or an old year the checks can't refresh.
+function seoCheckPrices() {
+  const alerts = [];
+  const year = manilaTodayStr().slice(0, 4);
+  for (const { court, p } of liveCourts()) {
+    const href = `${SITE_ORIGIN}/admin/papawis/courts/${encodeURIComponent(court.id)}`;
+    if (p.rateFrom) {
+      if (p.checkedDays == null) alerts.push({ text: `${p.name}: the ${p.rateFrom} rate has no check date. Tick “I checked the rate … today” once the venue confirms it.`, href });
+      else if (p.priceStale) alerts.push({ text: `${p.name}: rate last checked ${p.checked} (${p.checkedDays} days ago), so the price is off the Google title until it’s re-checked.`, href });
+      else if (p.checkedDays >= PRICE_ALERT_DAYS) alerts.push({ text: `${p.name}: rate last checked ${p.checked} (${p.checkedDays} days ago). Re-check it; the price leaves the Google title at ${PRICE_DROP_DAYS} days.`, href });
+    }
+    const t = String(court.seo_title || '');
+    const oldYear = (t.match(/\b(20\d\d)\b/) || [])[1];
+    if (t && (/₱|\bphp\b/i.test(t) || (oldYear && oldYear < year))) {
+      alerts.push({ text: `${p.name}: the search title typed in admin (“${t}”) has a ${/₱|\bphp\b/i.test(t) ? 'price' : 'year'} the checks can’t keep current. Clear it to use the automatic title, or update it.`, href });
+    }
+  }
+  addSeoRun({ kind: 'prices', ok: !alerts.length, summary: alerts.length ? `${alerts.length} court rate line(s) need a look.` : 'Every court rate was checked in the last 75 days.', data: { alerts } });
+}
+
+// Claude first for writing but silent for a day (key expired, no credit, outage): test it once
+// and put a line in the email. Writing keeps going to the next provider meanwhile.
+async function seoCheckAi() {
+  const info = aiProviderInfo();
+  if (!info.claudeFirst) return;
+  if (Date.now() - aiLastAnswered('anthropic') < 24 * 3600e3) { addSeoRun({ kind: 'ai', summary: 'Claude answered in the last 24 hours.' }); return; }
+  const r = await pingAiProvider('anthropic');
+  const next = info.tiers.long.filter(x => x !== 'anthropic').map(x => info.providers.find(p => p.id === x)?.label)[0] || 'nobody';
+  addSeoRun({ kind: 'ai', ok: r.ok, summary: r.ok ? 'Claude answered a test.' : `Claude isn’t answering: ${r.error}.`,
+    data: r.ok ? {} : { alerts: [{ text: `Claude isn’t answering (${r.error}). Recaps and other writing go to ${next} until it’s fixed. Check Admin → AI writing.`, href: `${SITE_ORIGIN}/admin/ai-writing` }] } });
+}
+
+// The 1st of the month: which venue websites link to us (the strongest ranking lever). Only the
+// website's home page can be read; Facebook and Instagram block bots. One line for the email.
+async function seoOutreach() {
+  const linked = [], not = [];
+  for (const { p } of liveCourts().filter(x => !x.p.thin)) {
+    const site = courtLinks(p.info).find(l => l.key === 'website');
+    if (!site) continue;
+    try {
+      const res = await fetch(site.url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WKND-link-check)' }, redirect: 'follow', signal: AbortSignal.timeout(20000) });
+      const html = res.ok ? await res.text() : '';
+      (/wkndbasketball\.com/i.test(html) ? linked : not).push(p.name);
+    } catch { not.push(p.name); }
+  }
+  const total = linked.length + not.length;
+  const line = !total ? 'No live court has a venue website on file yet.'
+    : `${linked.length} of ${total} venue website${total === 1 ? '' : 's'} link to us${linked.length ? ` (${linked.join(', ')})` : ''}.${not.length ? ` Not yet: ${not.join(', ')}.` : ''} Facebook and Instagram pages can’t be checked automatically.`;
+  addSeoRun({ kind: 'outreach', summary: line, data: { linked, not } });
+  return line;
+}
+
+// The Monday Facebook caption: the soonest run in the next 7 days at a live court, plain text
+// (lib/seo-insights.js outreachCaption). Nothing when no run is posted.
+function seoCaption(today) {
+  const until = addDaysYmd(today, 7);
+  const next = liveCourts().filter(x => !x.p.thin && x.p.nextRun && x.p.nextRun.ymd >= today && x.p.nextRun.ymd <= until)
+    .sort((a, b) => `${a.p.nextRun.ymd}${a.p.nextRun.start_time || ''}`.localeCompare(`${b.p.nextRun.ymd}${b.p.nextRun.start_time || ''}`))[0];
+  if (!next) return '';
+  const r = next.p.nextRun;
+  return outreachCaption({ court: next.p.name, city: next.p.city, ymd: r.ymd, time: r.time, price: Number(r.price_per_player) || Number(r.min_per_player) || 0, url: courtUrl(next.court) });
 }
 
 // Google's own view of each tracked page (URL Inspection API): indexed or not, last crawl.
 async function seoInspectPages() {
   if (!gscConfigured()) return;
   let notIndexed = 0;
-  for (const p of SEO_PAGES) {
+  const pages = seoAllPages();
+  for (const p of pages) {
     const url = seoPageUrl(p);
     try {
       const r = await gscInspectUrl(url);
@@ -31114,7 +31242,7 @@ async function seoInspectPages() {
       addSeoCheck({ kind: 'inspect', url, ok: false, detail: `inspection failed (${e.message})` });
     }
   }
-  addSeoRun({ kind: 'inspect', ok: !notIndexed, summary: notIndexed ? `${notIndexed} of ${SEO_PAGES.length} pages not indexed by Google.` : `All ${SEO_PAGES.length} pages indexed.` });
+  addSeoRun({ kind: 'inspect', ok: !notIndexed, summary: notIndexed ? `${notIndexed} of ${pages.length} pages not indexed by Google.` : `All ${pages.length} pages indexed.` });
 }
 
 // "Lately at <court>": 2-3 sentences from the last 7 days at the court (league scores and top
@@ -31219,17 +31347,20 @@ async function seoCheckVenueLinks() {
       } catch (e) { broken.push(`${court.name}: ${l.label} did not load`); }
     }
   }
-  addSeoRun({ kind: 'links', ok: !broken.length, summary: broken.length ? broken.join('; ') : 'All venue links load.' });
+  // Each broken link is its own line in the email's "Needs a look" (it never reached it before).
+  addSeoRun({ kind: 'links', ok: !broken.length, summary: broken.length ? broken.join('; ') : 'All venue links load.', data: { alerts: broken.map(text => ({ text })) } });
   return broken;
 }
 
-// The 1st of the month: 3 title/description options per main page, from the searches Google
-// actually shows it for. A suggestion only; a person applies it (court admin → Search results).
+// The 1st of the month: 3 title/description options for at most 3 pages: those with searches
+// close to page 1 whose words the title lacks first, then the main target pages. From the
+// searches Google actually shows each for. A suggestion only; a person applies it.
 async function seoSuggestTitles(today) {
   const out = [];
   if (!aiAvailable()) return out;
   const through = getSeoLatestDate();
-  const pages = [...new Set(SEO_TARGETS.map(t => t.page).filter(x => x && x !== '/'))];
+  const near = through ? seoNearWins({ origin: SITE_ORIGIN, from: addDaysYmd(through, -27), to: through, checks: getLatestSeoChecks('page'), limit: 30 }).filter(n => n.missing.length && n.page !== '/') : [];
+  const pages = [...new Set([...near.map(n => n.page), ...SEO_TARGETS.map(t => t.page).filter(x => x && x !== '/')])].slice(0, 3);
   for (const path of pages) {
     const url = seoPageUrl(path);
     const check = getLatestSeoChecks('page').find(c => c.url === url);
@@ -31242,8 +31373,9 @@ async function seoSuggestTitles(today) {
 Page: ${url}
 Current title: ${cur.title}
 Current description: ${cur.description || '(none)'}
-Searches we want to win: ${targets.join('; ')}
+Searches we want to win: ${targets.join('; ') || 'none set; use the searches below'}
 Searches Google showed this page for in the last 28 days (position, times shown): ${queries.length ? queries.map(q => `${q.k} (#${Math.round(q.position * 10) / 10}, ${q.impressions}x)`).join('; ') : 'no data yet'}
+${near.some(n => n.page === path) ? `Searches close to page 1 whose words the title and description lack: ${near.filter(n => n.page === path).slice(0, 5).map(n => `${n.query} (#${n.position}, missing: ${n.missing.join(', ')})`).join('; ')}` : ''}
 
 Rules: titles at most 60 characters and descriptions at most 155; plain, specific and true to the current text (no new facts, prices or claims); include the main search words naturally; no ALL CAPS, emoji or exclamation marks; brand is "WKND Basketball" or "WKND".`;
     const schema = { type: 'object', properties: { options: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' } }, required: ['title', 'description'] } } }, required: ['options'] };
@@ -31257,27 +31389,52 @@ Rules: titles at most 60 characters and descriptions at most 155; plain, specifi
   return out;
 }
 
-async function sendSeoReport(today, { weekly = false, weeklyNotes = [], suggestions = [] } = {}) {
-  const report = buildSeoReport({ origin: SITE_ORIGIN, today, weekly, weeklyNotes, suggestions });
+// The competing-page keys last reported, so Monday's email flags only new ones.
+const seoSeenCompeting = () => { try { return JSON.parse(getSetting('seo_competing_seen', '') || 'null'); } catch { return null; } };
+function seoReportFor(today, { weekly = false, weeklyNotes = [], suggestions = [], outreach = '' } = {}) {
+  return buildSeoReport({ origin: SITE_ORIGIN, today, weekly, weeklyNotes, suggestions, outreach,
+    watch: weekly ? seoWatchPages() : [], seenCompeting: seoSeenCompeting(), caption: weekly ? seoCaption(today) : '' });
+}
+async function sendSeoReport(today, opts = {}) {
+  const report = seoReportFor(today, opts);
   await sendMail({ to: seoReportTo(), ref: today, ...seoReportEmail(report, { adminUrl: `${SITE_ORIGIN}/admin/seo/report` }) });
+  if (report.weekly) setSetting('seo_competing_seen', JSON.stringify(report.competing.map(c => c.key)));
   addSeoRun({ kind: 'email', summary: `Sent to ${seoReportTo()}: ${report.subject}` });
 }
 
+// One step of the run: a step that throws is logged (and shows in the email's "Needs a look")
+// instead of stopping the run, so the email always goes out (Fable audit, 2026-11-16).
+async function seoStep(name, fn) {
+  try { return await fn(); }
+  catch (e) {
+    console.error(`[seo] ${name} failed:`, e.message);
+    addSeoRun({ kind: `step-${name}`, ok: false, summary: `The ${name} step failed: ${e.message}` });
+    return undefined;
+  }
+}
+
 let seoJobsRunning = false;
-async function runSeoJobs({ force = false } = {}) {
+// force: "Run now" from the admin (weekly steps always; monthly ones when asked).
+async function runSeoJobs({ force = false, monthly: withMonthly = false } = {}) {
   if (seoJobsRunning) return;
   const today = manilaTodayStr();
   if (!force && (!seoJobsOn() || manilaHourNow() < 7 || getSetting('seo_jobs_last_day', '') === today)) return;
   seoJobsRunning = true;
   try {
     if (!force) setSetting('seo_jobs_last_day', today);
-    const weekly = force || isMondayYmd(today), monthly = today.endsWith('-01');
-    await seoPullGsc(today);
-    await seoCheckPages();
-    let weeklyNotes = [], suggestions = [];
-    if (weekly) { await seoInspectPages(); weeklyNotes = await seoWriteWeeklyNotes(today); }
-    if (monthly) { await seoCheckVenueLinks(); suggestions = await seoSuggestTitles(today); }
-    if (weekly || force || getSetting('seo_email_daily', '1') === '1') await sendSeoReport(today, { weekly: weekly || force, weeklyNotes, suggestions });
+    const weekly = force || isMondayYmd(today), monthly = withMonthly || today.endsWith('-01');
+    await seoStep('gsc', () => seoPullGsc(today));
+    await seoStep('checks', seoCheckPages);
+    await seoStep('prices', seoCheckPrices);
+    await seoStep('ai', seoCheckAi);
+    let weeklyNotes = [], suggestions = [], outreach = '';
+    if (weekly) { await seoStep('inspect', seoInspectPages); weeklyNotes = (await seoStep('notes', () => seoWriteWeeklyNotes(today))) || []; }
+    if (monthly) {
+      await seoStep('links', seoCheckVenueLinks);
+      outreach = (await seoStep('outreach', seoOutreach)) || '';
+      suggestions = (await seoStep('suggest', () => seoSuggestTitles(today))) || [];
+    }
+    if (weekly || force || getSetting('seo_email_daily', '1') === '1') await seoStep('email', () => sendSeoReport(today, { weekly: weekly || force, weeklyNotes, suggestions, outreach }));
     logSystem('seo_jobs', { day: today, weekly, monthly });
   } catch (e) {
     console.error('[seo] jobs failed:', e.message);
@@ -31290,7 +31447,10 @@ setInterval(() => runSeoJobs().catch(() => {}), 30 * 60 * 1000);
 // Admin → Site settings → SEO report.
 app.get('/admin/seo/report', requireAuth, (req, res) => {
   const today = manilaTodayStr();
-  const report = buildSeoReport({ origin: SITE_ORIGIN, today, weekly: true });
+  // The admin page always shows the Monday extras, the latest suggestions and venue-link line.
+  const suggestRun = seoLatestRun('suggest', { okOnly: true });
+  const report = seoReportFor(today, { weekly: true, suggestions: suggestRun?.data?.suggestions || [], outreach: seoLatestRun('outreach')?.summary || '' });
+  report.suggestionsAt = suggestRun?.at || 0;
   const live = courtCities();
   const cities = Object.entries(CITY_PAGES).map(([slug, city]) => ({ slug, city, intro: getSetting(`seo_city_intro_${slug}`, ''), live: live.some(c => c.slug === slug), n: live.find(c => c.slug === slug)?.n || 0 }));
   const trendByQuery = {};
@@ -31299,7 +31459,7 @@ app.get('/admin/seo/report', requireAuth, (req, res) => {
     title: 'SEO report',
     currentPath: '/admin/seo/report',
     body: adminSeoReportBody({
-      report, gscReady: gscConfigured(), cities, trendByQuery,
+      report, gscReady: gscConfigured(), cities, trendByQuery, running: seoJobsRunning,
       runs: getSeoRuns({ limit: 40 }), changes: getSeoChanges({ limit: 100 }),
       settings: { enabled: getSetting('seo_jobs_enabled', '1') === '1', daily: getSetting('seo_email_daily', '1') === '1', notes: getSetting('seo_weekly_notes', '1') === '1', email: getSetting('seo_report_email', ''), defaultEmail: ADMIN_NOTIFY_EMAIL },
     }),
@@ -31326,11 +31486,14 @@ app.post('/admin/seo/report/send', requireAuth, express.json(), async (req, res)
   try { await sendSeoReport(manilaTodayStr(), { weekly: true }); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.post('/admin/seo/report/run', requireAuth, express.json(), async (req, res) => {
+// "Run now" starts the run and answers at once (it checks every watched page, which can take
+// longer than Cloudflare waits); the page asks /status and updates itself when it's done.
+app.post('/admin/seo/report/run', requireAuth, express.json(), (req, res) => {
   if (seoJobsRunning) return res.status(409).json({ error: 'Already running.' });
-  try { await runSeoJobs({ force: true }); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  runSeoJobs({ force: true, monthly: req.body?.monthly === true }).catch(e => console.error('[seo] run now failed:', e.message));
+  res.json({ message: 'Started. This page updates when it’s done.' });
 });
+app.get('/admin/seo/report/status', requireAuth, (req, res) => res.json({ running: seoJobsRunning }));
 
 app.use((err, req, res, next) => {
   if ((err.status || err.statusCode || 500) >= 500) console.error(`[route] ${req.method} ${req.path}: ${err.message}`);

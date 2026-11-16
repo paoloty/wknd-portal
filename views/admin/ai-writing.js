@@ -1,4 +1,35 @@
 import { escHtml } from '../layout.js';
+import { ago } from './ui.js';
+
+// AI providers (2026-11-16): who answers, who's failing and why, and a "Check now" test.
+// health: lib/ai.js aiProviderInfo() + stats from lib/ai-health.js aiCallStats().
+function providersCard(health) {
+  if (!health) return '';
+  const { providers, tiers, stats, claudeFirst } = health;
+  const label = Object.fromEntries(providers.map(p => [p.id, p.label]));
+  const when = ms => (ms ? `${ago(ms)} ago`.replace('now ago', 'just now') : 'never');
+  const order = list => (list.length ? list.map(p => label[p]).join(' → ') : 'no provider with a key');
+  const rows = providers.map(p => {
+    const s = stats[p.id] || { answered: 0, failed: 0 };
+    const ping = s.ping;
+    const status = !p.hasKey ? '<span style="color:var(--text-muted)">No key</span>'
+      : ping ? (ping.ok ? `<span style="color:#22c55e">✓ Answering</span> <small style="color:var(--text-muted)">${escHtml(ping.model)} · tested ${when(ping.at)}</small>` : `<span style="color:#ef4444">✗ ${escHtml(ping.error)}</span> <small style="color:var(--text-muted)">tested ${when(ping.at)}</small>`)
+      : '<span style="color:var(--text-muted)">Not tested yet</span>';
+    const recent = s.lastError && s.lastFailAt && (!s.lastOkAt || s.lastFailAt > s.lastOkAt)
+      ? `<small style="color:#f59332">Last failed ${when(s.lastFailAt)}: ${escHtml(s.lastError)}</small>`
+      : s.lastOkAt ? `<small style="color:var(--text-muted)">Last answered ${when(s.lastOkAt)}</small>` : '';
+    return `<tr><td style="padding:8px 10px;font-weight:600">${escHtml(p.label)}</td><td style="padding:8px 10px">${status}</td>
+      <td style="padding:8px 10px;white-space:nowrap">${p.hasKey ? `${s.answered} answered${s.failed ? ` · <span style="color:#f59332">${s.failed} failed</span>` : ''}` : '—'}</td><td style="padding:8px 10px">${recent}</td></tr>`;
+  }).join('');
+  return card('AI providers', `
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+    <p style="margin:0;font-size:12px;color:var(--text-muted);line-height:1.6">Writing goes to <b style="color:var(--text)">${escHtml(order(tiers.long))}</b>; fact checks to ${escHtml(order(tiers.check))}. When one fails the next answers without a word, so check here if the writing sounds off.${claudeFirst ? '' : ' Claude isn’t first right now (no key, or ANTHROPIC_CREDIT_UNTIL has passed).'}</p>
+    <button type="button" class="admin-btn admin-btn--sm" data-post-json="/admin/ai/check" data-done="Checked.">Check now</button>
+  </div>
+  <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)"><th style="padding:6px 10px">Provider</th><th style="padding:6px 10px">Test</th><th style="padding:6px 10px">Last 7 days</th><th style="padding:6px 10px"></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`);
+}
 
 const card = (title, body, sub = '') => `
 <div class="bg-admin-surface border border-admin-border rounded-lg overflow-hidden">
@@ -32,7 +63,7 @@ function voiceCard(v) {
 </div>`;
 }
 
-export function adminAiWritingBody({ config, features, creativityLevels, currentVoices, limits }) {
+export function adminAiWritingBody({ config, features, creativityLevels, currentVoices, limits, aiHealth = null }) {
   const { voices, mode, fixedVoice, overrides, creativity } = config;
 
   const modeBody = `
@@ -85,6 +116,8 @@ export function adminAiWritingBody({ config, features, creativityLevels, current
     <button id="aiw-save" class="agm-edit-bar__save">Save Changes</button>
   </div>
 </div>
+
+<div class="mt-5">${providersCard(aiHealth)}</div>
 
 <div class="grid grid-cols-1 gap-5 mt-5 lg:grid-cols-[1fr_340px] items-start">
   <div class="flex flex-col gap-4 min-w-0">

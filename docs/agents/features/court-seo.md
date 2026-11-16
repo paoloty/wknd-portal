@@ -16,6 +16,22 @@ Live site only, from 7am Manila, once a day. Kill switch and settings: Admin →
 
 Every run is a row in `seo_runs` and a line in `/admin/logs`. Every change to what Google reads on a court page (admin save, city intro, weekly note) is a row in `seo_changes`.
 
+## Two tiers, prices, AI health (2026-11-16)
+
+From a keyword audit and an automation audit by Fable. The cluster to win is the venue-name long tail ("[court] rates / parking / reviews / hours") on every live court, then pickup by city (owned by `/papawis`); city rental terms come later, once 8+ courts have rates and a few venues link to us. League searches were dropped: `/join` keeps "community", not "league" (Paolo).
+
+- **Main tier**: `SEO_PAGES` / `SEO_TARGETS` in `lib/seo-report.js` (now with `/papawis` and three pickup targets, each with its own `from` date). Only these get goals, the trend chart, the weekly AI notes, the venue link check and title suggestions.
+- **Watch tier**: `seoWatchPages()` in server.js: every live court page that isn't thin, the city pages, `/courts`, `/join`, `/papawis`. Checked daily (and inspected on Mondays) with the main pages; Monday's email rolls them up, one line per page with the best kind of search ("parking #5"). No goals, no status.
+- **Numbers per page**: `lib/seo-insights.js` reads `seo_daily` per query × page. A target's numbers come from its own page, with the other page noted; summing across pages double-counted exactly when two of our pages compete.
+- **Competing pages** (Monday): two of our pages on one search over 28 days, brand searches left out; flagged when the wrong page outranks the target page or takes 30%+. The email lists only ones not in last Monday's email (setting `seo_competing_seen`).
+- **Near wins** (Monday): positions 8–20, with the page that ranks and the search words its title and description lack. The 1st-of-month suggestions go to at most 3 pages, those with such gaps first; the admin page keeps the latest ones.
+- **Court rates**: the title year is the year the rate was checked (`info.checked`), never today's. Never checked = no year. Daily alert at 75 days (or never checked), linking to the court's admin page; past 180 days the price and year leave the title, description and `priceRange` by themselves (`PRICE_ALERT_DAYS`, `PRICE_DROP_DAYS`, lib/court-page.js). The page itself keeps the rate with its "as checked" date. A search title typed in admin with ₱ or an old year is flagged too. A served title or description that changes is logged in `seo_changes` as "(as served)".
+- **City pages**: "Runs this week in <city>" (next 7 days) and a rate table once 3+ courts have a fresh rate (`CITY_RATE_TABLE_MIN`, views/court.js). The daily page check fails a city page that should show either and doesn't. Run events stay on the court pages only (one URL per event).
+- **AI health**: every AI provider attempt lands in `ai_calls` (lib/ai-health.js). Admin → AI writing shows who answered in the last 7 days and the last failure in plain words, with **Check now** (a tiny request per provider). The daily job tests Claude when it's first in line and hasn't answered for 24 hours, and puts a line in the email when it fails (key expired, no credit, down).
+- **Steps never stop the email**: each step runs in `seoStep()`; one that throws is logged as `step-<name>` and shows in "Needs a look" until a later run of it works. Failed steps from the last 20 hours (broken venue links included, which never reached the email before) are alerts.
+- **Run now** starts in the background and the admin page updates itself when it's done; "Run with monthly steps" adds the link check, outreach line and suggestions.
+- **Monthly outreach line**: which venue websites link to wkndbasketball.com (home page only; Facebook and Instagram block bots). **Monday caption**: plain text for the soonest run in the next 7 days at a live court, linking its court page, only when one exists.
+
 ## Main pages (reset 2026-11-11)
 
 `/`, Gameville Central Park, Activate Hoop Arena, Delta Sports Arena. Gameville has the most searches (1,132 a quarter for its bare name, at #10.5), Activate converts best, Delta is small but winnable.
