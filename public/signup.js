@@ -43,6 +43,14 @@
     box.addEventListener('change', update); update();
   }
 
+  // The Season standard sticky: the line under Next goes once Got it is ticked (the server checks).
+  function stdGate(root) {
+    var box = $('[data-sgn-std-ok]', root), hint = $('[data-sgn-std-hint]', root);
+    if (!box || !hint) return;
+    function update() { hint.hidden = box.checked; }
+    box.addEventListener('change', update); update();
+  }
+
   // Step 2: each ticked plan asks "roughly when?".
   function away(root) {
     $$('[data-sgn-away]', root).forEach(function (c) {
@@ -428,7 +436,7 @@
     $$('[data-sgn]').forEach(function (root) {
       if (root.getAttribute('data-sgn-ready')) return;
       root.setAttribute('data-sgn-ready', '1');
-      counter(root); gate(root); away(root); kit(root); pickers(root); gameFace(root); avoidAsk(root); waiverLink(root); guardSend(root); busy(root); gfViewer(root);
+      counter(root); gate(root); stdGate(root); away(root); kit(root); pickers(root); gameFace(root); avoidAsk(root); waiverLink(root); guardSend(root); busy(root); gfViewer(root);
       // A step back with problems: glide to the first one and say what's wrong in a notice
       // (Paolo, 2026-11-09). One problem: its own message; more: how many.
       var e = $('[aria-invalid="true"]', root);

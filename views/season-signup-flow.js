@@ -263,6 +263,7 @@ function leagueStep(x) {
     <div class="sgn-lock">${ic.lock}<span>Only admins see this, including who named whom. The player is never told. Something serious? Use Report on their profile instead.</span></div>
   </section>` : '';
   return `<div class="sgn-head"><h1>You and the league</h1></div>
+  ${standardLine(x)}
   ${avoid}
   <section class="sgn-q">
     <p class="sgn-qt">Help run WKND <small>Optional</small></p>
@@ -397,6 +398,44 @@ function reviewStep(x) {
 
 const STEP_BODY = { 1: dealStep, 2: commitStep, 3: roleStep, 4: leagueStep, 5: kitStep, 6: reviewStep };
 
+// "The Season N standard" (server.js signupStandard; mockup claude.ai/artifact/4iSykb8XVfu5CoJYk6Tq5W,
+// option A). Pinned under the progress bar until Got it is ticked, then a one-line chip that opens
+// the text again. Its words are the league's standard only: never votes, names or "feedback", so it
+// reads the same as the plain line everyone gets on step 4 (standardLine).
+// x.standard: { show, read }. sent: the Sent screen, where Got it is its own small form.
+export const STANDARD_POINTS = [
+  'Respect refs, teammates and opponents',
+  'Play hard, keep it clean, no arguing calls',
+  'Show up on time and keep your balance settled',
+];
+const STANDARD_NOTE = 'Admins weigh conduct when picking the 48.';
+function standardList() {
+  return `<ul class="sgn-std__list">${STANDARD_POINTS.map(p => `<li>${esc(p)}</li>`).join('')}</ul>`;
+}
+function standardBlock(x, { sent = false } = {}) {
+  const s = x.standard;
+  if (!s?.show) return '';
+  const title = `The Season ${esc(String(x.season))} standard`;
+  if (s.read) {
+    return `<details class="sgn-std-mini"><summary><span class="sgn-std-mini__ok">${ic.check}</span><b>Season ${esc(String(x.season))} standard</b><span>· read</span></summary>
+      <div class="sgn-std-mini__body">${standardList()}<p class="sgn-hint">${STANDARD_NOTE}</p></div></details>`;
+  }
+  const tick = sent
+    ? `<form method="post" action="${esc(x.base)}/standard"><button type="submit" class="sgn-std__tick sgn-std__tick--btn"><span class="sgn-std__box"></span>Got it</button></form>`
+    : `<label class="sgn-std__tick"><input type="checkbox" name="std_ok" value="1" data-sgn-std-ok><span class="sgn-std__box" aria-hidden="true"></span>Got it</label>${errMsg(x.errors || [], 'std_ok')}`;
+  return `<section class="sgn-std" data-sgn-std${invalid(x.errors || [], 'std_ok')}>
+    <div class="sgn-std__head">${ic.shield}<span>${title}</span></div>
+    ${standardList()}
+    <p class="sgn-hint">${STANDARD_NOTE}</p>
+    ${tick}
+  </section>`;
+}
+// Step 4's plain line: the same standard for everyone, so the sticky never stands out as different.
+function standardLine(x) {
+  if (x.standard?.show) return '';
+  return `<p class="sgn-hint sgn-std-line">${ic.shield}<span><b>The Season ${esc(String(x.season))} standard:</b> ${STANDARD_POINTS.map(p => esc(p.charAt(0).toLowerCase() + p.slice(1))).join('; ')}. ${STANDARD_NOTE}</span></p>`;
+}
+
 export function signupStepScreen(kind, x) {
   x = { ...x, kind, errors: x.errors || [] };
   const n = x.n;
@@ -408,10 +447,11 @@ export function signupStepScreen(kind, x) {
        <p class="sgn-fine sgn-center">${x.deadline ? `You can change your answers until sign-ups close on ${esc(x.deadline)}.` : 'You can change your answers until sign-ups close.'}</p>`
     : `<div class="sgn-two"><button type="submit" name="go" value="back" class="sgn-ghost" formnovalidate>Back</button>
        <button type="submit" name="go" value="next" class="sgn-btn" data-sgn-next>Next: ${esc(next.title)}</button></div>${n === 1 ? '<p class="sgn-gatehint" data-sgn-gate-hint hidden>Tick “I’ve read this and I agree” to go on</p>' : ''}`;
-  const body = `${progress(n)}${errBox(x.errors)}${STEP_BODY[n](x)}`;
+  const stdHint = x.standard?.show && !x.standard.read ? '<p class="sgn-gatehint" data-sgn-std-hint>Tick “Got it” at the top to go on</p>' : '';
+  const body = `${progress(n)}${standardBlock(x)}${errBox(x.errors)}${STEP_BODY[n](x)}`;
   return frame(kind, {
     bar: topBar(kind, { back, backLabel: 'Sign up', title: `Season ${x.season}`, later: true }),
-    body, actions: nav, form: `${x.base}/${n}`,
+    body, actions: nav + stdHint, form: `${x.base}/${n}`,
   });
 }
 
@@ -439,6 +479,7 @@ export function signupSentScreen(kind, x) {
       <span class="sgn-done__ic sgn-done__ic--${st.tone}">${st.tone === 'ok' ? ic.check : ic.info}</span>
       <h1>${esc(st.title)}</h1><p class="sgn-sub">${esc(st.sub)}</p>
     </div>
+    ${standardBlock(x, { sent: true })}
     ${x.owing >= 100 && waiting ? `<div class="sgn-owe" role="alert">
       <div class="sgn-lbl">Unpaid balance</div>
       <div class="sgn-owe__amt"><span class="sgn-num">${peso(x.owing)}</span><span>from before</span></div>

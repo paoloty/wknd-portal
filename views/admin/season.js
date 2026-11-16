@@ -127,7 +127,7 @@ function ratherNotBlock(r, two = false) {
       ? `<span class="aset-chip aset-chip--muted">${e.total} ${e.total === 1 ? 'person' : 'people'} (you can’t see who, since it’s you)</span>`
       : [...e.names.map(w => chip(w, false)), ...e.mutual.map(w => chip(w, true))].join('');
     return `<div class="aset-rn"><div class="aset-rn__who">${avatar(e.name, e.color, { size: 32, playerId: e.playerId })}
-        <div class="aset-rn__text"><a class="aui-cell__title" href="/admin/players/${attr(e.playerId)}">${escHtml(e.name)}</a><div class="aui-cell__sub">${escHtml([e.team, e.signedUp ? 'Signed up' : 'Not signed up'].filter(Boolean).join(' · '))}</div></div>
+        <div class="aset-rn__text"><a class="aui-cell__title" href="/admin/players/${attr(e.playerId)}">${escHtml(e.name)}</a><div class="aui-cell__sub">${escHtml([e.team, e.signedUp ? 'Signed up' : 'Not signed up', e.standard ? (e.standard.read ? `Standard read ${shortWhen(e.standard.read)}` : 'Standard shown, not read yet') : ''].filter(Boolean).join(' · '))}</div></div>
         <span class="aset-rn__n aset-rn__n--${e.flagged ? 'red' : 'amber'}">${n}</span></div>
       <div class="aset-chips">${who}</div></div>`;
   }).join('') || `<div class="aset-next"><div class="aset-next__text"><div class="aui-cell__sub">${two ? `Nobody is named by ${r.flagAt} or more yet.` : 'Nobody named anyone yet.'}</div></div></div>`;
@@ -135,8 +135,17 @@ function ratherNotBlock(r, two = false) {
     <div class="aset-next__go"><span class="aset-seg"><a href="/admin/season#season-rathernot"${two ? '' : ' class="is-on"'}>All named</a><a href="/admin/season?rn=2#season-rathernot"${two ? ' class="is-on"' : ''}>${r.flagAt}+ only</a></span></div></div>`;
   return section({
     id: 'season-rathernot', title: 'Rather not play with', note: `· ${r.total} player${r.total === 1 ? '' : 's'} named · admins only`,
-    bodyHtml: `<div class="aui-panel">${summary}${rows}<p class="aui-cell__sub aset-rn__note">Red from ${r.flagAt} names. ↔ means they named each other: shown, not counted.</p></div>`,
+    bodyHtml: `<div class="aui-panel">${summary}${rows}<p class="aui-cell__sub aset-rn__note">Red from ${r.flagAt} names. ↔ means they named each other: shown, not counted.</p>${standardForm(r.stdAt)}</div>`,
   });
+}
+
+// The "Season standard" sticky on the app sign-up (server.js signupStandard): from how many names
+// it shows. Its wording never mentions names or votes; everyone sees the same words on step 4.
+function standardForm(at) {
+  return `<form class="aset-next" data-json-action="/admin/season/settings" data-done="Saved.">
+    <div class="aset-next__text"><div class="aui-cell__title">Season standard reminder</div><div class="aui-cell__sub">Players named by this many people (not counting ↔) see a conduct reminder pinned on the app sign-up and must tick “Got it” to move on. It never mentions names or votes. 0 turns it off.</div></div>
+    <div class="aset-next__go">${field({ label: 'From', name: 'season_standard_at', type: 'number', value: String(at ?? 3), attrs: 'min="0" max="20"' })}${button('Save', { kind: 'secondary', type: 'submit' })}</div>
+  </form>`;
 }
 
 // Sign-ups sent without a game face ("Add it later"): ask each player (a bell and a push that opens

@@ -126,7 +126,7 @@ import {
   setRegistrationAdminSections, getRegistrationAdminSections,
   setPasswordToken, getRegByPasswordToken, setRegistrationPassword,
   getRegByFacebookId, setFacebookId, clearFacebookId,
-  setRegistrationAdmin, insertAdminLog, getLogSources, getRecentProblems, saveSeasonNominations, getSeasonNominations, updateRegBirthday,
+  setRegistrationAdmin, insertAdminLog, getLogSources, getRecentProblems, saveSeasonNominations, getSeasonNominations, markSeasonStandardRead, getSeasonStandardRead, getSeasonStandardReads, updateRegBirthday,
   setRegistrationLastLogin, setRegistrationSensitiveAccess,
   createPlayer, mergeRegistrationIntoPlayer, playerHasActivity, deletePlayer,
   getSeasonStandings, getPlayoffGames,
@@ -24470,7 +24470,32 @@ function signupCtx(st) {
     returning: getReturningTeamInfo(st.reg, st.season),
     avoidIds: new Set(shared.map(p => p.id)), selfId: st.playerId, ratherNotMax: ratherNotMax(!!st.reg.is_admin),
     sizes: JERSEY_SIZES, hasWaiver: !!st.reg.waiver_agreed_at, ownPhone: st.reg.phone || '', now: new Date(),
+    standard: signupStandard(st),
   };
+}
+
+// "The Season N standard" sticky (Paolo, 2026-11-16; mockup claude.ai/artifact/4iSykb8XVfu5CoJYk6Tq5W):
+// players named as "rather not" by STANDARD_AT+ different people (mutual pairs not counted, only
+// sign-ups that still stand, as the Season page counts them) see it pinned on every step until they
+// tick Got it. Its wording is a league standard and never mentions the names, so it gives nothing
+// away; step 4 shows everyone the same words as a plain line. → { show, read (ms) }
+const STANDARD_AT_DEFAULT = 3;
+function ratherNotCountFor(season, playerId) {
+  if (!playerId) return 0;
+  const live = new Set(getSeasonSignups(season).filter(x => x.status === 'waitlisted' || x.status === 'confirmed').map(x => x.reg_id));
+  const noms = getSeasonNominations(season).filter(n => live.has(n.nominator_reg_id));
+  const e = ratherNotTally(noms.map(n => ({ nominee_player_id: n.nominee_player_id, nominator_player_id: n.nominator_player_id || '', nominator_name: '' }))).find(x => x.playerId === playerId);
+  return e ? e.count : 0;
+}
+function standardAt() {
+  const v = getSetting('season_standard_at', '');
+  return v === '' ? STANDARD_AT_DEFAULT : Math.max(0, Number(v) || 0);
+}
+function signupStandard(st) {
+  const at = standardAt();
+  if (!st?.season || !at || !st.playerId) return { show: false, read: 0 };
+  if (ratherNotCountFor(st.season, st.playerId) < at) return { show: false, read: 0 };
+  return { show: true, read: getSeasonStandardRead(st.season, st.regId) };
 }
 
 // The draft as the steps show it: what's saved, over what we can fill in from before (last
@@ -24515,7 +24540,16 @@ function signupSentData(st, kind, signup) {
     clickWith: ids.map(id => players[id]).filter(Boolean),
     payments: signup.status === 'confirmed' ? paymentsCard(kind, seasonPaymentsFor(signup)) : '',
     contest: signup.contest_opt_in ? { href: GF_BASE[kind], sub: { entries: 'See every entry', voting: 'Voting is open', over: 'See the winners' }[contestPhase(gameFaceTimes(st.season))] } : null,
+    standard: ['rejected', 'withdrawn'].includes(signup.status) ? { show: false, read: 0 } : signupStandard(st),
   };
+}
+
+// Got it on the Sent screen's standard sticky (the steps save it with the step's own form).
+function signupStandardRead(req, res) {
+  const kind = signupKindOf(req), st = signupState(req);
+  if (signupBlocked(req, res, kind, st)) return;
+  if (st.season && signupStandard(st).show) markSeasonStandardRead(st.season, st.regId, st.playerId);
+  res.redirect(303, SIGNUP_BASE[kind]);
 }
 
 function signupStart(req, res) {
@@ -24568,7 +24602,7 @@ function signupStepData(st, kind, n, d, ctx, errors = []) {
     openDetails: n === 5 ? new Set(checkStep(5, {
       ...d, emergency_name: d.emergency_name ?? st.reg.emergency_name ?? '', emergency_phone: d.emergency_phone ?? st.reg.emergency_phone ?? '', birthday: d.birthday ?? st.reg.birthday ?? '',
     }, ctx).map(e => e.field)) : new Set(),
-    workOnPrefilled: !!d._workOnPrefilled, kitPrefilled: !!d._kitPrefilled,
+    workOnPrefilled: !!d._workOnPrefilled, kitPrefilled: !!d._kitPrefilled, standard: ctx.standard,
     photo: photo && photo.via !== 'activation' ? photo : null, photoUrl: '/season-signup/my-photo',
     poseText: pose?.prompt || 'Your pose shows here', poseLabel: pose?.label || '',
     reviewLines: reviewLines(d, { teamName: ctx.returning?.team?.name || '', ratherNotNames: (d.avoid || []).map(id => names[id]).filter(Boolean), jerseyTotal: jersey.total }),
@@ -24616,6 +24650,11 @@ function signupPostStep(req, res) {
   // The contest pose is handed out once, with the first save, and kept.
   if (!poseByKey(d.pose)) d.pose = pickPose(contestPoseCounts(st.season));
   saveSignupDraft(st.regId, st.season, d);
+  // The standard sticky's Got it rides along with whichever button was tapped.
+  if (ctx.standard.show && !ctx.standard.read && req.body.std_ok === '1') {
+    markSeasonStandardRead(st.season, st.regId, st.playerId);
+    ctx.standard = { show: true, read: Date.now() };
+  }
 
   const go = String(req.body.go || 'next');
   if (go === 'later') return res.redirect(base);
@@ -24627,8 +24666,10 @@ function signupPostStep(req, res) {
     if (req.get('X-Sgn-Fetch') === '1') res.set('X-Sgn-Url', `${base}/${step}`);
     return sendSignup(req, res, kind, signupStepScreen(kind, signupStepData(st, kind, step, d, ctx, errors)), { title: SIGNUP_STEPS[step - 1].title, status: 400 });
   };
+  const stdErr = ctx.standard.show && !ctx.standard.read ? [{ step: n, field: 'std_ok', message: 'Tick “Got it” to go on.' }] : [];
 
   if (go === 'send' && n === SIGNUP_LAST) {
+    if (stdErr.length) return again(n, stdErr);
     const first = checkAll(d, ctx);
     if (first) return again(first.step, checkStep(first.step, d, ctx));
     const photo = getLivenessCapture(st.regId, st.season);
@@ -24656,7 +24697,7 @@ function signupPostStep(req, res) {
     return res.redirect(base);
   }
 
-  const errors = checkStep(n, d, ctx);
+  const errors = [...stdErr, ...checkStep(n, d, ctx)];
   if (errors.length) return again(n, errors);
   const next = Math.min(n + 1, SIGNUP_LAST);
   // Next from the page's script (public/signup.js busy): the next step in this same answer, one
@@ -24682,6 +24723,7 @@ function signupEdit(req, res) {
   if (!getSignupDraft(st.regId, st.season)) saveSignupDraft(st.regId, st.season, { ...draftFromSignup(st.regId, st.season), ...(signupNeedsPhoto(st.regId, st.season) ? { photo_later: '1' } : {}) });
   res.redirect(`${base}/${SIGNUP_LAST}`);
 }
+app.post('/app/signup/standard', requireApp, signupStandardRead);
 app.post('/season-signup/edit', signupEdit);
 app.post('/app/signup/edit', requireApp, signupEdit);
 
@@ -25082,12 +25124,15 @@ function seasonRatherNotAdmin(season, req, { minCount = 0 } = {}) {
   const tally = ratherNotTally(noms.map(n => ({ nominee_player_id: n.nominee_player_id, nominator_player_id: n.nominator_player_id || '', nominator_name: nameOf(n) })),
     { viewerPlayerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' });
   const teams = getAllTeams();
+  const stdAt = standardAt(), reads = getSeasonStandardReads(season);
   const rows = tally.filter(e => e.count >= minCount).map(e => {
     const p = players[e.playerId] || {}, t = teams.find(x => x.id === p.team_id);
-    return { ...e, name: displayPlayerName(p.name || '') || 'A player', team: t?.name || '', color: t ? (t.color || teamColor(t.name)) : '', signedUp: signedUp.has(e.playerId) };
+    // The standard sticky: on for this player, and when they ticked Got it (signupStandard).
+    const standard = stdAt && e.count >= stdAt ? { read: reads[e.playerId] || 0 } : null;
+    return { ...e, name: displayPlayerName(p.name || '') || 'A player', team: t?.name || '', color: t ? (t.color || teamColor(t.name)) : '', signedUp: signedUp.has(e.playerId), standard };
   });
   const namedSomeone = new Set(noms.map(n => n.nominator_reg_id)).size;
-  return { rows, answered: live.length, namedSomeone, names: noms.length, flagAt: NOMINATION_FLAG_AT, total: tally.length };
+  return { rows, answered: live.length, namedSomeone, names: noms.length, flagAt: NOMINATION_FLAG_AT, total: tally.length, stdAt };
 }
 function seasonNominationsFor(season, req) {
   return summarizeNominations(getSeasonNominations(season).map(n => ({ nominee_player_id: n.nominee_player_id, nominator_name: displayPlayerName(n.nominator_full_name) || 'A member' })), { viewerPlayerId: req.session?.isElevatedPlayer ? req.session.playerPlayerId : '' });
@@ -25859,6 +25904,8 @@ app.post('/admin/season/settings', requireAuth, express.json(), (req, res) => {
   for (const key of allowed) {
     if (key in (req.body || {})) setSetting(key, String(req.body[key]));
   }
+  // The standard sticky's threshold (signupStandard): a whole number, 0 = off.
+  if ('season_standard_at' in (req.body || {})) setSetting('season_standard_at', String(Math.max(0, Math.min(20, Math.round(Number(req.body.season_standard_at) || 0)))));
   res.json({ ok: true });
 });
 

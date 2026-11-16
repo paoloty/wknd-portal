@@ -110,6 +110,38 @@
 .sgn-btn--sm, .sgn-ghost--sm { height: 44px; font-size: 14px; }
 .sgn .sgn-btn.is-off, .sgn .sgn-btn:disabled { background: var(--surface-2); color: var(--sgn-subtle); cursor: default; }
 
+/* "The Season N standard" (views/season-signup-flow.js standardBlock, option A): pinned under the
+   app's 44px navbar until Got it is ticked; an amber tint over the page, opaque so steps scroll under. */
+.sgn-std { position: sticky; top: 50px; z-index: 3; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 4px; border-radius: var(--sgn-ri); background: color-mix(in srgb, var(--amber) 13%, var(--bg)); }
+.sgn--site .sgn-std { top: 8px; }
+.sgn-std__head { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--sgn-amber-text); }
+.sgn-std__head svg { width: 18px; height: 18px; flex: none; }
+.sgn-std__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.4; }
+.sgn-std__list li { display: flex; gap: 8px; align-items: flex-start; }
+.sgn-std__list li::before { content: ""; flex: none; width: 5px; height: 5px; margin-top: 8px; border-radius: 50%; background: var(--amber); }
+.sgn-std__tick { position: relative; display: flex; align-items: center; gap: 10px; min-height: 44px; font: inherit; font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; }
+.sgn-std__tick--btn { width: 100%; padding: 0; border: 0; background: none; text-align: left; }
+.sgn-std form { margin: 0; }
+.sgn-std__tick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.sgn-std__box { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--sgn-muted); box-sizing: border-box; line-height: 1; }
+.sgn-std__tick input:checked + .sgn-std__box { background: var(--amber); border-color: var(--amber); }
+.sgn-std__tick input:checked + .sgn-std__box::after { content: ""; width: 6px; height: 11px; margin-top: -3px; border: solid #111; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+.sgn-std__tick input:focus-visible + .sgn-std__box { outline: 2px solid var(--amber); outline-offset: 2px; }
+.sgn-std[aria-invalid="true"] .sgn-std__box { border-color: var(--sgn-danger); }
+.sgn-std .sgn-err { margin: -4px 0 8px; }
+/* After Got it: one line that opens the text again. */
+.sgn-std-mini { align-self: flex-start; max-width: 100%; border-radius: var(--sgn-ri); background: var(--surface-2); font-size: 12px; color: var(--sgn-muted); }
+.sgn-std-mini[open] { align-self: stretch; }
+.sgn-std-mini summary { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; line-height: 1; cursor: pointer; list-style: none; }
+.sgn-std-mini summary::-webkit-details-marker { display: none; }
+.sgn-std-mini summary b { color: var(--text); font-weight: 600; }
+.sgn-std-mini__ok { display: inline-flex; color: var(--sgn-win); }
+.sgn-std-mini__ok svg { width: 14px; height: 14px; }
+.sgn-std-mini__body { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; color: var(--text); }
+/* Step 4's plain line for everyone. */
+.sgn-std-line { display: flex; gap: 8px; align-items: flex-start; }
+.sgn-std-line svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+
 /* Steps: generic question */
 .sgn-q { display: flex; flex-direction: column; gap: 8px; margin: 0; border: 0; padding: 0; }
 .sgn-qt { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.35; }
