@@ -7,6 +7,14 @@
 (function () {
   var EMOJI = ['😀', '😁', '😂', '🤣', '😅', '😊', '😎', '🤔', '😮', '😢', '😡', '😴', '👍', '👎', '👏', '🙌', '🙏', '💪', '🤝', '👀', '🔥', '💯', '🎉', '❤️', '🏀', '⛹️', '🏆', '🥇', '⏰', '🚗', '🍕', '🍺'];
   var HOLD_MS = 450, GROUP_MS = 3 * 60 * 1000;
+  // The pinned strip's icons (paintPin). Up here, not beside paintPin: the room's first draw runs
+  // before that part of mount(), and a `var` there was still undefined, so a day with a birthday
+  // or welcome to greet threw mid-draw: the room opened mid-list, unpinned, with + and 🙂 dead
+  // (Paolo, 2026-11-17).
+  var PIN_ICON = {
+    bday: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21h16M5 21v-7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7M5 16.5c2.3 1.6 3.7 1.6 7 0s4.7-1.6 7 0M12 12V8.5M12 4.5v.5"/></svg>',
+    welcome: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></svg>'
+  };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var pref = { get: function (k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
   var post = function (url, body) {
@@ -468,10 +476,7 @@
         }, function (err) { toast(err.message, 'err'); fetchCards([key]); });
     }
     // The strip under the navbar while today's card still has someone to greet: a tap scrolls to it.
-    var PIN_ICON = {
-      bday: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21h16M5 21v-7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7M5 16.5c2.3 1.6 3.7 1.6 7 0s4.7-1.6 7 0M12 12V8.5M12 4.5v.5"/></svg>',
-      welcome: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></svg>'
-    };
+    // Its icons (PIN_ICON) sit at the top of the file: the room's first draw runs before this part.
     function paintPin() {
       if (!pinEl) return;
       var c = list.querySelector('[data-bk-hi-open]');
