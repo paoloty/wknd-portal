@@ -167,6 +167,10 @@
     });
   });
 
+  // Finals game: the "Finals version" switch (absent on other games, where it's ignored).
+  function finalsSwitch(P) { return P.el.querySelector('[data-switch^="pv-finals-"]'); }
+  function finalsOn(P) { var sw = finalsSwitch(P); return sw ? sw.getAttribute('aria-checked') === 'true' : false; }
+
   // ── render ──
   page.querySelector('[data-pv-save]').addEventListener('click', function (e) {
     var btn = e.currentTarget; btn.disabled = true;
@@ -176,6 +180,7 @@
         number: P.el.querySelector('[data-pv-number]').value,
         chip: P.el.querySelector('[data-pv-chip]').value,
         title: (P.el.querySelector('[data-pv-title]') || {}).value || '',
+        finals: finalsOn(P),
         stats: [].slice.call(P.el.querySelectorAll('[data-pv-stat]:checked')).map(function (c) { return c.value; }),
         photos: P.photos.map(function (p) { return { id: p.id, fx: +p.fx.toFixed(4), fy: +p.fy.toFixed(4), zoom: +(+p.zoom).toFixed(3), rot: +(+(p.rot || 0)).toFixed(1) }; }),
       };
@@ -196,6 +201,8 @@
         if (d.number != null) P.el.querySelector('[data-pv-number]').value = d.number;
         P.el.querySelector('[data-pv-chip]').value = d.chip || '';
         var tt = P.el.querySelector('[data-pv-title]'); if (tt && d.title) tt.value = d.title;
+        var fs = finalsSwitch(P);
+        if (fs && d.finals === false) { fs.setAttribute('aria-checked', 'false'); var fh = fs.parentNode.querySelector('input[type=hidden]'); if (fh) fh.value = '0'; }
         if (d.statKeys && d.statKeys.length) [].slice.call(P.el.querySelectorAll('[data-pv-stat]')).forEach(function (cb) {
           cb.checked = d.statKeys.indexOf(cb.value) !== -1; cb.closest('.pv-stat').classList.toggle('is-on', cb.checked);
         });

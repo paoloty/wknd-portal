@@ -7,6 +7,9 @@
   1.95 PLAYER / OF THE / GAME slams → 3.5 name + numbers count up → FL=5.3 white hit →
   6 photos x 3 s (photo 1 is also the intro background) → OUT=23.3 outro (ball knocks the
   stat block off, big logo stamps back in) → 6 s hold on logo + wkndbasketball.com.
+  Finals version (DATA.finals, lib/potg-video.js finalsInfo): a "SEASON 4 FINALS · GAME 1" plate
+  slams just before PLAYER, the kicker reads "FINALS G1 · PLAYER OF THE GAME", a white series chip
+  ("WHITE LEAD 1–0") sits beside the stat chip, and the end card adds "SEASON 4 FINALS". Same timeline.
   window.SFX lists the sound hits (real ball bounces: intro, the white hit, each photo cut, outro)
   at the same times the animation uses them. Nothing else plays (no crowd/ambience).
 -->
@@ -27,6 +30,10 @@
 #big div{font:900 230px/.84 BS;letter-spacing:-.01em;text-transform:uppercase;opacity:0}
 #big .g{color:#ffb21a;text-shadow:0 0 40px rgba(255,178,26,.5)}
 #big.co div{font-size:200px}
+#big.fin{top:250px}
+#plate{display:inline-flex;align-items:center;gap:14px;margin-bottom:30px;padding:12px 22px;border:3px solid #ffb21a;border-radius:10px;font:800 34px/1 BS;letter-spacing:.24em;color:#ffb21a;background:rgba(255,178,26,.1);white-space:nowrap;opacity:0}
+#plate i{width:10px;height:10px;border-radius:50%;background:currentColor}
+.k .sep{color:#bdb8ae}
 .logo{position:absolute;left:60px;top:54px;display:inline-flex;align-items:baseline;font:italic 900 52px/1 AI;letter-spacing:-.045em;opacity:0}.logo svg{width:.38em;height:.38em;margin-left:.08em}
 .blk{position:absolute;left:60px;right:60px;bottom:64px}
 .hd{display:flex;align-items:center;gap:24px}
@@ -41,11 +48,15 @@
 .dig{display:inline-block;text-align:center;font:900 196px/.82 BS;color:#ffb21a;text-shadow:0 0 28px rgba(255,178,26,.45);-webkit-mask:radial-gradient(circle,#000 62%,rgba(0,0,0,.55) 64%) 0 0/8px 8px;opacity:0}
 .sl{display:inline-block;font:900 120px/1 BS;color:#8a8a8a;margin:0 18px 6px;opacity:0}
 .lab{padding-bottom:16px;opacity:0}.u{font:900 54px/.9 BS;white-space:nowrap}
-.chip{display:inline-block;margin-top:14px;padding:9px 16px;border-radius:8px;border:2.5px solid #ffb21a;color:#ffb21a;font:800 24px BS;letter-spacing:.2em;background:rgba(255,178,26,.1);white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:10px;max-width:540px;margin-top:14px}
+.chip{display:inline-block;padding:9px 16px;border-radius:8px;border:2.5px solid #ffb21a;color:#ffb21a;font:800 24px BS;letter-spacing:.2em;background:rgba(255,178,26,.1);white-space:nowrap}
+.chip.w{border-color:rgba(255,255,255,.55);color:#fff;background:rgba(255,255,255,.08)}
 #lk{position:absolute;left:0;right:0;top:500px;text-align:center}
 #wm{display:inline-flex;align-items:baseline;font:italic 900 210px/1 AI;letter-spacing:-.045em;-webkit-text-stroke:.02em #fff;transform-origin:0 0}
 #wm span{display:inline-block;opacity:0}#slot{display:inline-block;width:80px;height:80px;margin-left:.08em}
 #sub{display:inline-block;margin-top:22px;font:italic 900 44px/1 AI;letter-spacing:.42em;padding-left:.42em;color:#f59332;opacity:0}
+#endl{position:absolute;left:0;right:0;top:830px;text-align:center;font:800 40px/1 BS;letter-spacing:.3em;padding-left:.3em;color:#e7e2d8;opacity:0}
+#dom.fin{top:920px}
 #dom{position:absolute;left:0;right:0;top:860px;text-align:center;font:800 30px BS;letter-spacing:.34em;color:#cfc9bd;opacity:0}
 #ball{position:absolute;width:80px;height:80px;left:0;top:-200px;z-index:5}
 #flash{background:#fff;opacity:0}
@@ -53,12 +64,12 @@
 </style></head><body>
 <div class=L id=photos></div>
 <div class=L id=team></div><div class=L id=vg></div><div class=L id=dim></div><div class="L led" id=led></div>
-<div id=big><div id=b1>Player</div><div id=b2>of the</div><div id=b3 class=g>Game</div></div>
+<div id=big><p id=pw hidden><span id=plate><i></i><span id=pt></span><i></i></span></p><div id=b1>Player</div><div id=b2>of the</div><div id=b3 class=g>Game</div></div>
 <div class=logo id=logo>WKND<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></svg></div>
 <div class=blk id=blk><div class=hd><div class=av id=av></div><div style="min-width:0"><div class=k id=kk>PLAYER OF THE GAME</div><div class=nm id=nm><span id=n1></span> <span id=n2></span></div><div class=tm id=tm></div></div></div>
 <div class=row id=row><div class=digs id=digs></div><div class=lab id=lab><div class=u id=units></div><div id=chipw></div></div></div></div>
 <div id=lk><div id=wm><span>W</span><span>K</span><span>N</span><span>D</span><span id=slot></span></div><br><div id=sub>BASKETBALL</div></div>
-<div id=dom>WKNDBASKETBALL.COM</div>
+<div id=endl></div><div id=dom>WKNDBASKETBALL.COM</div>
 <svg id=ball viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#f59332"/><g fill="none" stroke="#0a0e16" stroke-width="6" stroke-linecap="round"><path d="M50 3V97M3 50H97M17 13Q41 50 17 87M83 13Q59 50 83 87"/></g></svg>
 <div class=L id=grain></div><div class=L id=flash></div>
 <script src="../../../public/potg-frame.js"></script>
@@ -92,7 +103,10 @@ function digitsHtml(stats){
 function build(data){
   D=data;
   const co=!!D.co;
-  $('kk').textContent=co?'CO-PLAYER OF THE GAME':'PLAYER OF THE GAME';
+  const kick=co?'CO-PLAYER OF THE GAME':'PLAYER OF THE GAME';
+  const F=D.finals||null;
+  $('kk').innerHTML=F?`${esc(F.kicker)} <span class=sep>·</span> ${kick}`:kick;
+  if(F){$('big').classList.add('fin');$('pw').hidden=false;$('pt').textContent=F.plate;$('endl').textContent=F.end;$('dom').classList.add('fin');}
   if(co){$('big').classList.add('co');$('b1').textContent='Co-Player';}
   $('n1').textContent=D.first; $('n2').textContent=D.last; $('n2').style.color=D.lastColor||'#ffb21a';
   $('tm').innerHTML=D.teamLine;
@@ -100,7 +114,8 @@ function build(data){
   if(D.avatar) av.style.backgroundImage=`url("${D.avatar}")`; else {av.textContent=D.initials||'';av.style.background=`linear-gradient(180deg,${D.ring||'#555'},#0d0f14)`;}
   $('digs').innerHTML=digitsHtml(D.stats);
   $('units').textContent=D.stats.map(s=>s.l).join(' / ');
-  $('chipw').innerHTML=D.chip?`<div class=chip>${esc(D.chip)}</div>`:'';
+  const chips=(D.chip?`<span class=chip>${esc(D.chip)}</span>`:'')+(F&&F.series?`<span class="chip w">${esc(F.series)}</span>`:'');
+  $('chipw').innerHTML=chips?`<div class=chips>${chips}</div>`:'';
   $('team').style.background=`linear-gradient(115deg,transparent 30%,${D.ringA||'rgba(139,149,167,.55)'} 30%,${D.ringA||'rgba(139,149,167,.55)'} 46%,transparent 46%)`;
   // shrink the name / numbers row if they would run past the frame
   const maxW=FW-60-60-144;
@@ -121,6 +136,7 @@ function build(data){
     // k: which sound (assets/media/potg/sfx): big = deep hit with sub + hall, b = ball bounce, soft = light bounce
     window.SFX=[
       {t:0.524,g:0.9,k:'big'},{t:0.833,g:0.55,k:'b'},{t:1.0,g:0.35,k:'soft'},   // ball into the period
+      ...(D.finals?[{t:O+0.06,g:0.6,k:'big'}]:[]),                            // Finals plate
       {t:O+0.25,g:0.75,k:'big'},{t:O+0.42,g:0.75,k:'big'},{t:O+0.6,g:1.0,k:'big'}, // title slams
       ...nums.map((t,i)=>({t,g:0.6-i*0.05,k:'b'})),                           // numbers land
       {t:FL,g:0.8,k:'big'},                                                     // white hit into the photos
@@ -182,6 +198,7 @@ window.setT=t=>{
   }
   // ---- PLAYER OF THE GAME ----
   const q=t-O;
+  if(D.finals) slam($('plate'),q,0.06,0.2);
   slam($('b1'),q,0.25);slam($('b2'),q,0.42);slam($('b3'),q,0.6,0.26);
   const bo=W(q,1.35,0.35); $('big').style.opacity=q<0?0:1-bo; $('big').style.transform=`translateY(${bo*360}px) scale(${1-0.7*bo})`;
   const sw=C((q-1.45)/0.45); $('team').style.transform=`translateX(${-1100+2200*E(sw)}px)`; $('team').style.opacity=sw>0&&sw<1?1:0;
@@ -210,10 +227,10 @@ window.setT=t=>{
     const k=C((o-hitT)/0.6); $('blk').style.transform=`translate(${-300*EI(k)}px,${-40*k+700*EI(k)*k}px) rotate(${-18*E(k)}deg)`; $('blk').style.opacity=1-C((o-hitT-0.25)/0.35);
     const lo=W(o,1.7,0.5); $('dim').style.opacity=0.55+0.33*lo;
     IMGS.forEach(im=>{if(im.style.opacity=='1')im.style.filter=`blur(${10*W(o,0,0.6)}px) saturate(.7)`;});
-    $('dom').style.opacity=W(o,2.1,0.6); $('led').style.webkitMaskImage='none';
+    $('dom').style.opacity=W(o,2.1,0.6); $('endl').style.opacity=W(o,1.75,0.5); $('led').style.webkitMaskImage='none';
   } else {
     $('blk').style.transform='none'; $('blk').style.opacity=1;
-    $('dim').style.opacity=t<O+1.6?0.35*(1-W(t,O+1.55,0.5)):0; $('dom').style.opacity=0;
+    $('dim').style.opacity=t<O+1.6?0.35*(1-W(t,O+1.55,0.5)):0; $('dom').style.opacity=0; $('endl').style.opacity=0;
     $('led').style.webkitMaskImage='';
   }
   $('flash').style.opacity=flash;

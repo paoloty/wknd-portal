@@ -3107,6 +3107,7 @@ select.aui-input { padding-left: 9px; }
 /* ── POTG video editor (views/admin/potg-video.js, public/admin-potg-video.js) ── */
 .pv-player { display: flex; flex-direction: column; gap: 12px; }
 .pv-meta { display: flex; gap: 14px; flex-wrap: wrap; }
+.pv-finals .aui-toggle-row { padding: 0; border: 0; }
 .pv-num { width: 90px; }
 .pv-chipfield { flex: 1; min-width: 200px; }
 .pv-label { margin-top: 4px; }

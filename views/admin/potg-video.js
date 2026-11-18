@@ -5,13 +5,13 @@
 // list (/admin/media). Browser side: public/admin-potg-video.js. Video look:
 // assets/media/potg/template.html.
 import { escHtml } from '../layout.js';
-import { breadcrumb, section, button, emptyState, banner } from './ui.js';
+import { breadcrumb, section, button, emptyState, banner, toggleRow } from './ui.js';
 
 const attr = s => escHtml(String(s ?? ''));
 
 const SLOT_HINTS = ['Hero shot', 'Signature play', 'Wide, in the game', 'Tight: face / intensity', 'Another action angle', 'Emotion to close'];
 
-function playerPanel(p, { cats, photoCount, co }) {
+function playerPanel(p, { cats, photoCount, co, finals }) {
   const statBoxes = cats.map(c => {
     const v = p.line[c.key];
     const on = p.suggestedStats.includes(c.key);
@@ -57,6 +57,8 @@ function playerPanel(p, { cats, photoCount, co }) {
         <label class="aui-field pv-chipfield"><span class="aui-field__label">Chip <span class="aui-muted">(optional)</span></span>
           <input class="aui-input" maxlength="32" value="${attr(p.suggestedChip)}" placeholder="e.g. DOUBLE-DOUBLE" data-pv-chip></label>
       </div>
+      ${finals ? `<div class="pv-finals">${toggleRow({ label: 'Finals version', name: `pv-finals-${p.playerId}`, on: true,
+        help: `Plate “${finals.plate}”, “${finals.kicker}” over the name${finals.series ? `, a “${finals.series}” chip` : ''} and “${finals.end}” on the end card. Off makes the usual video.` })}</div>` : ''}
       <div class="aui-field__label pv-label">Big numbers <span class="aui-muted">· pick up to 3</span></div>
       <div class="pv-stats">${statBoxes}</div>
       <div class="aui-field__label pv-label">Photos <span class="aui-muted">· exactly ${photoCount}, in order. Drag to move, scroll or pinch to zoom. Keep him clear of the stats area.</span></div>
@@ -81,7 +83,7 @@ export function adminPotgVideoBody({ game, ctx, cats, photoCount, prefill = null
         <label><input type="radio" name="pv-which" value="all" checked data-pv-which> Both</label>
         ${ctx.players.map(p => `<label><input type="radio" name="pv-which" value="${attr(p.playerId)}" data-pv-which> ${escHtml(p.first)} ${escHtml(p.last)} only</label>`).join('')}
       </div></div>` : ''}
-    ${shown.map(p => playerPanel(p, { cats, photoCount, co: ctx.co })).join('')}
+    ${shown.map(p => playerPanel(p, { cats, photoCount, co: ctx.co, finals: ctx.finals })).join('')}
     ${json}
     <div class="pv-savebar">
       <span class="aui-muted" data-pv-status>Add ${photoCount} photos${shown.length > 1 ? ' for each player' : ''} to render.</span>
