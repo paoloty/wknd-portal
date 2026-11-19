@@ -7,7 +7,7 @@ import { escHtml } from './layout.js';
 import { avatarStack, shareIcon, playerPhotoUrl, initials, displayPlayerName } from './utils.js';
 import { gameCard, gameCardScript } from './games.js';
 import { sectionNavScript } from './section-nav.js';
-import { courtInfoTags, courtLinks, courtHoursLabel, courtPhone, parseJson, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, RATING_MIN_FOR_SCORE } from '../lib/court-page.js';
+import { courtInfoTags, courtLinks, courtHoursLabel, courtPhone, courtRateFrom, parseJson, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, RATING_MIN_FOR_SCORE } from '../lib/court-page.js';
 
 const MESSENGER_URL = 'https://m.me/wkndbasketball';
 // The claim button opens Messenger with the first line already typed, so we know which page.
@@ -89,10 +89,35 @@ function head(p, court, x, isAdmin) {
       ${x.flags.partner && !court.partner ? `<p class="crt-ident crt-claim">Is this your venue? <a href="/courts/${encodeURIComponent(court.slug)}/partner" data-cta="court-partner">Claim this page, free</a></p>` : ''}
       ${commute ? `<p class="crt-line">${ICON.pin}<span>${escHtml(commute)}</span></p>` : ''}
       ${r ? `<div class="crt-rateline">${stars(r.avg)}<b>${r.avg.toFixed(1)}</b><span>${plural(r.n, 'player rating')}</span><a href="#crt-say">What players say</a></div>` : ''}
+      ${factsBox(p, court)}
       ${chips.length ? `<dl class="crt-chips crt-chips--${chips.length}">${chips.map(([l, val, sub]) => `<div class="crt-chip"><dt>${escHtml(l)}</dt><dd><b class="crt-num">${escHtml(val)}</b><span>${escHtml(sub)}</span></dd></div>`).join('')}</dl>` : ''}
     </header>
     ${weekNote ? `<section class="crt-about crt-week" id="crt-week" aria-labelledby="crt-week-h">${sh(`Lately at ${p.name}`, { id: 'crt-week-h' })}<div class="crt-about__text"><p>${escHtml(weekNote)}</p><p class="crt-week__date">Updated <time datetime="${new Date(weekAt).toISOString()}">${escHtml(new Date(weekAt + 8 * 3600e3).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }))}</time></p></div></section>` : ''}
     ${paras.length ? `<section class="crt-about" id="crt-about" aria-labelledby="crt-about-h">${sh('About this court', { id: 'crt-about-h' })}<div class="crt-about__text">${paras.map(t => `<p>${escHtml(t)}</p>`).join('')}</div></section>` : ''}`;
+}
+
+// Phones only (SEO plan, 2026-11-20): what a court search wants first, rate, hours, phone and
+// a way to book, right under the name. On phones Getting there drops below the long sections;
+// on desktop it's already in the sidebar, so this stays hidden there (public/courts.css).
+// The book button goes to the venue (UTM-tagged) so WKND shows in their visitor stats.
+function factsBox(p, court) {
+  const info = p.info || {};
+  const rate = courtRateFrom(info);
+  const hours = courtHoursLabel(info);
+  const phone = courtPhone(info);
+  const links = courtLinks(info);
+  const book = links.find(l => l.key === 'booking') || links.find(l => l.key === 'website');
+  const cells = [
+    rate && ['Court rental', `From ${rate}`, p.checked ? `checked ${p.checked}` : 'per hour, as posted'],
+    hours && ['Open', hours, 'every day'],
+    phone && ['Phone', `<a href="tel:${escHtml(phone.replace(/[^\d+]/g, ''))}" data-cta="court-call">${escHtml(phone)}</a>`, 'call the venue', true],
+  ].filter(Boolean);
+  if (!cells.length && !book) return '';
+  const who = info.operator || p.name;
+  return `<div class="crt-facts" aria-label="Court rental, hours and contact">
+      ${cells.length ? `<dl class="crt-facts__grid crt-facts__grid--${cells.length}">${cells.map(([l, v, s, raw]) => `<div><dt>${escHtml(l)}</dt><dd><b>${raw ? v : escHtml(v)}</b><span>${escHtml(s)}</span></dd></div>`).join('')}</dl>` : ''}
+      <div class="crt-facts__btns">${book ? `<a class="crt-btn crt-btn--ghost crt-btn--sm" href="${escHtml(venueUrl(book.url))}" target="_blank" rel="noopener" data-cta="court-book-top">${escHtml(`Book with ${who}`)} ${ICON.out}</a>` : ''}<a class="crt-btn crt-btn--ghost crt-btn--sm" href="#crt-there" data-cta="court-there-top">${ICON.pin}Directions</a></div>
+    </div>`;
 }
 
 function runPanel(p, court, x) {
@@ -350,7 +375,7 @@ function there(p, court, x) {
       <div class="crt-there__info">
         ${court.address ? `<div class="crt-note"><b>Address</b><p>${escHtml(court.address)}</p></div>` : ''}
         ${notes.map(([k, v]) => `<div class="crt-note"><b>${escHtml(k)}</b><p>${escHtml(v)}</p></div>`).join('')}
-        ${links.length ? `<div class="crt-note"><b>Official links</b><div class="crt-vlinks">${links.map(l => `<a class="crt-vlink" href="${escHtml(l.key === 'website' ? venueUrl(l.url) : l.url)}"target="_blank" rel="noopener" data-cta="court-venue-link">${VENUE_ICON[l.key] || ''}${escHtml(l.key === 'website' ? 'Website' : l.key === 'booking' ? 'Book a court' : l.label)}</a>`).join('')}</div></div>` : ''}
+        ${links.length ? `<div class="crt-note"><b>Official links</b><div class="crt-vlinks">${links.map(l => `<a class="crt-vlink" href="${escHtml(l.key === 'website' || l.key === 'booking' ? venueUrl(l.url) : l.url)}" target="_blank" rel="noopener" data-cta="court-venue-link">${VENUE_ICON[l.key] || ''}${escHtml(l.key === 'website' ? 'Website' : l.key === 'booking' ? 'Book a court' : l.label)}</a>`).join('')}</div></div>` : ''}
         ${tags.length ? `<ul class="crt-ticks" aria-label="Court features">${tags.map(t => `<li>${ICON.tick}${escHtml(t)}</li>`).join('')}</ul>` : ''}
       </div>
     </div></section>`;

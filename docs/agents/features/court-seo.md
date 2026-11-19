@@ -12,6 +12,7 @@ Live site only, from 7am Manila, once a day. Kill switch and settings: Admin →
 |---|---|
 | Daily | Pull Search Console rows into `seo_daily`. Check each tracked page as a crawler would: status, title, canonical, noindex, JSON-LD (`seo_checks`). Send the report email. |
 | Monday | Google URL Inspection for each tracked page. Write a "Lately at <court>" note on courts with games or runs in the last 7 days: fact-checked, stored in `papawis_courts.weekly_note`, never in `writeup`. The email gets 28-day totals, new searches and near wins. |
+| Monday (facts) | Venue fact watcher (`lib/court-facts-watch.js`, no AI): reads each live court's own website and booking link, never a directory. A rate on the page that matches ours moves `info.checked` to today by itself. A different rate, or a phone where we have none, waits in Admin → SEO report → Venue facts (Apply / Dismiss) with a "Needs a look" line in every daily email until handled. |
 | 1st of month | Check the venue links. Make 3 title and description suggestions per main page. These are suggestions only; a person applies them. |
 
 Every run is a row in `seo_runs` and a line in `/admin/logs`. Every change to what Google reads on a court page (admin save, city intro, weekly note) is a row in `seo_changes`.
@@ -76,6 +77,13 @@ Courtslots (courtslots.ph, a Shopify directory of Metro Manila courts since 2023
 - Sitemap lists each court's photos (`image:image`); the court JSON-LD sends up to 5 images.
 
 Still human: links from Activate's site/Facebook and WKND's own posts to the court page are what beat a 3-year-old directory.
+
+## SEO plan 2026-11-20 (two Fable audits)
+
+- No big Metro Manila directory: effort for little gain at our traffic. No owner outreach (Paolo's call): owners should find WKND first.
+- Built: facts box on phones under the court name (rate, hours, phone, Book with <venue> + Directions; desktop has them in the sidebar), UTM on the booking link too, the venue fact watcher above.
+- Next: social captions with court links and venue tags; after-run nudge (WKND rating first, then Google review: ask everyone, no rewards, no suggested wording); a rates page from what WKND paid per run (papawis_games.court_rate_per_hour); one-time listings; one press pitch.
+- Fable strategy review quarterly, the first in February 2027 (not built yet). Measure then: four venue-name positions, court-page clicks vs 62/4 weeks (Oct 17-Nov 14), venue-link taps, referring domains, WKND ratings per court (5+), owner contact, city-search impressions.
 
 ## Setup Paolo does once
 

@@ -8,7 +8,7 @@ const attr = s => escHtml(String(s ?? ''));
 const fmtDay = ymd => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '—');
 const TONE = { reached: 'green', ontrack: 'green', behind: 'amber', waiting: 'gray' };
 
-export function adminSeoReportBody({ report, settings, gscReady, cities, runs, changes, trendByQuery = {}, running = false }) {
+export function adminSeoReportBody({ report, settings, gscReady, cities, runs, changes, trendByQuery = {}, running = false, facts = [], factsRun = null }) {
   const r = report;
   const head = pageHeader({
     eyebrow: 'Search results',
@@ -78,8 +78,18 @@ export function adminSeoReportBody({ report, settings, gscReady, cities, runs, c
     <div class="aseo-actions">${button('Save', { kind: 'primary', size: 'sm', type: 'submit' })}</div>
   </form>`;
 
+  // Venue facts (fact watcher, Mondays): what the venues' own pages say that differs from ours.
+  const peso = n => `₱${Number(n).toLocaleString('en-US')}`;
+  const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+  const factRows = facts.map(c => `<li><b>${escHtml(c.court)}</b> · ${c.field === 'rate' ? `rental ${c.before ? `${escHtml(peso(c.before))} → ` : ''}<b>${escHtml(peso(c.after))}</b>${c.big ? ' <span class="aseo-miss">big change, double-check</span>' : ''}` : `phone <b>${escHtml(c.after)}</b>`}
+      <br><span class="aui-muted">“${escHtml(c.quote || '')}” on <a href="${attr(c.source)}" target="_blank" rel="noopener">${escHtml(host(c.source))}</a> · found ${escHtml(ago(c.at) === 'now' ? 'just now' : `${ago(c.at)} ago`)}</span>
+      <div class="aseo-actions">${button('Apply', { kind: 'primary', size: 'sm', attrs: `data-post-json="/admin/seo/facts/apply" data-body='${attr(JSON.stringify({ id: c.id }))}' data-done="Applied."` })}${button('Dismiss', { kind: 'secondary', size: 'sm', attrs: `data-post-json="/admin/seo/facts/dismiss" data-body='${attr(JSON.stringify({ id: c.id }))}' data-done="Dismissed."` })}</div></li>`).join('');
+  const factsBody = `<div class="aui-panel">${facts.length ? `<ul class="aseo-list">${factRows}</ul>` : `<p class="aui-muted aseo-ok">Nothing to review.</p>`}
+    <p class="aui-muted">${escHtml(factsRun ? `Last check ${ago(factsRun.at) === 'now' ? 'just now' : `${ago(factsRun.at)} ago`}: ${factsRun.summary}` : 'Runs every Monday: reads each court’s own website and booking page. A matching rate moves the “checked” date by itself; anything different waits here.')}</p></div>`;
+
   return `${head}${setup}
     ${section({ title: 'Needs a look', bodyHtml: alerts })}
+    ${section({ title: 'Venue facts', id: 'facts', note: 'From the venues’ own pages. Nothing changes on the site until you apply it.', bodyHtml: factsBody })}
     ${section({ title: 'Target searches', note: 'The goals and dates from the plan. “Seen” is how often Google showed us for that search.', bodyHtml: targets })}
     ${section({ title: 'Tracked pages', bodyHtml: pages })}
     ${section({ title: 'Close to page 1', note: 'Positions 8–20 over 28 days, with the page that ranks and the search words its title and description lack.', bodyHtml: nearWins })}

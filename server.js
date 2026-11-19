@@ -243,7 +243,8 @@ import { adminGameDetailBody, perOf } from './views/admin/game.js';
 import { adminRetrackCompareBody } from './views/admin/retrack-compare.js';
 import { buildBoxScoreData } from './views/game.js';
 import { setGameType, setGamesCourt, setGamesTipTime } from './lib/portal-db.js';
-import { PRICE_ALERT_DAYS, PRICE_DROP_DAYS, courtHoursLabel, buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin, COURT_IDENTITY_FIELDS, courtOpeningHoursSpec, courtPhone, linkCourtMentions } from './lib/court-page.js';
+import { PRICE_ALERT_DAYS, PRICE_DROP_DAYS, courtHoursLabel, buildCourtPage, courtCity, courtDisplayName, parseJson as parseCourtJson, normalizeCourtInfo, COURT_TYPES, COURT_FLOORS, COURT_FEATURES, COURT_TEXT_FIELDS, COURT_LINK_FIELDS, courtLinks, COURT_CITIES, summarizeRatings, RATING_ASPECTS, RATING_TAGS_GOOD, RATING_TAGS_BAD, courtExtraFacts, parseMapPin, COURT_IDENTITY_FIELDS, courtOpeningHoursSpec, courtPhone, courtRateFrom, linkCourtMentions } from './lib/court-page.js';
+import { readVenueFacts, compareVenueFacts, phoneDigits } from './lib/court-facts-watch.js';
 import { courtPage, courtsIndexPage, courtPartnerPage, courtFaqItems, courtCityPage, venueUrl, CITY_PAGES, cityPageSlug, CITY_RATE_TABLE_MIN } from './views/court.js';
 import { askToRateCourt, courtRatingsOn } from './lib/court-rate-ask.js';
 import { gameRatingsOn, resolveRateGame, askToRateGame, verifyRateToken, verifyRatingUnsubscribe, RATE_KINDS } from './lib/game-rate-ask.js';
@@ -31267,6 +31268,57 @@ function seoCheckPrices() {
   addSeoRun({ kind: 'prices', ok: !alerts.length, summary: alerts.length ? `${alerts.length} court rate line(s) need a look.` : 'Every court rate was checked in the last 75 days.', data: { alerts } });
 }
 
+// Venue fact watcher (Mondays; lib/court-facts-watch.js): reads each court's own website and
+// booking page, moves "checked" to today when the rate on the page matches ours, and keeps any
+// difference as a pending change for Admin → SEO report → Venue facts (one tap to apply).
+const FACTS_PENDING_KEY = 'seo_fact_pending';
+const factsPending = () => { try { const v = JSON.parse(getSetting(FACTS_PENDING_KEY, '[]')); return Array.isArray(v) ? v : []; } catch { return []; } };
+const saveFactsPending = list => setSetting(FACTS_PENDING_KEY, JSON.stringify(list.slice(0, 50)));
+async function seoWatchFacts(today) {
+  const pending = factsPending();
+  const lines = [];
+  let checked = 0;
+  for (const { court, p } of liveCourts()) {
+    const info = normalizeCourtInfo(parseCourtJson(court.info_json, {}));
+    const sources = courtLinks(info).filter(l => l.key === 'website' || l.key === 'booking');
+    if (!sources.length) continue;
+    const names = [p.name, court.name, ...String(info.alt_names || '').split(',')].map(s => String(s || '').trim()).filter(Boolean);
+    const reads = [];
+    for (const l of sources) {
+      try {
+        const res = await fetch(l.url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WKND-fact-check)' }, redirect: 'follow', signal: AbortSignal.timeout(20000) });
+        reads.push(res.ok ? { source: l.url, ok: true, ...readVenueFacts(await res.text(), { names }) } : { source: l.url, ok: false });
+      } catch { reads.push({ source: l.url, ok: false }); }
+    }
+    checked++;
+    const ourRate = Number(String(courtRateFrom(info)).replace(/\D/g, '')) || null;
+    const { confirmRate, changes } = compareVenueFacts({ rate: ourRate, phone: phoneDigits(courtPhone(info)) }, reads);
+    // Fresh findings replace this court's old pending ones.
+    for (let i = pending.length - 1; i >= 0; i--) if (pending[i].courtId === court.id) pending.splice(i, 1);
+    if (confirmRate && info.checked !== today) {
+      const before = info.checked || '';
+      updatePapawisCourtPage(court.id, { info_json: JSON.stringify({ ...parseCourtJson(court.info_json, {}), checked: today }) });
+      addSeoChange({ page: `/courts/${court.slug}`, field: 'checked', before, after: today, by: 'Fact watcher' });
+      liveCourtsCache = null;
+    }
+    for (const c of changes) pending.push({ id: `${court.id}:${c.field}`, courtId: court.id, court: p.name, ...c, at: Date.now() });
+    const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+    lines.push(`${p.name}: ${confirmRate ? `rate ₱${ourRate.toLocaleString('en-US')} confirmed on ${reads.filter(r => r.rate === ourRate).map(r => host(r.source)).join(', ')}` : changes.length ? `${changes.length} change(s) to review` : reads.some(r => r.ok) ? 'no rate on the venue pages' : 'venue pages did not load'}`);
+  }
+  saveFactsPending(pending);
+  addSeoRun({ kind: 'facts', summary: checked ? `Checked ${checked} venue${checked === 1 ? '' : 's'}. ${lines.join('; ')}.` : 'No live court has a venue website or booking link on file.' });
+}
+// Every day while changes wait: one line each in the email's "Needs a look".
+function seoFactsPendingAlerts() {
+  const list = factsPending();
+  const href = `${SITE_ORIGIN}/admin/seo/report#facts`;
+  const peso = n => `₱${Number(n).toLocaleString('en-US')}`;
+  addSeoRun({ kind: 'facts-pending', ok: !list.length, summary: list.length ? `${list.length} venue fact change(s) to review.` : 'No venue fact changes waiting.',
+    data: { alerts: list.map(c => ({ href, text: c.field === 'rate'
+      ? `${c.court}: the venue's page shows ${peso(c.after)}${c.before ? `, we show ${peso(c.before)}` : ''}.${c.big ? ' Big change, double-check.' : ''} Review in Venue facts.`
+      : `${c.court}: the venue's page lists the phone ${c.after}; we have none. Review in Venue facts.` })) } });
+}
+
 // Claude first for writing but silent for a day (key expired, no credit, outage): test it once
 // and put a line in the email. Writing keeps going to the next provider meanwhile.
 async function seoCheckAi() {
@@ -31512,6 +31564,8 @@ async function runSeoJobs({ force = false, monthly: withMonthly = false } = {}) 
     await seoStep('prices', seoCheckPrices);
     await seoStep('ai', seoCheckAi);
     let weeklyNotes = [], suggestions = [], outreach = '';
+    if (weekly) await seoStep('facts', () => seoWatchFacts(today));
+    await seoStep('facts-pending', seoFactsPendingAlerts);
     if (weekly) { await seoStep('inspect', seoInspectPages); weeklyNotes = (await seoStep('notes', () => seoWriteWeeklyNotes(today))) || []; }
     if (monthly) {
       await seoStep('links', seoCheckVenueLinks);
@@ -31544,6 +31598,7 @@ app.get('/admin/seo/report', requireAuth, (req, res) => {
     currentPath: '/admin/seo/report',
     body: adminSeoReportBody({
       report, gscReady: gscConfigured(), cities, trendByQuery, running: seoJobsRunning,
+      facts: factsPending(), factsRun: seoLatestRun('facts'),
       runs: getSeoRuns({ limit: 40 }), changes: getSeoChanges({ limit: 100 }),
       settings: { enabled: getSetting('seo_jobs_enabled', '1') === '1', daily: getSetting('seo_email_daily', '1') === '1', notes: getSetting('seo_weekly_notes', '1') === '1', email: getSetting('seo_report_email', ''), defaultEmail: ADMIN_NOTIFY_EMAIL },
     }),
@@ -31565,6 +31620,30 @@ app.post('/admin/seo/report/settings', requireAuth, express.json(), (req, res) =
     setSetting(k, v);
   }
   res.json({ ok: true });
+});
+// Venue facts: apply or dismiss a change the fact watcher found.
+app.post('/admin/seo/facts/:act', requireAuth, express.json(), (req, res) => {
+  const list = factsPending();
+  const i = list.findIndex(c => c.id === String(req.body?.id || ''));
+  if (i === -1) return res.status(404).json({ error: 'That change is gone. Refresh the page.' });
+  const c = list[i];
+  if (req.params.act === 'apply') {
+    const court = getPapawisCourtById(c.courtId);
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    const info = parseCourtJson(court.info_json, {});
+    const today = manilaTodayStr();
+    const host = (() => { try { return new URL(c.source).hostname.replace(/^www\./, ''); } catch { return 'the venue'; } })();
+    const next = { ...info, checked: today };
+    if (c.field === 'rate') next.rate = `From ₱${Number(c.after).toLocaleString('en-US')} (per ${host})`;
+    else if (c.field === 'phone') next.phone = String(c.after).slice(0, 40);
+    else return res.status(400).json({ error: 'Unknown change.' });
+    addSeoChange({ page: `/courts/${court.slug}`, field: c.field, before: c.field === 'rate' ? info.rate || '' : info.phone || '', after: next[c.field], by: `${req.session?.isElevatedPlayer ? (req.session.playerName || 'admin') : 'Super admin'} (fact watcher)` });
+    updatePapawisCourtPage(court.id, { info_json: JSON.stringify(next) });
+    liveCourtsCache = null;
+  } else if (req.params.act !== 'dismiss') return res.status(404).json({ error: 'Not found.' });
+  list.splice(i, 1);
+  saveFactsPending(list);
+  res.json({ ok: true, message: req.params.act === 'apply' ? 'Applied.' : 'Dismissed.' });
 });
 app.post('/admin/seo/report/send', requireAuth, express.json(), async (req, res) => {
   try { await sendSeoReport(manilaTodayStr(), { weekly: true }); res.json({ ok: true }); }
