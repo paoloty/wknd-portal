@@ -5,7 +5,9 @@
 (function () {
   var KEY = 'wknd-chat-hidden';
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
-  var item = function (c) { return '<div class="lc__m is-new" data-id="' + esc(c.id) + '"><span class="lc__av" style="--c:' + esc(c.color || '#5b6475') + '">' + esc(c.initials || '?') + '</span><span class="lc__b"><b' + ((c.playerId || c.player_id) ? ' data-pid="' + esc(c.playerId || c.player_id) + '"' : '') + '>' + esc(c.displayName) + '</b> ' + esc(c.body) + '</span></div>'; };
+  // The score when it was posted (views/live-chat.js chatStamp): shown once the board has moved on.
+  var stamp = function (m, now) { if (!m) return ''; var sc = m.a + '–' + m.b; return '<span class="lc__st" data-sc="' + esc(sc) + '"' + (sc === now ? ' hidden' : '') + '>' + esc(sc) + '</span>'; };
+  var item = function (c, now) { return '<div class="lc__m is-new" data-id="' + esc(c.id) + '"><span class="lc__av" style="--c:' + esc(c.color || '#5b6475') + '">' + esc(c.initials || '?') + '</span><span class="lc__b"><b' + ((c.playerId || c.player_id) ? ' data-pid="' + esc(c.playerId || c.player_id) + '"' : '') + '>' + esc(c.displayName) + '</b>' + stamp(c.moment, now) + ' ' + esc(c.body) + '</span></div>'; };
   var hiddenPref = function () { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } };
 
   function mount(el) {
@@ -13,7 +15,9 @@
     el._lc = true;
     var list = el.querySelector('[data-lc-list]'), form = el.querySelector('[data-lc-form]'), tip = el.querySelector('[data-lc-tip]');
     var show = el.querySelector('[data-lc-show]'), badge = el.querySelector('[data-lc-new]');
-    var unread = 0, ws = null, tipT = null;
+    var unread = 0, ws = null, tipT = null, now = el.getAttribute('data-lc-now') || '';
+    // A new message carries the score now: older messages at another score show theirs.
+    var restamp = function () { var st = list.querySelectorAll('[data-sc]'); for (var i = 0; i < st.length; i++) st[i].hidden = st[i].getAttribute('data-sc') === now; };
     var scrollEnd = function () { list.scrollTop = list.scrollHeight; };
     var say = function (t) { tip.textContent = t; tip.hidden = false; clearTimeout(tipT); tipT = setTimeout(function () { tip.hidden = true; }, 3500); };
     var setHidden = function (h) {
@@ -54,7 +58,8 @@
       ws.onmessage = function (m) {
         var d; try { d = JSON.parse(m.data); } catch (e) { return; }
         if (d.type === 'comment:new' && d.comment && !list.querySelector('[data-id="' + d.comment.id + '"]')) {
-          list.insertAdjacentHTML('beforeend', item(d.comment));
+          if (d.comment.moment) { now = d.comment.moment.a + '–' + d.comment.moment.b; restamp(); }
+          list.insertAdjacentHTML('beforeend', item(d.comment, now));
           while (list.children.length > 60) list.removeChild(list.firstElementChild);
           if (el.classList.contains('is-hidden')) { unread++; badge.textContent = unread > 9 ? '9+' : String(unread); badge.hidden = false; }
           scrollEnd();

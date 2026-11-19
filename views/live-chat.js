@@ -10,16 +10,23 @@ const FLAME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 const BUBBLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
 const SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>';
 
-// One message: the same markup public/live-chat.js builds for new ones.
-export const chatItem = c => `<div class="lc__m" data-id="${esc(c.id)}"><span class="lc__av" style="--c:${esc(c.color || '#5b6475')}">${esc(c.initials || '?')}</span><span class="lc__b"><b${c.playerId || c.player_id ? ` data-pid="${esc(c.playerId || c.player_id)}"` : ''}>${esc(c.displayName)}</b> ${esc(c.body)}</span></div>`;
+// The score when a comment was posted (server.js commentMoments; Paolo 2026-11-17, option A of
+// claude.ai/artifact/NPFCLoKXidAAQMNY8GS4rh): a chip on the comment's name line, team A's dot
+// and score first. Site game page + app comments.
+export const scoreStamp = m => !m ? '' : `<span class="cm-score" title="Score when posted"><i style="--c:${esc(m.ca)}"></i><b>${esc(m.a)}–${esc(m.b)}</b><i style="--c:${esc(m.cb)}"></i><span>${esc(m.label)}</span></span>`;
+
+// One message: the same markup public/live-chat.js builds for new ones. In the chat the stamp
+// is the score only, and hidden while it still matches the board (now).
+const chatStamp = (m, now) => { if (!m) return ''; const sc = `${m.a}–${m.b}`; return `<span class="lc__st" data-sc="${esc(sc)}"${sc === now ? ' hidden' : ''}>${esc(sc)}</span>`; };
+export const chatItem = (c, now) => `<div class="lc__m" data-id="${esc(c.id)}"><span class="lc__av" style="--c:${esc(c.color || '#5b6475')}">${esc(c.initials || '?')}</span><span class="lc__b"><b${c.playerId || c.player_id ? ` data-pid="${esc(c.playerId || c.player_id)}"` : ''}>${esc(c.displayName)}</b>${chatStamp(c.moment, now)} ${esc(c.body)}</span></div>`;
 
 export function liveChatHtml(chat) {
   if (!chat) return '';
   const id = encodeURIComponent(chat.gameId);
-  return `<div class="lc-spacer" aria-hidden="true"></div><div class="lc" data-live-chat data-post="/games/${id}/comments" data-fire="/games/${id}/react" data-ws="/ws/games/${id}/comments" data-login="${esc(chat.login)}">
+  return `<div class="lc-spacer" aria-hidden="true"></div><div class="lc" data-live-chat data-post="/games/${id}/comments" data-fire="/games/${id}/react" data-ws="/ws/games/${id}/comments" data-login="${esc(chat.login)}" data-lc-now="${esc(chat.now || '')}">
     <div class="lc__head"><b>Chat</b><span class="lc__watch" data-lc-watch${chat.watching > 1 ? '' : ' hidden'}><i></i><span data-lc-watch-n>${chat.watching}</span> watching</span><span class="lc__sp"></span><button type="button" class="lc__btn" data-lc-hide aria-label="Hide chat">${EYE_OFF}</button></div>
     <span class="lc__watch lc__watch--float" data-lc-watch${chat.watching > 1 ? '' : ' hidden'}><i></i><span data-lc-watch-n>${chat.watching}</span> watching</span>
-    <div class="lc__list" data-lc-list role="log" aria-live="polite" aria-label="Chat">${chat.items.map(chatItem).join('')}</div>
+    <div class="lc__list" data-lc-list role="log" aria-live="polite" aria-label="Chat">${chat.items.map(c => chatItem(c, chat.now)).join('')}</div>
     <div class="lc__side"><button type="button" class="lc__btn" data-lc-hide aria-label="Hide chat">${EYE_OFF}</button><button type="button" class="lc__btn lc__btn--fire" data-lc-fire aria-label="Fire">${FLAME}</button></div>
     ${chat.canPost ? `<form class="lc__bar" data-lc-form><input type="text" name="body" maxlength="500" placeholder="Say something…" aria-label="Message" autocomplete="off" enterkeyhint="send"><button type="submit" class="lc__send" aria-label="Send">${SEND}</button></form>`
       : `<a class="lc__bar lc__bar--login" href="${esc(chat.login)}">Sign in to chat</a>`}

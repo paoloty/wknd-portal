@@ -2,7 +2,7 @@ import { escHtml } from './layout.js';
 import { teamColor, displayPlayerName, initials, playerAvatar, avatarStack, playerLink, stripEmptyParagraphs, playerPhotoUrl, shareIcon, gameTipLabel } from './utils.js';
 import { courtDisplayName } from '../lib/court-page.js';
 import { liveExtrasHtml } from './live-extras.js';
-import { liveChatHtml } from './live-chat.js';
+import { liveChatHtml, scoreStamp } from './live-chat.js';
 
 // The game's court, linked to its court page when that page is public (so every game played
 // there points at it).
@@ -1203,6 +1203,7 @@ function gameTabsScript({ gameId, isAdmin = false, mentionablePlayers = [] }) {
         '<div class="game-comment__head">' +
           '<a href="' + playerHref + '" class="game-comment__name">' + escLive(c.displayName) + '</a>' +
           '<span class="game-comment__time">' + fmtLiveTime(c.created_at) + '</span>' +
+          (c.moment ? '<span class="cm-score" title="Score when posted"><i style="--c:' + escLive(c.moment.ca) + '"></i><b>' + escLive(c.moment.a) + '–' + escLive(c.moment.b) + '</b><i style="--c:' + escLive(c.moment.cb) + '"></i><span>' + escLive(c.moment.label) + '</span></span>' : '') +
           (isAdmin ? '<button type="button" class="game-comment__delete" data-delete-id="' + c.id + '" title="Delete comment" aria-label="Delete comment">✕</button>' : '') +
         '</div>' +
         (c.parent_id && c.replyTo ? '<span class="game-comment__replyto">↪ Replying to ' + escLive(c.replyTo) + '</span>' : '') +
@@ -1441,7 +1442,7 @@ function commentRow(c, { reacted, isAdmin, collapsed = false, mentionablePlayers
     <div class="game-comment__body">
       <div class="game-comment__head">
         ${playerLink(c.player_id, c.player_name, { className: 'game-comment__name' })}
-        <span class="game-comment__time">${fmtCommentTime(c.created_at)}</span>${c.during ? '<span class="game-comment__live">During the game</span>' : ''}
+        <span class="game-comment__time">${fmtCommentTime(c.created_at)}</span>${scoreStamp(c.moment)}
         ${isAdmin ? `<button type="button" class="game-comment__delete" data-delete-id="${escHtml(c.id)}" title="Delete comment" aria-label="Delete comment">✕</button>` : ''}
       </div>
       ${c.parent_id && replyTo ? `<span class="game-comment__replyto">↪ Replying to ${escHtml(replyTo)}</span>` : ''}

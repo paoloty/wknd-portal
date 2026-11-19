@@ -4,6 +4,7 @@
 // latest comment. Data and rules: server.js appThreadData / /app/thread/:key. Game threads
 // are the site's own (game_comments), so the site's game page shows the same conversation.
 import { esc, appAvatar, icons } from './layout.js';
+import { scoreStamp } from '../live-chat.js';
 
 const SEND = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6l-.01 6.53L15 12 3.39 13.87z"/></svg>';
 
@@ -21,7 +22,7 @@ function row(c, topId, names, reply = false) {
     ${appAvatar({ playerId: c.playerId, initials: c.initials, ring: c.ring, photoUrl: c.photoUrl })}
     <div class="ct__b">
       <p class="ct__text"><b${c.playerId ? ` data-pid="${esc(c.playerId)}"` : ''}>${esc(c.name)}</b> ${mentions(esc(c.body), names)}</p>
-      <div class="ct__meta"><span>${esc(c.when)}</span>${c.during ? '<span class="ct__live">During the game</span>' : ''}<button type="button" data-ct-reply="${esc(topId)}" data-ct-name="${esc(c.name)}">Reply</button>${c.canDelete ? `<button type="button" data-ct-del="${esc(c.id)}">Delete</button>` : ''}</div>
+      <div class="ct__meta"><span>${esc(c.when)}</span>${scoreStamp(c.moment)}<button type="button" data-ct-reply="${esc(topId)}" data-ct-name="${esc(c.name)}">Reply</button>${c.canDelete ? `<button type="button" data-ct-del="${esc(c.id)}">Delete</button>` : ''}</div>
     </div>
     <button type="button" class="ct__fire${c.fired ? ' is-on' : ''}" data-ct-fire="${esc(c.id)}" aria-pressed="${c.fired ? 'true' : 'false'}" aria-label="Fire">${icons.flame}<span>${c.fire || ''}</span></button>
   </div>`;

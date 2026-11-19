@@ -7128,8 +7128,8 @@ function appThreadData(target, req, open = []) {
   const isAdmin = isAdminWithSection(req, 'games-stats');
   const rows = getGameComments(target.key);
   const fired = getReactedCommentIdsForPlayer(rows.map(c => c.id), playerId);
-  const win = target.kind === 'game' ? liveWindowOf(target.key) : null;
-  const shape = c => ({ ...appPersonOf({ ...c, name: c.player_name }), id: c.id, body: c.body, when: agoShort(c.created_at), during: duringGame(win, c),
+  const moment = commentMoments(target.kind === 'game' ? target.game || getGameById(target.key) : null);
+  const shape = c => ({ ...appPersonOf({ ...c, name: c.player_name }), id: c.id, body: c.body, when: agoShort(c.created_at), moment: moment(c),
     fire: Number(c.reaction_count) || 0, fired: fired.has(c.id), canDelete: c.player_id === playerId || isAdmin });
   const tops = rows.filter(c => !c.parent_id || !rows.some(x => x.id === c.parent_id)).map(c => ({ ...shape(c), replies: [] }));
   const byId = new Map(tops.map(t => [t.id, t]));
@@ -7560,14 +7560,50 @@ function liveWindowOf(gameId) {
   return { start, end };
 }
 const duringGame = (win, c) => !!win && c.created_at >= win.start && c.created_at <= win.end;
+// The score when each comment was posted (Paolo, 2026-11-17, option A of
+// claude.ai/artifact/NPFCLoKXidAAQMNY8GS4rh): the last play entered before it, read off the
+// plays as they stand now (a fixed play keeps the time of the play it fixed), so a correction
+// fixes the stamps too. Only comments during the game get one. Returns c => { a, b, label, ca, cb }
+// or null; label 'Q3 4:12', 'End of Q1', 'Halftime'. .now: the score on the board.
+function commentMoments(game) {
+  const none = Object.assign(() => null, { now: null });
+  const win = game && liveWindowOf(game.id);
+  if (!win) return none;
+  const ev = getScoreEvents(game.id, 'live');
+  const byId = new Map(ev.map(e => [e.id, e]));
+  const firstAt = e => { let x = e; for (let n = 0; x.fixes && byId.has(x.fixes) && n < 50; n++) x = byId.get(x.fixes); return Number(x.at) || 0; };
+  const pName = i => (i <= 4 ? `Q${i}` : `OT${i - 4}`);
+  let cur = 1;
+  const folded = foldScoredGame(ev);
+  const rows = folded.rows.map(r => {
+    const per = r.period || pName(cur);
+    let label;
+    if (r.type === 'period_end') {
+      label = r.final ? 'Final' : per === 'Q2' ? 'Halftime' : `End of ${per}`;
+      if (!r.final) cur = Math.max(cur, r.next ? scorePeriodIndex(r.next) : scorePeriodIndex(per) + 1);
+    } else label = r.clock ? `${per} ${r.clock}` : per;
+    return { at: firstAt(r), a: r.score.a, b: r.score.b, label };
+  });
+  const teams = getAllTeams();
+  const ca = teamColorById(teams, game.team_a_id), cb = teamColorById(teams, game.team_b_id);
+  const fn = c => {
+    if (!duringGame(win, c)) return null;
+    let hit = null;
+    for (const r of rows) if (r.at && r.at <= c.created_at) hit = r;
+    return hit ? { a: hit.a, b: hit.b, label: hit.label, ca, cb } : null;
+  };
+  fn.now = `${folded.score.a}–${folded.score.b}`;
+  return fn;
+}
 // The chat's data: the last 30 messages, oldest first, in the broadcast's shape.
 function liveChatData(game, req) {
   const pid = req.session?.playerPlayerId || '';
   const rows = getGameComments(game.id).slice(-30);
+  const moment = commentMoments(game);
   return {
-    gameId: game.id, watching: watchingCount(game.id), canPost: !!(req.session?.playerRegId && pid) && !getBannedPlayerIds().has(pid) && !req.session?.impersonating,
+    gameId: game.id, watching: watchingCount(game.id), now: moment.now, canPost: !!(req.session?.playerRegId && pid) && !getBannedPlayerIds().has(pid) && !req.session?.impersonating,
     login: `/login?next=${encodeURIComponent(`/games/${gameSlug(game)}`)}`,
-    items: rows.map(c => ({ id: c.id, playerId: c.player_id, body: c.body, displayName: displayPlayerName(c.player_name || ''), initials: initials(c.player_name || ''), color: teamColor(c.team_name || ''), created_at: c.created_at })),
+    items: rows.map(c => ({ id: c.id, playerId: c.player_id, body: c.body, displayName: displayPlayerName(c.player_name || ''), initials: initials(c.player_name || ''), color: teamColor(c.team_name || ''), created_at: c.created_at, moment: moment(c) })),
   };
 }
 // A game being scored, small: the ticker, the homepage's playoff scoreboard and Coming up.
@@ -14501,8 +14537,8 @@ app.get('/games/:ref', (req, res) => {
   const commentsEnabled = getSetting('comments_enabled', '0') === '1';
   let comments = [], reactedIds = new Set(), gameReaction = { count: 0, reacted: false }, mentionablePlayers = [];
   if (commentsEnabled) {
-    const win = liveWindowOf(game.id);
-    comments = getGameComments(game.id).map(c => ({ ...c, during: duringGame(win, c) }));
+    const moment = commentMoments(game);
+    comments = getGameComments(game.id).map(c => ({ ...c, moment: moment(c) }));
     reactedIds = getReactedCommentIdsForPlayer(comments.map(c => c.id), currentPlayerId);
     gameReaction = { ...getGameReactionState(game.id, currentPlayerId), reactors: getGameReactors(game.id) };
     // Anyone with a real, working login — not just players in this specific game — so a
@@ -15087,6 +15123,7 @@ function postComment(target, playerId, rawBody, parentId) {
         initials: initials(saved.player_name),
         photoUrl: `/api/player/${encodeURIComponent(saved.player_id)}/photo?w=96`,
         color: teamColor(saved.team_name || ''),
+        moment: commentMoments(target.game)(saved),
       },
     });
   }

@@ -10805,6 +10805,8 @@ html.ppop-lock { overflow: hidden; }
 .lc__av { flex: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--lc-2); box-shadow: 0 0 0 2px var(--c); font-size: 10px; font-weight: 700; line-height: 1; }
 .lc__b { min-width: 0; padding: 6px 10px; border-radius: 14px; background: var(--lc-bubble); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
 .lc__b b { font-weight: 600; }
+.lc__st { display: inline-flex; align-items: center; height: 16px; margin-left: 5px; padding: 0 6px; border-radius: 999px; background: rgba(255,255,255,.07); color: var(--lc-mut); font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 600; font-size: 12px; line-height: 1; vertical-align: 1px; font-variant-numeric: tabular-nums; }
+.lc__st[hidden] { display: none; }
 @media (prefers-reduced-motion: no-preference) { @keyframes lcIn { from { opacity: 0; transform: translateY(8px); } } .lc__m.is-new { animation: lcIn .25s ease-out; } }
 .lc__side { grid-area: side; align-self: end; display: flex; flex-direction: column; gap: 8px; }
 .lc__btn { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: 50%; border: 1px solid var(--lc-hair); background: var(--lc-bubble); color: var(--lc-text); }
@@ -10826,7 +10828,11 @@ html.ppop-lock { overflow: hidden; }
 .lc__show b { display: flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; box-sizing: border-box; border-radius: 11px; background: var(--lc-amber); color: #14110d; font-size: 13px; }
 .lc__show[hidden], .lc__show b[hidden] { display: none; }
 
-.game-comment__live { margin-left: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(239,68,68,.12); color: #f87171; font-size: 11px; font-weight: 700; }
+/* The score when a comment was posted (views/live-chat.js scoreStamp; site game page + app). Team colours only on the dots. */
+.cm-score { align-self: center; display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; line-height: 1; white-space: nowrap; }
+.cm-score i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px rgba(255,255,255,.18); }
+.cm-score b { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
+.cm-score span::before { content: "·"; margin-right: 5px; color: var(--text-subtle); }
 /* Wide screens: a sidebar on the right, the page making room for it */
 @media (min-width: 1100px) {
   .lc-spacer { display: none; }
